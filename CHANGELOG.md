@@ -15,6 +15,9 @@
 ## [Unreleased]
 
 ### Added
+- 도메인 초기 구성 (2026-08-20): 운영 준비중 페이지(`deploy/comingsoon/`, `docker-compose.yml` — `pieceofdays-comingsoon`) 및 dev 플레이스홀더(`frontend/`, `docker-compose.dev.yml` — `pieceofdays-frontend-dev`) 추가.
+- nginx conf 원본 4종 추가 (`deploy/nginx/99-pieceofdays*.conf`): canonical 도메인 `pieceofdays.com`, `pieceofdays.co.kr`(+www)·`www.pieceofdays.com` 은 301 리다이렉트, `dev.pieceofdays.com` 은 접근제한(+noindex) dev 프록시.
+- `deploy/README.md`: 배포 절차, 도메인 canonical 정책, 인증서 발급 절차, 실서비스 전환 절차 문서화.
 - Codex 작업용 `AGENTS.md` 템플릿 추가: `$karpathy-guidelines`, PRD 기반 계획 산출물, 디자인/개발/운영 검증 흐름 정의.
 
 ### Changed

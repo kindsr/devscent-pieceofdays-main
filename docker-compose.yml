@@ -1,0 +1,26 @@
+# pieceofdays 운영 스택 (pieceofdays.com / pieceofdays.co.kr)
+# - 현재 단계: 서비스 개발 전 — 정적 "준비중" 페이지만 게시
+# - 호스트 포트 게시 없음: 공용 nginx -> edge 네트워크로만 접근 (04_PORT_EXPOSURE_POLICY.md)
+# - 도메인 정책: pieceofdays.com 이 canonical. .co.kr / www 는 nginx 에서 301 리다이렉트.
+# - 본 서비스 개발 완료 후 이 파일을 실제 앱 스택(web/api)으로 교체한다.
+services:
+  pieceofdays-comingsoon:
+    image: nginx:stable-alpine
+    container_name: pieceofdays-comingsoon
+    restart: unless-stopped
+    volumes:
+      - ./deploy/comingsoon/html:/usr/share/nginx/html:ro
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true
+    name: ${DOCKER_EXTERNAL_NETWORK:-edge}

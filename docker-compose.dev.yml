@@ -1,0 +1,25 @@
+# pieceofdays dev 스택 (dev.pieceofdays.com)
+# - 컨테이너 *-dev, 호스트 포트 게시 없음: 공용 nginx -> edge 네트워크로만 접근
+# - 자동배포: ~/development/ops/dev_autodeploy.sh 가 origin/dev 폴링 후 up -d --build
+# - 현재 단계: 개발 착수 전 정적 플레이스홀더 (frontend/). 실제 앱
+#   개발이 시작되면 이 파일의 서비스 구성을 교체/확장한다.
+services:
+  pieceofdays-frontend-dev:
+    build:
+      context: ./frontend
+    container_name: pieceofdays-frontend-dev
+    restart: unless-stopped
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true
+    name: ${DOCKER_EXTERNAL_NETWORK:-edge}
