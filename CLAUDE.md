@@ -33,7 +33,7 @@
 - `devscent-home` 포트폴리오 상세 갤러리에 반영해야 하면 `~/projects/devscent-home/scripts/sync_portfolio_gallery.py`를 실행해 공개 자산과 `frontend/portfolio-gallery-data.js`를 동기화합니다.
 
 ### Step 3: 운영 환경 확인
-- `~/projects/` 아래 운영 문서들을 확인합니다:
+- `~/server-runbook/` 아래 운영 문서들을 확인합니다:
   - `00_SERVER_OPERATIONS_MID_REVIEW_2026-02-24.md` — 서버 운영 현황
   - `01_SERVER_MANAGEMENT_EXECUTION_GUIDE_2026-02-24.md` — 서버 관리 가이드
   - `02_SERVICE_INVENTORY.md` — 서비스 인벤토리 (도메인/포트/라우팅)
