@@ -106,7 +106,7 @@ src/
 ## 5. 운영 문서 동기화
 
 인프라/배포/설정 변경 시 반드시:
-1. `~/projects/03_OPS_CHANGELOG.md` 에 운영 변경 이력 추가
+1. `~/server-runbook/03_OPS_CHANGELOG.md` 에 운영 변경 이력 추가
 2. `~/projects/02_SERVICE_INVENTORY.md` 에 서비스 정보 최신화
 3. 포트/도메인 변경 시 `~/projects/04_PORT_EXPOSURE_POLICY.md` 업데이트
 
