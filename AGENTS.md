@@ -157,10 +157,10 @@ src/
 인프라, 도메인, 포트, 크론, 백업, 배포 구성이 바뀌면 운영 문서를 동기화한다.
 
 - `~/server-runbook/03_OPS_CHANGELOG.md`
-- `~/projects/02_SERVICE_INVENTORY.md`
-- `~/projects/04_PORT_EXPOSURE_POLICY.md`
+- `~/server-runbook/02_SERVICE_INVENTORY.md`
+- `~/server-runbook/04_PORT_EXPOSURE_POLICY.md`
 - `~/projects/05_CRON_SCHEDULER_POLICY.md`
-- `~/projects/06_BACKUP_RESTORE_RUNBOOK.md`
+- `~/server-runbook/06_BACKUP_RESTORE_RUNBOOK.md`
 
 금지 사항:
 
