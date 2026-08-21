@@ -14,7 +14,7 @@
 > 3. 공용 인프라: nginx(`/opt/infra/nginx/`), Docker `edge` 네트워크, certbot 갱신 크론.
 >
 > **참조 구현**: `~/projects/devscent-match-main` (matseon.com, 2026-08-20 구성)
-> **절차 원본**: `~/projects/08_DEV_PROD_WORKFLOW_RUNBOOK.md` §7 (새 프로젝트 dev 환경 추가)
+> **절차 원본**: `~/server-runbook/15_DEV_PROD_WORKFLOW_RUNBOOK.md` §7 (새 프로젝트 dev 환경 추가)
 
 ---
 
@@ -38,7 +38,7 @@
 - 호스트 포트 게시 없음: 두 스택 모두 edge 네트워크 전용 (0.0.0.0 바인딩 금지).
 - docker compose down/restart 금지 — 신규 컨테이너 up 과 nginx reload 만 사용.
 - 참조 구현 ~/projects/devscent-match-main 의 파일 구조/패턴을 그대로 따른다.
-- 절차 상세는 ~/projects/08_DEV_PROD_WORKFLOW_RUNBOOK.md §7 을 따른다.
+- 절차 상세는 ~/server-runbook/15_DEV_PROD_WORKFLOW_RUNBOOK.md §7 을 따른다.
 
 ## 작업 순서
 
@@ -87,7 +87,7 @@
 ### 5. 운영 문서 갱신
 - ~/projects/02_SERVICE_INVENTORY.md 정식 등록 표에 2행(준비중 페이지 / dev) + 비고 추가.
 - ~/projects/03_OPS_CHANGELOG.md 에 오늘 날짜 항목(커밋 해시, 검증 결과, 잔여 작업 포함).
-- ~/projects/08_DEV_PROD_WORKFLOW_RUNBOOK.md §2 서비스 표에 dev 도메인 행 추가.
+- ~/server-runbook/15_DEV_PROD_WORKFLOW_RUNBOOK.md §2 서비스 표에 dev 도메인 행 추가.
 - 호스트 포트를 안 쓰므로 04_PORT_EXPOSURE_POLICY.md 할당은 불필요(신규 포트 생기면 그때 등록).
 
 ### 6. 완료 보고

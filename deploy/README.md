@@ -1,6 +1,6 @@
 # pieceofdays 배포 구성 (준비중 단계)
 
-> 전체 워크플로우는 `~/projects/08_DEV_PROD_WORKFLOW_RUNBOOK.md` 참고.
+> 전체 워크플로우는 `~/server-runbook/15_DEV_PROD_WORKFLOW_RUNBOOK.md` 참고.
 
 ## 현재 상태 (2026-08-20)
 
