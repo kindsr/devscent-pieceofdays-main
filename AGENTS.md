@@ -159,7 +159,7 @@ src/
 - `~/server-runbook/03_OPS_CHANGELOG.md`
 - `~/server-runbook/02_SERVICE_INVENTORY.md`
 - `~/server-runbook/04_PORT_EXPOSURE_POLICY.md`
-- `~/projects/05_CRON_SCHEDULER_POLICY.md`
+- `~/server-runbook/05_CRON_SCHEDULER_POLICY.md`
 - `~/server-runbook/06_BACKUP_RESTORE_RUNBOOK.md`
 
 금지 사항:

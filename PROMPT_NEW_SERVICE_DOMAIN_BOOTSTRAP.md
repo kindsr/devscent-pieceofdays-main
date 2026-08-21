@@ -86,7 +86,7 @@
 
 ### 5. 운영 문서 갱신
 - ~/server-runbook/02_SERVICE_INVENTORY.md 정식 등록 표에 2행(준비중 페이지 / dev) + 비고 추가.
-- ~/projects/03_OPS_CHANGELOG.md 에 오늘 날짜 항목(커밋 해시, 검증 결과, 잔여 작업 포함).
+- ~/server-runbook/03_OPS_CHANGELOG.md 에 오늘 날짜 항목(커밋 해시, 검증 결과, 잔여 작업 포함).
 - ~/server-runbook/15_DEV_PROD_WORKFLOW_RUNBOOK.md §2 서비스 표에 dev 도메인 행 추가.
 - 호스트 포트를 안 쓰므로 04_PORT_EXPOSURE_POLICY.md 할당은 불필요(신규 포트 생기면 그때 등록).
 
