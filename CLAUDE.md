@@ -14,16 +14,15 @@
 - PRD가 없으면 사용자에게 요청합니다.
 
 ### Step 2: 디자인 가이드 참조
-- `docs/02_DESIGN_GUIDE.md` 를 참고하여 DevScent 브랜드 디자인 시스템을 따릅니다.
+- `../_template/docs/02_DESIGN_GUIDE.md` 를 참고하여 DevScent 브랜드 디자인 시스템을 따릅니다.
 - UI/프론트엔드 작업 시 반드시 디자인 가이드의 컬러, 타이포그래피, 레이아웃 규칙을 준수합니다.
 
 ### Step 2.5: 포트폴리오 문서 참조
 - 포트폴리오 소개, 서비스 요약, 공개용 캡처 정리 작업이 있다면 먼저 아래를 확인합니다:
-  - `docs/03_PORTFOLIO_GUIDE.md`
+  - `../_template/docs/03_PORTFOLIO_GUIDE.md`
   - `docs/04_PORTFOLIO_BRIEF.md`
 - 위 문서가 있으면 전체 코드베이스 스캔보다 우선해서 참조합니다.
-- `docs/03_PORTFOLIO_GUIDE.md`가 없다면 `~/projects/devscent-home/docs/03_PORTFOLIO_GUIDE.md`를 복사해 사용합니다.
-- `docs/04_PORTFOLIO_BRIEF.md`가 없다면 `~/projects/devscent-home/docs/04_PORTFOLIO_BRIEF_TEMPLATE.md`를 복사해 생성합니다.
+- `docs/04_PORTFOLIO_BRIEF.md`가 없다면 `../_template/docs/04_PORTFOLIO_BRIEF_TEMPLATE.md`를 복사해 생성합니다.
 - 공개용 이미지는 `docs/portfolio/screens/`를 사용합니다.
 - QA 원본 캡처는 `docs/qa/screens/`에 보관하고 직접 공개용으로 사용하지 않습니다.
 - 구조화 메타데이터가 필요하면 `docs/portfolio/manifest.json`을 사용합니다.
@@ -137,8 +136,6 @@ project-root/
 ├── docker-compose.yml     # 서비스 컨테이너 구성
 ├── docs/
 │   ├── PRD.txt            # 제품 요구사항 정의서
-│   ├── 02_DESIGN_GUIDE.md # 디자인 시스템
-│   ├── 03_PORTFOLIO_GUIDE.md
 │   ├── 04_PORTFOLIO_BRIEF.md
 │   └── plans/             # 개발 계획 문서
 ├── backend/               # 백엔드 소스
@@ -156,3 +153,12 @@ project-root/
 - `docker network edge`에 연결된 다른 컨테이너에 영향을 주지 않습니다.
 - 사용자 승인 없이 `docker compose down` 또는 `docker compose restart`를 실행하지 않습니다.
 - 포트를 `0.0.0.0`으로 바인딩하지 않습니다 (loopback-only 원칙).
+
+## 공통 문서 참조 (DevScent 공통 원본)
+
+회사 공통 문서는 이 repo 에 복사하지 않는다. 원본을 직접 읽는다.
+
+- 원본 위치: `../_template/docs/` (Windows: `D:\Projects\_template\docs`, Linux: `~/projects/_template/docs`)
+- 01_ABOUT_DEVSCENT · 02_DESIGN_GUIDE(공통 원칙) · 02_DESIGN_GUIDE_v2(devscent.com 마케팅 표면) · 03_PORTFOLIO_GUIDE · 04_PORTFOLIO_BRIEF_TEMPLATE · 05_COMPANY_OPERATION_ONBOARDING · 06_BUSINESS_LEGAL_INFO · 07_NICEPAY_INTEGRATION · 08_DATA_PROCESSING_AGREEMENT
+- 고칠 내용은 `_template` 에서 고친다. 이 repo 의 `docs/` 에 위 이름의 파일을 만들지 않는다.
+- 서비스 고유 내용: 디자인 `docs/design/`, 기획 `docs/product/`, 서비스 소개 `docs/ABOUT_SERVICE.md`, 포트폴리오 `docs/04_PORTFOLIO_BRIEF.md`

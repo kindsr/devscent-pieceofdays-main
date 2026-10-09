@@ -20,8 +20,8 @@
 2. 요구사항 문서를 찾는다.
    - 우선순위: `docs/PRD.txt`, `docs/PRD.md`, `docs/product/PRD.md`.
    - PRD가 없고 작업 범위가 제품/기능 설계라면 바로 구현하지 말고 PRD 작성 또는 요구사항 정리를 먼저 제안한다.
-3. 디자인 작업이면 `docs/02_DESIGN_GUIDE.md`를 먼저 읽는다.
-   - `devscent.com` 마케팅 표면은 `docs/02_DESIGN_GUIDE_v2.md`도 함께 확인한다.
+3. 디자인 작업이면 `../_template/docs/02_DESIGN_GUIDE.md`를 먼저 읽는다.
+   - `devscent.com` 마케팅 표면은 `../_template/docs/02_DESIGN_GUIDE_v2.md`도 함께 확인한다.
 4. 운영/배포 영향이 있으면 `~/projects` 운영 문서를 확인한다.
    - `02_SERVICE_INVENTORY.md`, `04_PORT_EXPOSURE_POLICY.md`, `05_CRON_SCHEDULER_POLICY.md`, `06_BACKUP_RESTORE_RUNBOOK.md`, `09_MONITORING_LOGGING.md`.
 5. 인프라 변경은 공유 서비스에 미치는 영향을 먼저 판단한다.
@@ -185,3 +185,12 @@ src/
 - 테스트 또는 수동 검증을 실행했다.
 - 운영/SEO/문서 영향이 있으면 관련 문서와 파일을 갱신했다.
 - 최종 응답에 변경 파일, 검증 결과, 남은 위험을 짧게 보고했다.
+
+## 공통 문서 참조 (DevScent 공통 원본)
+
+회사 공통 문서는 이 repo 에 복사하지 않는다. 원본을 직접 읽는다.
+
+- 원본 위치: `../_template/docs/` (Windows: `D:\Projects\_template\docs`, Linux: `~/projects/_template/docs`)
+- 01_ABOUT_DEVSCENT · 02_DESIGN_GUIDE(공통 원칙) · 02_DESIGN_GUIDE_v2(devscent.com 마케팅 표면) · 03_PORTFOLIO_GUIDE · 04_PORTFOLIO_BRIEF_TEMPLATE · 05_COMPANY_OPERATION_ONBOARDING · 06_BUSINESS_LEGAL_INFO · 07_NICEPAY_INTEGRATION · 08_DATA_PROCESSING_AGREEMENT
+- 고칠 내용은 `_template` 에서 고친다. 이 repo 의 `docs/` 에 위 이름의 파일을 만들지 않는다.
+- 서비스 고유 내용: 디자인 `docs/design/`, 기획 `docs/product/`, 서비스 소개 `docs/ABOUT_SERVICE.md`, 포트폴리오 `docs/04_PORTFOLIO_BRIEF.md`
