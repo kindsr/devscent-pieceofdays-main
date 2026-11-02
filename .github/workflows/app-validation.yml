@@ -63,3 +63,45 @@ jobs:
         run: npm run test:prod-smoke
       - name: E2E (Konva smoke, D screens 375/768/1440)
         run: npx playwright test
+
+  # F2 DB 시험 환경: 이 job 전용 일회용 PostgreSQL 18 서비스 컨테이너만 쓴다.
+  # Secrets·environment·배포 키 없음. 비밀번호는 CI 가짜 값이며 포트는 runner loopback에만 게시한다.
+  # 공용·실서버 DB에 접근하지 않는다. 하네스는 POD_TEST_DB_DISPOSABLE=1·loopback URL이 아니면 연결 전에 중단한다.
+  db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    services:
+      postgres:
+        # postgres:18.6 official image, OCI image index digest
+        # (registry-1.docker.io library/postgres manifests/18.6, resolved 2026-11-02; same digest as tag 18)
+        image: postgres:18.6@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      POD_TEST_DB_DISPOSABLE: "1"
+      POD_TEST_ADMIN_URL: postgres://postgres:ci-only-not-a-secret@127.0.0.1:5432/postgres
+    steps:
+      # actions/checkout v6.1.0 (official tag commit, resolved with git ls-remote 2026-11-02)
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      # actions/setup-node v6.5.0 (official tag commit, resolved with git ls-remote 2026-11-02)
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install (lockfile only)
+        run: npm ci
+      - name: DB environment smoke (PostgreSQL 18 service, disposable roles/DBs)
+        run: npm run test:db
