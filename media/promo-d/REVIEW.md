@@ -2,7 +2,8 @@
 
 ## 실행 범위
 
-- 캡처: `node scripts/capture.cjs` — 실제 D(embed=1)를 Playwright Chromium으로 클릭·타이핑, still 7장·crop 58장, 페이지 오류 0.
+- 캡처: `node scripts/capture.cjs` — 실제 D(embed=1, base `cb52350` = 개별 조각 수정·폰트 추가 PR #9 이전)를 Playwright Chromium으로 클릭·타이핑, still 7장·crop 58장, 페이지 오류 0.
+  그 시점 D에는 마켓·크레딧·그림 편집·개별 조각 수정이 없었고 영상에도 없다. 핵심 기록 흐름 시연이라 이후 D 변경으로 MP4를 다시 캡처하지 않는다.
 - HyperFrames 0.8.179(프로젝트 로컬 설치, `HYPERFRAMES_NO_TELEMETRY=1`):
   - `hyperframes check --json`: ok. lint 오류 0·경고 5, runtime/layout/motion/contrast 오류 0(대비 9/9 통과).
     남은 경고 5건은 `nested_structure_needs_subcomposition`(자막·끝 카피 clip 안 자식 노드). 계약상 clip 자체는 움직이지 않고 자식만 움직이도록 의도한 구조다.
@@ -24,3 +25,11 @@
   임시 폴더에서 `hyperframes init` 형식을 확인하다가 이 명령이 VM 전역(`~/.claude/skills`, `~/.agents`)에 스킬 4개를 자동 설치한 것을 발견해 즉시 삭제했다(저장소와 무관).
 - 시스템 Chrome이라 HyperFrames가 software GPU로 렌더했다(WebGL 미사용 컴포지션이라 결과 영향 없음).
 - 폰트는 Google Fonts 저장소에서 OFL 원본을 받아 VM에만 설치했고, 영상 자막용 서브셋만 커밋했다.
+
+## 후속 재현성 수정 (메인 리뷰 반영)
+
+- 지적: `capture.cjs`가 `require("playwright")`를 쓰는데 `package.json`에 선언이 없었다(최초 캡처는 VM 전역 `NODE_PATH`의 Playwright 1.63.0으로 해석됨).
+- 수정: `playwright` **1.63.0**(실제 사용 버전)을 정확 버전 devDependency로 `package.json`·`package-lock.json`에 고정.
+- 확인: `rm -rf node_modules && npm ci --ignore-scripts` 후 `NODE_PATH` 없이
+  - `require.resolve("playwright")` → `media/promo-d/node_modules/playwright` 1.63.0, `chromium.launch()` 성공(Chromium 153.0.8010.12, `/opt/pw-browsers`).
+  - `npm run capture` 실행: 페이지 오류 0, 결과가 커밋된 `assets/capture/*`와 바이트 단위로 같음(git 변경 0). MP4는 다시 렌더하지 않았다.

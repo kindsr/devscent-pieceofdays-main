@@ -9,6 +9,7 @@
     "render": "HYPERFRAMES_NO_TELEMETRY=1 hyperframes render --quality delivery --fps 30 --output /tmp/pod-promo-render.mp4"
   },
   "devDependencies": {
-    "hyperframes": "0.8.179"
+    "hyperframes": "0.8.179",
+    "playwright": "1.63.0"
   }
 }
