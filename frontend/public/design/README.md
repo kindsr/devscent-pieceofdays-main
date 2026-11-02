@@ -1,4 +1,4 @@
-# 디자인 시안 3안 — 선택 대기
+# 디자인 시안 4안 — 선택 대기
 
 - 상태: **선택 대기.** 확정 디자인·토큰이 아니다. 선택 뒤 `docs/design/README.md`에 핸드오프를 새로 쓴다.
 - 보기: 개발 도메인 `https://dev.pieceofdays.com/design/` (접근 제한·noindex). 로컬은 `python3 -m http.server --bind 127.0.0.1 -d docs/design/concepts` 후 `http://127.0.0.1:8000/`.
@@ -6,10 +6,11 @@
 
 | 경로 | 내용 |
 |---|---|
-| `index.html` | 비교판: 3안 실제 미리보기(iframe), 화면·폭 전환, 레퍼런스·장점·주의 |
+| `index.html` | 비교판: 4안 실제 미리보기(iframe), 화면·폭 전환, 레퍼런스·장점·주의 |
 | `a-warm/` | A 따뜻한 기록장 (Warm Editorial 출발, 메인 추천·가설) |
 | `b-calm/` | B 차분한 일기장 (kami 출발) |
 | `c-pieces/` | C 조각 모음 (Doodle 출발) |
+| `d-warm-pieces/` | D 따뜻한 조각 모음 (C의 화면·동작 그대로 + A의 색 값만, 사용자 요청 변형) |
 | `shared/` | 같은 샘플 하루(`sample.js`), 리뷰 바·라우팅(`review.*`), 예시 이미지(`img/`) |
 
 각 안 화면 주소: `#today` 오늘, `#write` 작성, `#days` 다시 보기(`#days/2026-11-01` 특정 날), `#empty` 첫날 빈 상태, `#tokens` 토큰 카드. `?embed=1`은 비교판 미리보기용으로 리뷰 바를 숨긴다.

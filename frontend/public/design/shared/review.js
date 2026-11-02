@@ -5,7 +5,7 @@
   var VIEWS = [
     ["today", "오늘"], ["write", "작성"], ["days", "다시 보기"], ["empty", "첫날 빈 상태"], ["tokens", "토큰"]
   ];
-  var CONCEPTS = [["a-warm", "A 따뜻한 기록장"], ["b-calm", "B 차분한 일기장"], ["c-pieces", "C 조각 모음"]];
+  var CONCEPTS = [["a-warm", "A 따뜻한 기록장"], ["b-calm", "B 차분한 일기장"], ["c-pieces", "C 조각 모음"], ["d-warm-pieces", "D 따뜻한 조각 모음"]];
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
   var embed = /[?&]embed=1\b/.test(location.search);
   if (embed) document.documentElement.classList.add("is-embed");

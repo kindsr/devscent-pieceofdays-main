@@ -2,9 +2,9 @@
 
 개인의 일상에서 순간을 기록하고 하루를 정리하여 스토리텔링을 만들어가는 일기장.
 
-운영은 정적 준비중 페이지이며 개발 환경에서는 UI 시안 3안을 비교한다. [PRD](docs/PRD.md)는 검토 초안이며 앱 스택·DB는 아직 정하지 않았다.
+운영은 정적 준비중 페이지이며 개발 환경에서는 UI 시안 4안(초기 3안 + C 화면에 A 색을 입힌 D)을 비교한다. [PRD](docs/PRD.md)는 검토 초안이며 앱 스택·DB는 아직 정하지 않았다.
 제품 진행은 [AGENTS.md](AGENTS.md), UI 방향은 [조사 문서](docs/product/UI_UX_RESEARCH_2026-11-02.md)를 참고한다.
-디자인 시안 3안은 https://dev.pieceofdays.com/design/ 에서 비교한다(아직 선택 전, 정본 [docs/design/concepts](docs/design/concepts/README.md)).
+디자인 시안 4안은 https://dev.pieceofdays.com/design/ 에서 비교한다(아직 선택 전, 정본 [docs/design/concepts](docs/design/concepts/README.md)).
 
 ## GitHub와 자동배포
 

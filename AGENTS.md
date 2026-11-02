@@ -20,7 +20,7 @@
 - [PRD](docs/PRD.md)는 사용자 응답 전 검토 초안이다. 운영은 준비중 페이지, dev는 정적 개발 환경이며 앱 스택·DB는 정하지 않았다(DB 없음).
   과거 문서의 PostgreSQL14 등 특정 DB를 이 서비스의 선택으로 보지 않는다.
 - 운영: `docker-compose.yml`의 `pieceofdays-comingsoon`은 준비중 페이지를 이미지로 빌드한다. 전환 전 bind mount 방식은 §3의 주의를 확인한다.
-- dev: `docker-compose.dev.yml`의 `pieceofdays-frontend-dev`가 `frontend/`를 정적 이미지로 빌드한다. `/design/`은 [선택 대기 중인 시안 3안](docs/design/concepts/README.md) 비교판이다.
+- dev: `docker-compose.dev.yml`의 `pieceofdays-frontend-dev`가 `frontend/`를 정적 이미지로 빌드한다. `/design/`은 [선택 대기 중인 시안 4안](docs/design/concepts/README.md) 비교판이다.
 - 현행 경로·도메인·확인 명령은 [README.md](README.md), 배포 절차는 [deploy/README.md](deploy/README.md)다.
 
 ## 2. 다음 진행 순서

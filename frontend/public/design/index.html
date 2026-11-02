@@ -50,7 +50,7 @@
     .swatches span { width: 28px; height: 28px; border: 1px solid rgba(0,0,0,.25); border-radius: 4px; }
     footer { font-size: 14px; color: var(--muted); display: grid; gap: 8px; }
     @media (min-width: 1100px) {
-      .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* 4안: A·B / C·D — C와 D를 나란히 */
       header h1 { font-size: 30px; }
     }
     @media (min-width: 768px) and (max-width: 1099px) {
@@ -62,15 +62,15 @@
 <body>
   <div class="wrap">
     <header>
-      <h1>pieceofdays 디자인 시안 3안 비교</h1>
+      <h1>pieceofdays 디자인 시안 4안 비교</h1>
       <p class="status"><strong>선택 대기</strong> · 시안·예시 기록이며 저장되지 않습니다 · 개발 도메인 전용 미리보기(운영 미반영)</p>
     </header>
 
     <section class="box" aria-labelledby="assume-h">
-      <h2 id="assume-h">세 시안의 공통 가정</h2>
+      <h2 id="assume-h">네 시안의 공통 가정</h2>
       <ul>
         <li>제품: 하루의 순간을 기록하고 하루를 정리해 이야기로 쌓는 개인 일기장. 흐름은 <b>순간 기록 → 하루 정리 → 날짜별 다시 보기</b>.</li>
-        <li>세 안 모두 같은 샘플 하루(2026년 11월 2일)와 같은 화면(오늘·작성·다시 보기·첫날 빈 상태·토큰)을 그렸습니다.</li>
+        <li>네 안 모두 같은 샘플 하루(2026년 11월 2일)와 같은 화면(오늘·작성·다시 보기·첫날 빈 상태·토큰)을 그렸습니다. D는 C의 화면에 A의 색만 옮긴 변형이라 C와 나란히 놓았습니다.</li>
         <li>사진+짧은 글, 본인만 보기, 하루 정리는 직접 쓰기는 <b>시안을 위한 가정</b>입니다(PRD 초안 미확정). 감정 기록·AI 스토리·공유는 그리지 않았습니다.</li>
         <li>이미지는 직접 그린 예시 그림이고, 글꼴은 기기에 설치된 한국어 글꼴을 써서 기기마다 조금 다르게 보일 수 있습니다.</li>
       </ul>
@@ -138,14 +138,27 @@
           <div><h3>주의</h3><ul><li>하루 정리(긴 글)가 보조 위치라 스토리텔링이 약해질 수 있음</li><li>오래 쓰면 놀이감이 가볍게 느껴질 수 있음</li></ul></div>
         </div>
       </article>
+      <article class="concept" aria-labelledby="d-h">
+        <h2 id="d-h">D 따뜻한 조각 모음 <span class="rec">C 화면 + A 색</span></h2>
+        <p class="one">C의 화면·동작은 그대로, 색만 A 팔레트로 바꾼 변형(사용자 요청).</p>
+        <div class="swatches" aria-hidden="true"><span style="background:#F5EFE4"></span><span style="background:#2A211C"></span><span style="background:#9E4527"></span><span style="background:#F1DED2"></span></div>
+        <div class="frame"><iframe data-src="d-warm-pieces/index.html" title="시안 D 따뜻한 조각 모음 미리보기" src="d-warm-pieces/index.html?embed=1#today"></iframe></div>
+        <p class="frame-note">미리보기 안에서 직접 눌러 볼 수 있어요.</p>
+        <div class="actions"><a class="btn primary" data-open="d-warm-pieces/index.html" href="d-warm-pieces/index.html#today">D 크게 보기</a></div>
+        <div class="facts">
+          <div><h3>출발 레퍼런스</h3><p>시안 C의 구성·서체·크기·동작 + 시안 A의 색 값(새 색 없음)</p></div>
+          <div><h3>장점</h3><ul><li>C의 가벼운 조각 입력·달력 모아보기를 그대로 유지</li><li>따뜻한 종이·테라코타로 C보다 차분하고 오래 보기 편한 인상</li></ul></div>
+          <div><h3>주의</h3><ul><li>메모 3색이 모두 밝은 종이 계열이라 C보다 조각끼리 색 구분이 약함(테두리로 구분)</li><li>하루 정리(긴 글)가 보조 위치라는 C의 한계는 같음</li></ul></div>
+        </div>
+      </article>
     </div>
 
     <section class="box" aria-labelledby="pick-h">
       <h2 id="pick-h">고르는 방법</h2>
-      <p>A·B·C 중 하나, 또는 "A 바탕에 B의 다시 보기"처럼 조합을 메인에게 알려 주세요. 선택 뒤 그 안만 하이파이로 다듬고 확정 토큰을 정합니다.</p>
+      <p>A·B·C·D 중 하나, 또는 "A 바탕에 B의 다시 보기"처럼 조합을 메인에게 알려 주세요. 선택 뒤 그 안만 하이파이로 다듬고 확정 토큰을 정합니다.</p>
       <p style="margin-top:8px">선택에 영향을 주는 미확정 질문(PRD 초안):</p>
       <ul>
-        <li>순간 기록은 짧은 글 중심인가요, 사진 중심인가요? (사진 중심이면 A·C, 글 중심이면 B가 유리)</li>
+        <li>순간 기록은 짧은 글 중심인가요, 사진 중심인가요? (사진 중심이면 A·C·D, 글 중심이면 B가 유리)</li>
         <li>하루 정리는 직접 쓰나요, AI 초안을 고치나요? (이 시안은 직접 쓰기만 그림)</li>
         <li>첫 버전은 본인만 보기로 충분한가요?</li>
       </ul>

@@ -15,6 +15,7 @@
 ## [Unreleased]
 
 ### Added
+- 디자인 시안 D 따뜻한 조각 모음 추가 (2026-11-02, 선택 대기): 사용자 요청 "C안의 UI에 A안의 컬러만 적용". `docs/design/concepts/d-warm-pieces/`는 C 사본에서 색 값·식별·토큰 카드만 바꿈(A 팔레트 값만 사용). 비교판을 4안(데스크톱 2열 A·B / C·D)으로, 리뷰 바에 D 전환 링크 추가, 게시 사본·README·dev 안내 문구를 4안으로 정정.
 - 디자인 시안 3안 정적 비교판 (2026-11-02, 선택 대기): `docs/design/concepts/`(정본)와 게시 사본 `frontend/public/design/` → dev `/design/`. A 따뜻한 기록장·B 차분한 일기장·C 조각 모음, 같은 샘플 하루, 저장 없음. 계획 `docs/plans/PLAN_design-preview.md`, 스토리보드·브리프 초안 `docs/product/04~05`. dev 안내 페이지에 시안 링크를 추가하고 배포 설명을 GitHub Actions로 정정.
 - `docs/PRD.md` 추가 (2026-11-02): PRD·MVP **검토 초안(사용자 응답 전)**. 권고 여정 "순간 기록→하루 정리→날짜별 다시 보기", 가정, 최소 슬라이스, MVP 제외 제안, AI 직접 작성/초안 비교(결정 대기), 질문 3개, 수용 기준 초안, 미정 조건. 같은 작업에서 `AGENTS.md` §3.1에 사용자 선택(pieceofdays의 위임 가능한 기획·구현·검증은 개별 Claude Cloud 세션 우선, 메인은 계획·검토·통합·서버 확인, 다른 서비스·전역 CLI 설정 미적용)을 추가. 선택용 정적 시안 선행 비교는 사용자 요청에 따라 가정으로 표시한다.
 - GitHub Actions 개발·운영 자동배포 구성 (2026-11-02): `dev` push 개발 배포, 성공한 dev를 `main`에 병합하면 운영 배포. 서비스 전용 SSH 키, SHA/tree·Compose 격리 검사, 후보 health 확인과 실패 시 이미지 복귀.
