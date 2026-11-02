@@ -1,0 +1,20 @@
+{
+  "name": "devscent-pieceofdays-main",
+  "services": {
+    "pieceofdays-comingsoon": {
+      "image": "pieceofdays-production:local",
+      "build": {"context": "./deploy/comingsoon", "dockerfile": "Dockerfile"},
+      "container_name": "pieceofdays-comingsoon",
+      "restart": "unless-stopped",
+      "expose": ["80"],
+      "read_only": true,
+      "tmpfs": ["/var/cache/nginx", "/var/run"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || exit 1"],
+        "interval": "30s", "timeout": "5s", "retries": 3
+      },
+      "networks": {"edge": null}
+    }
+  },
+  "networks": {"edge": {"external": true, "name": "edge"}}
+}
