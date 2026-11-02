@@ -1,13 +1,14 @@
 # GitHub Actions 개발·운영 자동배포 계획
 
 - 날짜: 2026-11-02
-- 사용자 승인: NAS Git 대신 kindsr/pieceofdays 사용, dev push 자동 개발 배포, dev→main 병합 자동 운영 배포. 이 서비스에 한정하며 다른 서비스의 수동 배포 규칙은 유지한다.
-- 개발 경로 오타 `~/developmemt`는 기존 `~/development`로 해석한다.
+- 사용자 승인: NAS Git 대신 kindsr/pieceofdays 사용(2026-11-02 사용자가 `kindsr/devscent-pieceofdays-main`으로 이름 변경), dev push 자동 개발 배포, dev→main 병합 자동 운영 배포. 이 서비스에 한정하며 다른 서비스의 수동 배포 규칙은 유지한다.
+- 사용자 지시의 개발 경로 오타는 기존 개발 배포 위치로 해석했다.
+- 경로 표기: `<source-dir>`(AI 작업 체크아웃)·`<dev-dir>`(개발 배포본)·`<release-dir>`(운영 릴리스 자료)는 placeholder다. 정확한 서버 값은 비공개 운영 정본이 관리한다.
 
 ## 목표와 경계
 
 GitHub를 단일 Git 정본으로 사용한다. 현재 NAS 이력과 GitHub 초기 README 이력을 강제 push 없이 통합하고, 이번 세션의 미커밋 문서를 보존한다.
-개발은 `~/projects/devscent-pieceofdays-main` 및 별도 worktree, dev 배포는 `~/development/devscent-pieceofdays-main`, 운영은 `~/deployment/pieceofdays`로 분리한다.
+개발은 `<source-dir>` 및 별도 worktree, dev 배포는 `<dev-dir>`, 운영은 `<release-dir>`로 분리한다.
 운영 준비중 HTML과 개발 placeholder 내용은 유지한다. 앱 스택·PRD·DB·공용 nginx·DNS·TLS 변경은 제외한다.
 
 ## 구현
