@@ -1,0 +1,68 @@
+name: Validate and deploy pieceofdays
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # actions/checkout v4.3.1; verified against the official Git tag.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Deployment contracts
+        run: python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Compose syntax
+        run: |
+          docker compose -f docker-compose.yml config -q
+          docker compose -f docker-compose.dev.yml config -q
+
+  deploy:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+    concurrency:
+      group: pieceofdays-deployment
+      cancel-in-progress: false
+    steps:
+      # This job does not check out or execute repository code.
+      - name: Probe environment and request fixed SHA
+        shell: bash
+        env:
+          DEPLOY_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_ENV" =~ ^(dev|production)$ ]]
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]]
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          chmod 700 "$ssh_dir"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
+          ssh_options=(-F /dev/null -T -p "$DEPLOY_PORT" -i "$ssh_dir/key"
+            -o "UserKnownHostsFile=$ssh_dir/known_hosts" -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes
+            -o IdentityAgent=none -o ForwardAgent=no -o ClearAllForwardings=yes
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "probe $DEPLOY_ENV"
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $DEPLOY_ENV $DEPLOY_SHA"
