@@ -17,6 +17,12 @@
   var timeEl = document.getElementById("compose-time"), hintEl = document.getElementById("compose-hint");
   var ADD_HINT = hintEl.textContent;
   var NOTE = ["y", "m", "p"];
+  /* 메모 색은 조각마다 메모리 상태에 고정한다. 처음 값은 기존 D와 같은 순서(메모 조각끼리 y→m→p).
+     사진 조각도 미리 색을 받아 두어, 메모로 바뀌어도 다른 조각 색이 밀리지 않는다. */
+  sample.forEach(function (d) {
+    var k = 0;
+    d.moments.forEach(function (m, i) { m.note = m.img ? NOTE[i % 3] : NOTE[k++ % 3]; });
+  });
   var STAR = '<svg viewBox="0 0 56 56" aria-hidden="true" focusable="false"><path d="M28 6 L33 22 L50 22 L36 32 L41 49 L28 39 L15 49 L20 32 L6 22 L23 22 Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>';
 
   function days() { return mode === "first" ? first : sample; }
@@ -25,7 +31,6 @@
   function label(iso) { var p = P.parts(iso); return p.m + "월 " + p.d + "일 " + p.w + "요일"; }
 
   function piecesHTML(day, isToday) {
-    var noteIdx = 0;
     var items = day.moments.map(function (m, i) {
       var img = m.img ? S.images[m.img] : null;
       var nw = m.key && m.key === lastNewKey ? " is-new" : "";
@@ -35,7 +40,7 @@
         return '<li class="piece photo' + nw + '"><img src="' + img.src + '" alt="' + esc(img.alt) + '" width="400" height="300">' +
           '<p class="tag">예시 이미지 · 직접 그린 그림</p>' + meta + "<p>" + esc(m.text) + "</p></li>";
       }
-      return '<li class="piece note ' + NOTE[noteIdx++ % 3] + nw + '">' + meta + "<p>" + esc(m.text) + "</p></li>";
+      return '<li class="piece note ' + (m.note || NOTE[0]) + nw + '">' + meta + "<p>" + esc(m.text) + "</p></li>";
     }).join("");
     if (isToday) items += '<li class="piece"><a class="add-tile" href="#write"><span class="plus" aria-hidden="true">+</span>조각 추가</a></li>';
     return '<ul class="pieces" aria-label="' + label(day.date) + '의 조각">' + items + "</ul>";
@@ -241,9 +246,12 @@
       paint(cur);
       if (keep !== null && document.getElementById("sum-text")) document.getElementById("sum-text").value = keep;
     }
+    P.announce(msg);
+    // 비교판 미리보기에서는 #write 팝업 뒤 조각도 누를 수 있다. 경로가 #write면 추가 팝업(보관한 초안)으로 돌아가
+    // 주소와 팝업 상태를 맞춘다. 단독 화면은 모달이라 이 경우가 생기지 않는다.
+    if (cur.view === "write") { openCompose(); return; }
     var b = view.querySelector('[data-edit="' + key + '"]');
     if (b && !P.quiet()) b.focus();
-    P.announce(msg);
   }
   function cancelCompose() {
     if (editTarget) leaveEdit("고치기를 취소했어요. 조각은 그대로예요.", false);
@@ -278,7 +286,8 @@
       return;
     }
     lastNewKey = "n" + Date.now();
-    P.addMoment(find(S.today), { time: P.nowTime(), text: v, img: form.querySelector('input[name="img"]:checked').value || null, key: lastNewKey });
+    var today = find(S.today);
+    P.addMoment(today, { time: P.nowTime(), text: v, img: form.querySelector('input[name="img"]:checked').value || null, key: lastNewKey, note: NOTE[today.moments.length % 3] });
     form.reset();
     closeTo(homeHash());
     P.announce(P.NOT_SAVED);
