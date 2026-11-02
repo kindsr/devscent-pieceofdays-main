@@ -1,6 +1,7 @@
 # PLAN — MVP 기반 구축 (Next.js 앱·DB·인증 소유권·개인용 꾸미기 Lite)
 
-- 상태: **계획. 아직 패키지 설치·앱 구현·DB 생성을 하지 않았다.** 기준 `dev` `efe6b0f`.
+- 상태: **계획.** 기준 `dev` `efe6b0f`. 사용자가 스택을 선택했으므로 프레임워크·패키지 설치는 허용된다(F1에서 §1.1 호환 확인 후 설치). 이 PR 시점에는 아직 설치·구현하지 않았다. 서버 DB·버킷 생성과 공용 서버 설정은 별도 의존성이다(§8).
+- 골격의 가정: [01_PRD_ANALYSIS](../product/01_PRD_ANALYSIS.md) §2 — **비공개 기본, 하루 정리는 직접 작성(A), 짧은 글 중심.** PRD Q1~Q3 답을 기다리지 않고 이 가정을 드러낸 채 UI·도메인·저장 port 골격까지 만든다. 범위 정의는 [03_MVP](../product/03_MVP.md)에 있다.
 - 근거: [00_TECH_STACK_DECISION](../product/00_TECH_STACK_DECISION.md)(사용자 선택, 2026-11-02), [PLAN_product-evolution](PLAN_product-evolution.md) 단계 1, [DECORATION_MARKET_ARCHITECTURE](../product/DECORATION_MARKET_ARCHITECTURE.md), [PRD 초안](../PRD.md).
 - MVP 범위([확정]): 기록 CRUD(조각 수정 포함), 날짜별 보기, 사용자 폰트 선택, **개인용 하루 꾸미기 Lite**. **마켓·구매·정산은 MVP에서 제외**한다.
 - 각 단계(F1~F6)는 별도 작업 브랜치와 PR로 진행한다. dev/main 반영과 배포는 메인이 통합할 때 한다.
@@ -16,13 +17,38 @@
 | `app/src/ui/decorate/` | Konva 편집기. **클라이언트 전용** | 서버 모듈에서 import하지 않는다 |
 | `app/src/shared/manifest.ts` | manifest 스키마와 타입 1곳 | 서버 검증과 렌더러가 함께 쓴다 |
 | `app/src/server/db.ts` | 연결과 트랜잭션 도우미 | |
-| `app/src/server/{account,diary,decoration,credit}/` | 도메인 모듈 4개(마켓 없음) | 모든 함수는 `userId`를 첫 인자로 받는다 |
+| `app/src/server/{account,diary,decoration,credit}/` | 도메인 모듈 4개(마켓 없음). 각 모듈에 `store.ts`(port), `store.memory.ts`, `store.pg.ts` | 모든 함수는 `userId`를 첫 인자로 받는다 |
 | `app/src/server/auth/` | 세션 → `userId` 해석 1곳 | 공급자 연동은 F4(G4 결정 후) |
 | `app/migrations/` | 번호 붙은 SQL migration(up/down) | 도구는 F1에서 1개 고른다 |
 | `app/tests/{unit,db,e2e}/` | 단위 / 실제 PostgreSQL 18 컨테이너 / 브라우저 | |
 | `.github/workflows/` | 앱 검사 job 추가(F1, 메인 검토) | 배포 job·키는 바꾸지 않는다 |
 
-추상화는 지금 미리 만들지 않는다. 저장소·인증 공급자 인터페이스 계층도 두지 않고 함수와 모듈만 둔다.
+**저장 port:** 도메인 모듈마다 작은 저장 인터페이스(`store.ts`)를 1개 두고, 구현은 2개만 둔다.
+- 메모리 구현: UI 골격과 단위 테스트용.
+- PostgreSQL 구현: F2 이후.
+
+그 밖의 추상화(인증 공급자 계층, 범용 리포지토리, DI 컨테이너)는 만들지 않는다. 인증은 `세션 → userId` 함수 1개다.
+로컬·테스트 전용 고정 사용자는 개발 환경 변수로만 켜진다. 운영 빌드에서 켜져 있으면 시작을 거부한다.
+
+### 1.1 F1 첫 작업: 호환 버전 확인 (설치 전 관문)
+
+2026-11-02 npm 메타데이터 기준이며, 설치 시점에 다시 확인해 정확한 버전으로 고정한다.
+
+| 조합 | 확인 내용 |
+|---|---|
+| Node ↔ Next | next 16.4.4 `engines.node >=20.9.0` → Node 26 LTS를 기준으로 하고 24 LTS도 CI에서 함께 실행한다 |
+| Next ↔ React | next 16.x peer `react`/`react-dom` `^18.2.0 \|\| ^19.0.0` → react·react-dom은 **같은 정확 버전** 19.3.x로 맞춘다(react-dom 19.3.1 peer `react ^19.3.1`) |
+| React ↔ react-konva | react-konva 19.3.2 peer `react`/`react-dom ^19.3.0`. 내부 `react-reconciler 0.34.0` 고정. 공식 문서상 메이저 버전 일치 필요 |
+| react-konva ↔ konva | peer `konva ^7.2.5 \|\| ^8.0.1 \|\| ^9 \|\| ^10` → konva 10.x. konva의 `canvas`/`skia-canvas` peer는 Node 렌더용이므로 설치하지 않는다(썸네일은 후속) |
+| TypeScript | `typescript` 6.0.x(Next 최소 5.1, TS 7.0은 API 없음) |
+
+통과 조건:
+- `npm ls`에 peer 경고가 없다.
+- `next build`가 성공한다.
+- 편집기 페이지(클라이언트 전용 Konva)를 서버 렌더에서 import하지 않는다.
+- Konva 스티커 1개 끌기와 펜 획 1개 스모크 E2E가 Node 26과 24 모두에서 통과한다.
+
+실패하면 마지막으로 호환된 패치로 내리고 그 사유를 결정 기록에 추가한다.
 
 ## 2. 서버 처리(API) 경계
 
@@ -89,10 +115,10 @@
 | 단계 | 내용 | 완료 검증 | 막는 결정 |
 |---|---|---|---|
 | F0 | 결정 기록과 이 계획(이 PR) | 문서 링크·요구 대조 | — |
-| F1 | `app/` 뼈대, 버전 고정, lint·typecheck·unit, CI 앱 검사 job | PR 검사 통과. 기존 `tests/` 배포 계약 테스트 통과. `frontend/`는 변경 없음 | — |
+| F1 | §1.1 호환 확인 → 설치·버전 고정. `app/` 골격, D 화면 골격(메모리 저장·고정 사용자), lint·typecheck·unit, CI 앱 검사 job | §1.1 통과. PR 검사 통과. 기존 `tests/` 배포 계약 테스트 통과. `frontend/`는 변경 없음 | 없음(PRD Q1~Q3는 가정으로 진행) |
 | F2 | migration·DB 계정·권한, 실제 PG18 컨테이너 테스트 | §5-3·8 통과. 로컬·CI 컨테이너만 쓰고 공용 서버 DB는 만들지 않는다 | — |
-| F3 | 도메인 모듈(account·diary·decoration·credit) TDD | §5-2·4·5·6 통과 | 시간대(권고값으로 진행 가능) |
-| F4 | 인증 연동, `onSuccessfulLogin` | §5-1 전체, 실제 로그인 E2E | **G4 인증 공급자·로그인 방식** |
+| F3 | 도메인 모듈(account·diary·decoration·credit) TDD, PostgreSQL 저장 구현. credit은 append-only grant 원장 최소형 | §5-2·4·5·6 통과 | 시간대(권고값으로 진행 가능) |
+| F4 | 실제 로그인 연동과 `onSuccessfulLogin`. **grant 원장과 첫 성공 로그인 10개 지급을 같은 PR에서 켠다**(로그인했는데 지급되지 않은 사용자가 생기지 않게) | §5-1 전체, §5-2, 실제 로그인 E2E | **인증 공급자·로그인 방식(외부 전송 포함)** |
 | F5 | D 화면 이식, 폰트 설정, 꾸미기 Lite(Konva), 사진(Q1 시) | E2E: 375/768/1440px, 키보드, 터치 펜, 실행 취소, 리셋, fallback, 대비 AA, D 기본과 시각 비교 | 폰트·스티커 라이선스(G5), Q1 |
 | F6 | 앱 배포 전환(별도 계획 `PLAN_app-deployment`, 메인 주도) | §7의 조건 | dev/prod DB·버킷 준비, 배포 프로그램 검토 |
 
@@ -116,7 +142,7 @@
 | 항목 | 영향 | 담당 |
 |---|---|---|
 | G4 인증 공급자·로그인 방식(외부 공급자로 가는 식별 정보 포함) | F4, 첫 로그인 지급 | 사용자 |
-| PRD Q1 사진 / Q2 AI / Q3 공유 | F5 범위, 버킷 필요 여부, 외부 전송 | 사용자 |
+| PRD Q1 사진 / Q2 AI / Q3 공유 | 골격은 가정으로 진행한다. 답에 따라 사진(버킷)·AI(외부 전송·동의)·공유(권한)를 추가한다 | 사용자 |
 | DB·버킷 실행 형태와 인스턴스 | F6 | 메인(비공개 런북) |
 | 허용 폰트 목록·기본 스티커 세트 라이선스(G5) | F5 | 메인·사용자 |
 | 시간대 정책, 개인 버전 보관 개수, 잔액 표시 시점 | F3·F5 | 사용자(권고값으로 진행 가능) |
@@ -124,4 +150,4 @@
 
 ## 9. 비목표
 
-마켓·구매·정산 구현, 전문 드로잉 도구, 별도 백엔드 플랫폼(Python 서버·Redis·큐), 외부 AI 연동, 공용 서버 설정 변경, 이 계획 단계에서의 패키지 설치·DB 생성.
+마켓·구매·정산 구현, 전문 드로잉 도구, 별도 백엔드 플랫폼(Python 서버·Redis·큐), 외부 AI 연동, 공용 서버 설정 변경, 서버 dev/prod DB·버킷 생성(메인 담당).

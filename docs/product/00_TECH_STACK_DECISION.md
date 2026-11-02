@@ -2,7 +2,7 @@
 
 - **결정:** [TECH_STACK_OPTIONS](TECH_STACK_OPTIONS.md)의 A안. TypeScript + React/Next.js(서버 기능 포함) + PostgreSQL 18 + 서비스 전용 비공개 이미지 저장소 + Konva(react-konva).
 - **선택자:** 사용자. **일자:** 2026-11-02. 메인이 추천안 A를 명시적으로 선택했다고 전달했다.
-- **승인 범위:** 기술 스택과 MVP 범위만 승인했다. 공용 서버 설정·배포 프로그램·DB 생성·패키지 설치는 승인 범위가 아니며, 아직 하지 않았다.
+- **승인 범위:** 기술 스택과 MVP 범위. 이 선택으로 **프레임워크·패키지 설치는 허용**된다(PLAN_mvp-foundation §1.1의 호환 확인 후). 공용 서버 설정, 배포 프로그램 변경, 서버 dev/prod DB·버킷 생성은 승인 범위가 아니다. 이 PR 시점에는 아무것도 설치·생성하지 않았다.
 - 후속 실행 계획: [PLAN_mvp-foundation](../plans/PLAN_mvp-foundation.md). 제품 단계: [PLAN_product-evolution](../plans/PLAN_product-evolution.md). 도메인 설계: [DECORATION_MARKET_ARCHITECTURE](DECORATION_MARKET_ARCHITECTURE.md).
 
 ## 1. 목적과 근거
@@ -25,7 +25,7 @@
 
 ## 2. 버전 기준 (2026-11-02 공식 출처 확인)
 
-설치는 아직 하지 않았다. PLAN_mvp-foundation F1에서 아래 기준으로 `package.json`·lockfile·이미지 태그를 **정확한 버전으로 고정**한다.
+PLAN_mvp-foundation F1의 호환 확인(§1.1)을 거친 뒤 아래 기준으로 `package.json`·lockfile·이미지 태그를 **정확한 버전으로 고정**한다.
 그 시점의 최신 패치가 출시된 지 얼마 안 됐으면 직전 안정 패치를 쓴다.
 
 | 구성 | 기준 | 지원 근거(확인일 2026-11-02) | 출처 |
