@@ -590,4 +590,40 @@ describe("manifestForRender: fallback policy", () => {
     expect(m.manifestForRender(at, ALLOW)).toEqual(root([], [stroke()]));
     expect(m.manifestForRender(over, ALLOW)).toBeNull();
   });
+
+  // ---- S3 회귀(PR25 독립 검토 P2-1): 구멍 있는(sparse) 배열 ----
+
+  it("regression: sparse placements/ink arrays are rejected as invalid_manifest without throwing, and render is null", async () => {
+    const m = await load();
+    const hole = (items: Obj[], length: number): Obj[] => {
+      const a = [...items];
+      a.length = length; // 실제 구멍: 인덱스 속성이 없다
+      return a;
+    };
+    const holePlacements = hole([], 1);
+    const validThenHolePlacements = hole([general("board.corner")], 2);
+    const holeInk = hole([], 1);
+    const validThenHoleInk = hole([stroke()], 2);
+    // fixture 확인: undefined 값을 가진 dense 배열이 아니라 진짜 구멍이다(JSON.stringify는 null로 성공)
+    expect(Object.hasOwn(holePlacements, 0)).toBe(false);
+    expect(Object.hasOwn(validThenHolePlacements, 1)).toBe(false);
+    expect(Object.hasOwn(holeInk, 0)).toBe(false);
+    expect(Object.hasOwn(validThenHoleInk, 1)).toBe(false);
+    expect(JSON.stringify(holePlacements)).toBe("[null]");
+    // 양성 제어: 같은 위치에 undefined 값이 있는 dense 배열은 이미 invalid로 거부된다
+    const dense = [undefined] as unknown as Obj[];
+    expect(Object.hasOwn(dense, 0)).toBe(true);
+    expectInvalid(m, root(dense), ALLOW, "dense [undefined] placements");
+
+    const cases: [string, Obj][] = [
+      ["sparse placements [<hole>]", root(holePlacements, [stroke()])],
+      ["sparse placements [valid, <hole>]", root(validThenHolePlacements, [stroke()])],
+      ["sparse ink [<hole>]", root([general("board.corner")], holeInk)],
+      ["sparse ink [valid, <hole>]", root([general("board.corner")], validThenHoleInk)],
+    ];
+    for (const [label, input] of cases) {
+      expectInvalid(m, input, ALLOW, label);
+      expect(m.manifestForRender(input, ALLOW), `render ${label}`).toBeNull();
+    }
+  });
 });

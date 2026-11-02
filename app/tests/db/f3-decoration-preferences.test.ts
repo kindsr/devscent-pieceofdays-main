@@ -407,3 +407,45 @@ describe("preferences: font key and applied design", () => {
     CASE_TIMEOUT,
   );
 });
+
+describe("regression: sparse arrays (PR25 review P2-1)", () => {
+  it(
+    "saveDesignVersion returns invalid_manifest (no throw/reject) for sparse placements/ink, before SQL, and creates no rows",
+    async () => {
+      await withApi(async ({ db, pool, deco }) => {
+        const u = await createUser(env, db);
+        const hole = (items: Obj[], length: number): Obj[] => {
+          const a = [...items];
+          a.length = length;
+          return a;
+        };
+        const inputs: [string, Obj][] = [
+          ["sparse placements [<hole>]", manifestRoot(hole([], 1), [penStroke()])],
+          ["sparse placements [valid, <hole>]", manifestRoot(hole([cornerPlacement()], 2), [penStroke()])],
+          ["sparse ink [<hole>]", manifestRoot([cornerPlacement()], hole([], 1))],
+          ["sparse ink [valid, <hole>]", manifestRoot([cornerPlacement()], hole([penStroke()], 2))],
+        ];
+        for (const [label, input] of inputs) {
+          const list = (label.includes("placements") ? input.placements : input.ink) as Obj[];
+          expect(Object.hasOwn(list, list.length - 1), `${label} has a real hole`).toBe(false);
+        }
+        const before = await countRows(env, db);
+        const got = await expectNoSql(pool, async () => {
+          const out: unknown[] = [];
+          for (const [, input] of inputs) {
+            try {
+              out.push(await deco.saveDesignVersion(pool, u, input, { allowedAssets: ALLOW }));
+            } catch (err) {
+              out.push({ threw: err instanceof Error ? `${err.name}: ${err.message}` : String(err) });
+            }
+          }
+          return out;
+        });
+        inputs.forEach(([label], i) => expect(got[i], label).toEqual({ ok: false, error: "invalid_manifest" }));
+        expect(await countRows(env, db), "no rows were created").toEqual(before);
+        expect(await designRows(env, db, u)).toEqual([]);
+      });
+    },
+    CASE_TIMEOUT,
+  );
+});
