@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>pieceofdays 세로 홍보영상 (콘셉트 시연)</title>
+  <style>
+    :root { --bg: #F5EFE4; --surface: #FFFBF4; --ink: #2A211C; --muted: #5F5248; --accent: #9E4527; --focus: #2D5A4C; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font-family: "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
+      line-height: 1.6; word-break: keep-all;
+    }
+    main { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 16px; }
+    h1 { margin: 0; font-size: 22px; font-weight: 800; }
+    .note { margin: 0; font-size: 15px; color: var(--muted); }
+    .frame { border: 2px solid var(--ink); border-radius: 10px; background: var(--ink); box-shadow: 6px 6px 0 var(--ink); overflow: hidden; }
+    video { display: block; width: 100%; height: auto; aspect-ratio: 9 / 16; background: var(--surface); }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .btn {
+      display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 2px solid var(--ink); border-radius: 10px;
+      background: var(--accent); color: #FFFFFF; font-weight: 800; text-decoration: none; box-shadow: 3px 3px 0 var(--ink);
+    }
+    a:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    small { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>pieceofdays 세로 홍보영상</h1>
+    <p class="note"><strong>콘셉트 시연 영상입니다.</strong> 선택 대기 중인 시안 D 프로토타입 화면을 마우스로 조작한 모습이며, 예시 기록·직접 그린 예시 그림을 사용했습니다. 실제 서비스나 확정된 기능이 아닙니다.</p>
+    <div class="frame">
+      <video controls playsinline preload="metadata" poster="poster.jpg" width="1080" height="1920">
+        <source src="pieceofdays-d-vertical.mp4" type="video/mp4">
+        이 브라우저에서는 영상을 재생할 수 없습니다. 아래 링크로 내려받아 보세요.
+      </video>
+    </div>
+    <div class="row">
+      <a class="btn" href="pieceofdays-d-vertical.mp4" download>영상 내려받기 (MP4)</a>
+      <small>1080×1920 · 20초 · 9:16</small>
+    </div>
+  </main>
+</body>
+</html>
