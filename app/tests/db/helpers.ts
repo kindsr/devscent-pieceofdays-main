@@ -295,16 +295,18 @@ export async function createDisposableDatabase(env: HarnessEnv, label: string): 
   const name = `${DB_NAME_PREFIX}${label}_${randomBytes(8).toString("hex")}`;
   if (!DB_NAME_RE.test(name)) throw new Error("[db-harness] generated name does not match the contract");
 
-  await withAdmin(env, async (admin) => {
-    const exists = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]);
-    if (exists.rowCount) throw new DisposableEnvError(`DB ${name} 가 이미 있다. 재사용하지 않는다`);
-    await admin.query(`CREATE DATABASE ${quoteIdent(name)} OWNER ${CI_ROLES.owner} TEMPLATE template0 ENCODING 'UTF8'`);
-    createdDatabases.add(name);
-    await admin.query(`REVOKE ALL ON DATABASE ${quoteIdent(name)} FROM PUBLIC`);
-    await admin.query(`GRANT CONNECT ON DATABASE ${quoteIdent(name)} TO ${CI_ROLES.migrator}, ${CI_ROLES.app}`);
-  });
-
+  // CREATE부터 권한·메타 설정까지 전체를 감싼다. 어느 단계에서 실패해도 이번 실행이 만들어
+  // 추적 중인 DB만 지우고 다시 던진다(호출자의 cleanupAll에 기대지 않는다).
   try {
+    await withAdmin(env, async (admin) => {
+      const exists = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]);
+      if (exists.rowCount) throw new DisposableEnvError(`DB ${name} 가 이미 있다. 재사용하지 않는다`);
+      await admin.query(`CREATE DATABASE ${quoteIdent(name)} OWNER ${CI_ROLES.owner} TEMPLATE template0 ENCODING 'UTF8'`);
+      createdDatabases.add(name);
+      await admin.query(`REVOKE ALL ON DATABASE ${quoteIdent(name)} FROM PUBLIC`);
+      await admin.query(`GRANT CONNECT ON DATABASE ${quoteIdent(name)} TO ${CI_ROLES.migrator}, ${CI_ROLES.app}`);
+    });
+
     await withAdmin(
       env,
       async (admin) => {
@@ -334,7 +336,7 @@ export async function createDisposableDatabase(env: HarnessEnv, label: string): 
       name,
     );
   } catch (err) {
-    await dropDisposableDatabase(env, name).catch(() => undefined);
+    if (createdDatabases.has(name)) await dropDisposableDatabase(env, name).catch(() => undefined);
     throw err;
   }
 
