@@ -207,7 +207,7 @@ role 이름은 논리 이름이다. 실제 이름과 비밀번호는 환경별 �
 | `pod_meta.schema_migrations` | `version integer PRIMARY KEY`, `name text NOT NULL`, `checksum char(64) NOT NULL`(up 파일 SHA-256 hex), `applied_at timestamptz NOT NULL DEFAULT now()`, `applied_by name NOT NULL DEFAULT current_user` | 실행기(runner) |
 
 - 실행기는 `db_environment`가 없으면 시작하지 않는다.
-- down은 `name = 'ci'`일 때만 허용한다([PLAN_mvp-database](../plans/PLAN_mvp-database.md) §3).
+- down은 `name = 'ci'`이고 `pod` 스키마의 사용자 데이터 테이블(§4.1~§4.8)이 모두 비어 있을 때만 허용한다. 빈 CI DB의 리허설 전용이다([PLAN_mvp-database](../plans/PLAN_mvp-database.md) §3).
 
 ## 7. 미정
 
