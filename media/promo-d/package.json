@@ -1,0 +1,15 @@
+{
+  "name": "pieceofdays-promo-d",
+  "private": true,
+  "description": "pieceofdays D 세로 홍보영상(콘셉트 시연) HyperFrames 프로젝트. 앱 스택이 아니다.",
+  "scripts": {
+    "capture": "node scripts/capture.cjs",
+    "sfx": "node scripts/sfx.cjs",
+    "check": "HYPERFRAMES_NO_TELEMETRY=1 hyperframes check --json",
+    "render": "HYPERFRAMES_NO_TELEMETRY=1 hyperframes render --quality delivery --fps 30 --output /tmp/pod-promo-render.mp4"
+  },
+  "devDependencies": {
+    "hyperframes": "0.8.179",
+    "playwright": "1.63.0"
+  }
+}

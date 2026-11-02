@@ -42,6 +42,15 @@
     }
     h1 { font-size: 48px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 16px; }
     p { font-size: 15px; line-height: 1.7; color: var(--ds-muted-foreground); word-break: keep-all; }
+    .design-link {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 52px; margin-top: 32px; padding: 0 28px;
+      background: var(--ds-foreground); color: var(--ds-bg);
+      border-radius: 6px; font-size: 18px; font-weight: 700; text-decoration: none;
+    }
+    .design-link:hover { background: #ffffff; }
+    .design-link:focus-visible { outline: 3px solid var(--ds-warning); outline-offset: 3px; }
+    .design-note { margin-top: 12px; font-size: 14px; }
     code {
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
       font-size: 13px;
@@ -54,8 +63,11 @@
     <p class="badge">DEV ENVIRONMENT</p>
     <h1>Piece of Days</h1>
     <p>dev.pieceofdays.com 개발 환경이 연결되었습니다.<br>
-    <code>dev</code> 브랜치에 push 하면 1분 내 자동배포됩니다.<br>
+    <code>dev</code> 브랜치에 push 하면 GitHub Actions 검사 후 자동배포됩니다.<br>
     실제 앱 개발이 시작되면 이 플레이스홀더는 교체됩니다.</p>
+    <a class="design-link" href="/design/d-warm-pieces/">선택한 D 화면 보기</a>
+    <p class="design-note">조각 수정·기록 글꼴을 미리 써 보세요. 예시 기록이며 저장되지 않습니다.</p>
+    <p class="design-note"><a href="/design/">4안 비교</a> · <a href="/promo/">20초 세로 홍보영상</a></p>
   </main>
 </body>
 </html>

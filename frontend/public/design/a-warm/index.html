@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>시안 A 따뜻한 기록장 — pieceofdays</title>
+  <link rel="stylesheet" href="../shared/review.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="review-bar" data-concept="a-warm"></div>
+  <div class="shell">
+    <header class="top">
+      <a class="brand" href="#today">pieceofdays<span class="brand-sub">하루의 조각</span></a>
+      <nav class="tabs" aria-label="주 메뉴">
+        <a class="tab" data-tab="today" href="#today">오늘</a>
+        <a class="tab" data-tab="days" href="#days">다시 보기</a>
+      </nav>
+      <a class="btn btn-primary top-cta" href="#write">순간 남기기</a>
+    </header>
+    <main id="view" tabindex="-1"></main>
+  </div>
+  <nav class="bottom-bar" aria-label="주 메뉴 (모바일)">
+    <a class="tab" data-tab="today" href="#today">오늘</a>
+    <a class="btn btn-primary" href="#write">순간 남기기</a>
+    <a class="tab" data-tab="days" href="#days">다시 보기</a>
+  </nav>
+
+  <dialog id="compose" class="sheet" aria-labelledby="compose-h">
+    <form id="compose-form" novalidate>
+      <div class="sheet-head">
+        <h2 id="compose-h">순간 남기기</h2>
+        <p class="sheet-time">지금 <span id="compose-time"></span></p>
+      </div>
+      <label class="field-label" for="compose-text">무엇을 남길까요?</label>
+      <textarea id="compose-text" name="text" rows="4" maxlength="500" required
+        aria-describedby="compose-err compose-hint" placeholder="예: 퇴근길 하늘이 분홍색이었다."></textarea>
+      <p id="compose-err" class="field-err" hidden>한 줄이라도 적어야 남길 수 있어요.</p>
+      <fieldset class="pick">
+        <legend>예시 이미지 붙이기 (선택)</legend>
+        <div class="pick-list" id="compose-pick"></div>
+      </fieldset>
+      <p id="compose-hint" class="hint">시안이라 이 화면에만 추가되고 저장되지 않아요.</p>
+      <div class="sheet-actions">
+        <button type="button" class="btn btn-quiet" id="compose-close">닫기</button>
+        <button type="submit" class="btn btn-primary">남기기</button>
+      </div>
+    </form>
+  </dialog>
+  <p id="live" class="sr-only" aria-live="polite"></p>
+
+  <script src="../shared/sample.js"></script>
+  <script src="../shared/review.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

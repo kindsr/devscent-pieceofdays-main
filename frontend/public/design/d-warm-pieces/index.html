@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>시안 D 따뜻한 조각 모음 (선택안) — pieceofdays</title>
+  <link rel="stylesheet" href="../shared/review.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="review-bar" data-concept="d-warm-pieces"></div>
+  <header class="top">
+    <div class="top-in">
+      <a class="brand" href="#today">pieceofdays
+        <svg class="squiggle" viewBox="0 0 120 10" aria-hidden="true" focusable="false"><path d="M2 6 C 14 1, 22 9, 34 5 S 56 1, 68 6 S 92 9, 118 3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+      </a>
+      <nav class="seg" aria-label="주 메뉴">
+        <a data-tab="today" href="#today">오늘</a>
+        <a data-tab="days" href="#days">모아보기</a>
+      </nav>
+      <a class="btn-add" href="#write"><span aria-hidden="true">+</span> 조각 추가</a>
+    </div>
+  </header>
+  <main id="view" tabindex="-1"></main>
+
+  <dialog id="compose" class="pop" aria-labelledby="compose-h">
+    <form id="compose-form" novalidate>
+      <h2 id="compose-h"><span id="compose-title">조각 붙이기</span> <small id="compose-time" class="hand"></small></h2>
+      <label class="lbl" for="compose-text">메모</label>
+      <textarea id="compose-text" rows="3" maxlength="300" required aria-describedby="compose-err compose-hint" placeholder="짧게 한 줄이면 충분해요"></textarea>
+      <p id="compose-err" class="err" hidden>메모를 한 줄 적어 주세요.</p>
+      <fieldset class="polas">
+        <legend class="lbl">예시 이미지 (선택)</legend>
+        <div id="compose-pick" class="pola-list"></div>
+      </fieldset>
+      <p id="compose-hint" class="hint">시안이라 이 화면에만 붙고 저장되지 않아요.</p>
+      <div class="pop-actions">
+        <button type="button" class="btn-ghost" id="compose-close">닫기</button>
+        <button type="submit" class="btn-main" id="compose-submit">붙이기</button>
+      </div>
+    </form>
+  </dialog>
+  <p id="live" class="sr-only" aria-live="polite"></p>
+
+  <script src="../shared/sample.js"></script>
+  <script src="../shared/review.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

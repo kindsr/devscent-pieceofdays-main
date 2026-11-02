@@ -15,6 +15,12 @@
 ## [Unreleased]
 
 ### Added
+- 기술 구성 결정·PRD 분석·shaping·MVP 범위와 Next.js 기반 구현 계획, 하루 꾸미기·마켓·감정덩어리 확장 설계 (2026-11-02). 첫 성공 로그인 10개 1회 지급과 후속 마켓 구매 1개 사용을 구분하고, 실제 인증·DB·저장소·배포 전환의 의존성을 기록했다.
+- D 선택안의 개별 조각 수정·기록 글꼴 설정 프로토타입과 디자인 핸드오프 (2026-11-02). 수정은 같은 조각의 글·이미지만 바꾸고 시각·개수는 유지하며 취소할 수 있다. 고딕·명조·손글씨 선택은 기록 본문에만 적용한다. 현재 값은 메모리에서만 유지되고 영구 저장은 앱 구현 단계다.
+- D 실제 화면·마우스 클릭을 담은 9:16 20초 홍보영상과 공개 플레이어 `/promo/`, MP4·편집 가능한 HyperFrames 소스 (2026-11-02). 확정 카피를 사용하고 사용자 승인 80 Sunra 크레딧으로 생성한 연주곡을 포함한다.
+- 디자인 시안 D 따뜻한 조각 모음 추가 (2026-11-02, 선택 대기): 사용자 요청 "C안의 UI에 A안의 컬러만 적용". `docs/design/concepts/d-warm-pieces/`는 C 사본에서 색 값·식별·토큰 카드만 바꿈(A 팔레트 값만 사용). 비교판을 4안(데스크톱 2열 A·B / C·D)으로, 리뷰 바에 D 전환 링크 추가, 게시 사본·README·dev 안내 문구를 4안으로 정정.
+- 디자인 시안 3안 정적 비교판 (2026-11-02, 선택 대기): `docs/design/concepts/`(정본)와 게시 사본 `frontend/public/design/` → dev `/design/`. A 따뜻한 기록장·B 차분한 일기장·C 조각 모음, 같은 샘플 하루, 저장 없음. 계획 `docs/plans/PLAN_design-preview.md`, 스토리보드·브리프 초안 `docs/product/04~05`. dev 안내 페이지에 시안 링크를 추가하고 배포 설명을 GitHub Actions로 정정.
+- `docs/PRD.md` 추가 (2026-11-02): PRD·MVP **검토 초안(사용자 응답 전)**. 권고 여정 "순간 기록→하루 정리→날짜별 다시 보기", 가정, 최소 슬라이스, MVP 제외 제안, AI 직접 작성/초안 비교(결정 대기), 질문 3개, 수용 기준 초안, 미정 조건. 같은 작업에서 `AGENTS.md` §3.1에 사용자 선택(pieceofdays의 위임 가능한 기획·구현·검증은 개별 Claude Cloud 세션 우선, 메인은 계획·검토·통합·서버 확인, 다른 서비스·전역 CLI 설정 미적용)을 추가. 선택용 정적 시안 선행 비교는 사용자 요청에 따라 가정으로 표시한다.
 - GitHub Actions 개발·운영 자동배포 구성 (2026-11-02): `dev` push 개발 배포, 성공한 dev를 `main`에 병합하면 운영 배포. 서비스 전용 SSH 키, SHA/tree·Compose 격리 검사, 후보 health 확인과 실패 시 이미지 복귀.
 - `docs/product/UI_UX_RESEARCH_2026-11-02.md` 추가 (2026-11-02): 디자인 소스·제품 레퍼런스 조사와 잠정 추천(미확정, PRD·시안 선택 전).
 - `README.md` 추가 (2026-11-02): 현재 운영(bind mount)·dev(정적 이미지) 상태, 도메인, 문서 진입, 읽기 전용 확인 명령.
@@ -25,6 +31,10 @@
 - Codex 작업용 `AGENTS.md` 템플릿 추가: `$karpathy-guidelines`, PRD 기반 계획 산출물, 디자인/개발/운영 검증 흐름 정의.
 
 ### Changed
+- 사용자 선택 반영 (2026-11-02): 기본 디자인 D, TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소·Konva, 개인용 하루 꾸미기 포함 MVP. 마켓·구매·정산은 후속으로 구분하고 현재 프로토타입·앱 구현 예정 상태를 README·AGENTS·PRD에 맞췄다.
+- GitHub 저장소 이름 변경 반영 (2026-11-02): 사용자가 `kindsr/pieceofdays`를 `kindsr/devscent-pieceofdays-main`으로 바꿈. `scripts/ops/deploy.py`의 `REPOSITORY`와 공개 문서의 현재 주소를 `https://github.com/kindsr/devscent-pieceofdays-main.git`으로 정정. 서비스명·도메인·컨테이너·브랜치는 그대로.
+- 운영 릴리스 경로 계약 변경 (2026-11-02): `scripts/ops/deploy.py`의 `STATE`를 홈 기준 `deployment/devscent-pieceofdays-main`으로 변경(로직·검증 정책 불변). 작업 트리 밖 설치본·서버 디렉터리·배포 설정 이전은 자동으로 바뀌지 않으며 메인이 별도 반영한다.
+- 공개 문서의 서버 운영 정보 축소 (2026-11-02): README·deploy/README·AGENTS·CLAUDE·plans에서 서버 절대/홈 경로, 설정·설치·백업·인증서 경로와 운영 명령을 제거하거나 논리 역할·placeholder(`<source-dir>`·`<dev-dir>`·`<release-dir>`)로 바꿈. 상세 서버 절차는 비공개 운영 문서가 정본.
 - Git 정본을 `kindsr/pieceofdays`로 전환하고 NAS·GitHub 초기 이력을 보존해 통합 (2026-11-02). 개발은 `~/development`, 운영은 `~/deployment/pieceofdays`의 고정 이미지로 분리하는 사용자 승인 반영.
 - `CLAUDE.md`·`AGENTS.md`를 공통 정본(`../_template/`, Linux 절대경로는 AGENTS 읽기 fallback) 참조와 서비스 고유 경계만 남긴 짧은 문서로 정리 (2026-11-02). 공통 docs 사본 `docs/01~05_*.md`는 원격 master `281fc06`에서 삭제됨(정본 `_template`).
 - `deploy/README.md`에 2026-11-02 점검 안내를 추가하고, 운영 bind mount라 커밋 전 호스트 편집이 즉시 반영된다는 사실을 명시 (2026-11-02).
