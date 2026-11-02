@@ -251,6 +251,9 @@ describe("getDesignVersion: owner only, render fallback for stored rows", () => 
           ["missing ink", { schema: 1, base: "d-warm-pieces@1", placements: [] }],
           ["known slot x 1.5", manifestRoot([cornerPlacement({ x: 1.5 })], [penStroke()])],
           ["ink width 3", manifestRoot([], [penStroke({ width: 3 })])],
+          // R1: 렌더에도 슬롯 개수 상한 적용, ink의 placement 전용 known slot은 형식 오류
+          ["board.corner 3 (limit 2)", manifestRoot([cornerPlacement(), cornerPlacement(), cornerPlacement()])],
+          ["ink in board.backdrop", manifestRoot([], [penStroke(), penStroke({ slot: "board.backdrop" })])],
         ];
         for (const [label, m] of nulls) {
           const id = await legacy(m);

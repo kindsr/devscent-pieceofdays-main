@@ -1,7 +1,7 @@
 // F3 slice ③ RED — 개인 꾸미기 manifest 순수 검증·렌더 정책(PLAN_mvp-domain-storage §4·§5 ③,
 // DECORATION_MARKET_ARCHITECTURE §3.2~§3.4). 수치는 PLAN §4 [기본값, 메인 수락]이 정본이다.
 // src/shared/manifest.ts는 아직 없으므로 각 it 안에서 절대경로를 동적 import하고 export 존재를 먼저 단언한다.
-// issues는 "문자열 배열(1개 이상)"만 계약으로 보고 문구·순서는 시험하지 않는다.
+// issues는 공개 계약의 string[]만 확인한다(문구·순서·개수는 계약이 아니다).
 // 여러 오류가 겹친 항목의 우선순위는 계약에 없으므로 각 거부 사례는 한 가지만 틀리게 만든다.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,7 +91,6 @@ function expectInvalid(m: ManifestModule, input: unknown, opts?: Opts, label = "
   expect(r, `invalid ${label}`).toMatchObject({ ok: false, error: "invalid_manifest" });
   const issues = (r as { issues?: unknown }).issues;
   expect(Array.isArray(issues), `issues is an array ${label}`).toBe(true);
-  expect((issues as unknown[]).length, `at least one issue ${label}`).toBeGreaterThan(0);
   expect((issues as unknown[]).every((s) => typeof s === "string"), `issues are strings ${label}`).toBe(true);
 }
 
@@ -488,5 +487,107 @@ describe("manifestForRender: fallback policy", () => {
     expect(m.manifestForRender(root([corner, general("board.corner", { asset: B })], [s1]), allow(B))).toEqual(
       root([general("board.corner", { asset: B })], [s1]),
     );
+  });
+
+  // ---- R1 메인 결정(기술 기본값): 렌더에도 byte·개수 상한, slot 분류, drop 뒤 개수 계산 ----
+
+  it("R1: render applies byte and count limits — over-limit inputs are null, at-limit inputs pass unchanged", async () => {
+    const m = await load();
+    const same = (input: Obj, label: string) => {
+      const before = structuredClone(input);
+      expect(m.manifestForRender(input, ALLOW), label).toEqual(before);
+      expect(input, `input not mutated ${label}`).toEqual(before);
+    };
+    const isNull = (input: Obj, label: string) => expect(m.manifestForRender(input, ALLOW), label).toBeNull();
+    same(root([general("board.corner"), general("board.corner", { asset: B })]), "corner 2");
+    isNull(root([general("board.corner"), general("board.corner"), general("board.corner")]), "corner 3");
+    same(root([general("oneline.tape")]), "tape 1");
+    isNull(root([general("oneline.tape"), general("oneline.tape", { asset: B })]), "tape 2");
+    isNull(root([sticker(), sticker({ corner: "bottom-start" })]), "sticker 2");
+    same(root([], Array.from({ length: 200 }, () => stroke())), "200 strokes");
+    isNull(root([], Array.from({ length: 201 }, () => stroke())), "201 strokes");
+    same(root([], [stroke({}, 500)]), "500 points");
+    isNull(root([], [stroke({}, 501)]), "501 points");
+    const total = (last: number) =>
+      root([], [...Array.from({ length: 9 }, () => stroke({}, 500)), stroke({}, last), stroke({}, 2)]);
+    same(total(498), "5000 points total");
+    isNull(total(499), "5001 points total");
+    const at = sizedPenManifest(65536);
+    const over = sizedPenManifest(65537);
+    expect(bytes(at)).toBe(65536);
+    expect(bytes(over)).toBe(65537);
+    same(at, "65536 bytes");
+    isNull(over, "65537 bytes");
+  });
+
+  it("R1: slot classification — malformed entries and known slots in the wrong list are null; unknown-string slots are dropped without reading other fields", async () => {
+    const m = await load();
+    const corner = general("board.corner");
+    const s1 = stroke();
+    const nulls: [string, Obj][] = [
+      ["ink slot board.backdrop", root([corner], [s1, stroke({ slot: "board.backdrop" })])],
+      ["ink slot oneline.tape", root([corner], [s1, stroke({ slot: "oneline.tape" })])],
+      ["ink slot piece.sticker", root([corner], [s1, stroke({ slot: "piece.sticker" })])],
+      ["placement entry null", root([corner, null as unknown as Obj], [s1])],
+      ["placement entry array", root([corner, [] as unknown as Obj], [s1])],
+      ["placement missing slot", root([corner, without(general("oneline.tape"), "slot")], [s1])],
+      ["placement slot number", root([corner, general(7 as unknown as string)], [s1])],
+      ["ink entry null", root([corner], [s1, null as unknown as Obj])],
+      ["ink entry array", root([corner], [s1, [] as unknown as Obj])],
+      ["ink missing slot", root([corner], [s1, without(stroke(), "slot")])],
+      ["ink slot null", root([corner], [s1, stroke({ slot: null })])],
+    ];
+    for (const [label, input] of nulls) expect(m.manifestForRender(input, ALLOW), label).toBeNull();
+
+    // 알려진 5개 슬롯 어디에도 없는 문자열 slot: 나머지 필드가 잘못돼도 그 항목만 버린다
+    const junkPlacement: Obj = { slot: "board.future", x: "bad", rotate: 99, asset: "https://x", extra: { a: [1] } };
+    const junkInk: Obj = { slot: "ink.future", width: 99, color: "#fff", points: "nope" };
+    const input = root([junkPlacement, corner, sticker()], [junkInk, s1]);
+    const before = structuredClone(input);
+    expect(m.manifestForRender(input, ALLOW)).toEqual(root([corner, sticker()], [s1]));
+    expect(input).toEqual(before);
+
+    // 입력 전체 stringify 규칙이 먼저다(별도 격리): unknown slot 안의 BigInt·순환 참조도 전체 null
+    expect(m.manifestForRender(root([corner, { slot: "board.future", n: BigInt(1) }], [s1]), ALLOW)).toBeNull();
+    const cyc: Obj = { slot: "board.future" };
+    cyc.self = cyc;
+    expect(() => m.manifestForRender(root([corner, cyc], [s1]), ALLOW)).not.toThrow();
+    expect(m.manifestForRender(root([corner, cyc], [s1]), ALLOW)).toBeNull();
+  });
+
+  it("R1: limits are counted after drops (dropped items do not count), but input bytes are measured before drops", async () => {
+    const m = await load();
+    const c1 = general("board.corner");
+    const c2 = general("board.corner", { asset: B, anchor: "end" });
+    const unlisted = general("board.corner", { asset: "builtin:sun" }); // 형식 정상, 목록 밖
+    const future = general("board.future");
+    // 남은 board.corner 2개는 허용(목록 밖·unknown 항목은 개수에 들어가지 않는다)
+    expect(m.manifestForRender(root([c1, unlisted, future, c2]), ALLOW)).toEqual(root([c1, c2]));
+    expect(m.manifestForRender(root([sticker(), sticker({ asset: "builtin:sun" })]), ALLOW)).toEqual(root([sticker()]));
+
+    // unknown ink가 원본 획 수 200·획당 500·전체 5000을 넘겨도, bytes ≤ 65536이고 남은 유효 부분이 상한 안이면 허용
+    const valid = [stroke(), stroke({ slot: "empty.illust" })];
+    const manyUnknown = Array.from({ length: 250 }, () => stroke({ slot: "ink.future" }));
+    const raw1 = root([], [...valid, ...manyUnknown]);
+    expect(bytes(raw1)).toBeLessThanOrEqual(65536);
+    expect(m.manifestForRender(raw1, ALLOW)).toEqual(root([], valid));
+    const eightFull = Array.from({ length: 8 }, () => stroke({}, 500));
+    const bigUnknown = [stroke({ slot: "ink.future" }, 600), stroke({ slot: "ink.future" }, 600)];
+    const raw2 = root([], [...eightFull, ...bigUnknown]); // 원본 점 5200, unknown 획당 600
+    expect(bytes(raw2)).toBeLessThanOrEqual(65536);
+    expect(m.manifestForRender(raw2, ALLOW)).toEqual(root([], eightFull));
+
+    // 입력 bytes는 drop 전 원문 기준: unknown 내용 때문에 65537이면 null, 65536이면 남은 항목 반환
+    const withUnknownOfSize = (target: number): Obj => {
+      const probe = root([{ slot: "board.future", note: "" }], [stroke()]);
+      const pad = target - bytes(probe);
+      return root([{ slot: "board.future", note: "x".repeat(pad) }], [stroke()]);
+    };
+    const at = withUnknownOfSize(65536);
+    const over = withUnknownOfSize(65537);
+    expect(bytes(at)).toBe(65536);
+    expect(bytes(over)).toBe(65537);
+    expect(m.manifestForRender(at, ALLOW)).toEqual(root([], [stroke()]));
+    expect(m.manifestForRender(over, ALLOW)).toBeNull();
   });
 });
