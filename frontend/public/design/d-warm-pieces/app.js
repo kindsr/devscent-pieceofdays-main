@@ -1,15 +1,21 @@
-/* 시안 D 화면 동작 — 시안 C와 같은 동작, 메모리 안에서만 바뀐다. 저장 없음. */
+/* 시안 D(선택안) 화면 동작 — 시안 C 동작 + 개별 조각 수정 + 기록 글꼴 설정. 메모리 안에서만 바뀐다. 저장 없음. */
 (function () {
   "use strict";
   var P = window.POD, S = window.POD_SAMPLE, esc = P.esc;
   var sample = P.clone(S.days);
   var first = [{ date: S.today, summary: "", moments: [] }];
-  var mode = "sample", editing = false, lastNewKey = null;
+  var mode = "sample", editing = false, lastNewKey = null, cur = { view: "today", date: null };
+  var editTarget = null, addDraft = null; // 수정 중인 조각 {date, idx}, 수정 전 추가 초안
+  var FONTS = [["gothic", "고딕", "기본 · D 화면과 같은 글꼴"], ["serif", "명조", "책처럼 차분하게"], ["hand", "손글씨", "손글씨 글꼴이 없는 기기는 고딕으로 보여요"]];
+  var recordFont = "gothic"; // 이 페이지 메모리에만 있다. 새로고침하면 고딕.
   var view = document.getElementById("view");
   var dlg = document.getElementById("compose");
   var form = document.getElementById("compose-form");
   var text = document.getElementById("compose-text");
   var err = document.getElementById("compose-err");
+  var titleEl = document.getElementById("compose-title"), submitEl = document.getElementById("compose-submit");
+  var timeEl = document.getElementById("compose-time"), hintEl = document.getElementById("compose-hint");
+  var ADD_HINT = hintEl.textContent;
   var NOTE = ["y", "m", "p"];
   var STAR = '<svg viewBox="0 0 56 56" aria-hidden="true" focusable="false"><path d="M28 6 L33 22 L50 22 L36 32 L41 49 L28 39 L15 49 L20 32 L6 22 L23 22 Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>';
 
@@ -20,14 +26,16 @@
 
   function piecesHTML(day, isToday) {
     var noteIdx = 0;
-    var items = day.moments.map(function (m) {
+    var items = day.moments.map(function (m, i) {
       var img = m.img ? S.images[m.img] : null;
       var nw = m.key && m.key === lastNewKey ? " is-new" : "";
+      var meta = '<div class="piece-meta"><time>' + m.time + '</time><button class="piece-edit" type="button" data-edit="' + day.date + "|" + i +
+        '" aria-label="' + label(day.date) + " " + m.time + ' 조각 수정">수정</button></div>';
       if (img) {
         return '<li class="piece photo' + nw + '"><img src="' + img.src + '" alt="' + esc(img.alt) + '" width="400" height="300">' +
-          '<p class="tag">예시 이미지 · 직접 그린 그림</p><time>' + m.time + "</time><p>" + esc(m.text) + "</p></li>";
+          '<p class="tag">예시 이미지 · 직접 그린 그림</p>' + meta + "<p>" + esc(m.text) + "</p></li>";
       }
-      return '<li class="piece note ' + NOTE[noteIdx++ % 3] + nw + '"><time>' + m.time + "</time><p>" + esc(m.text) + "</p></li>";
+      return '<li class="piece note ' + NOTE[noteIdx++ % 3] + nw + '">' + meta + "<p>" + esc(m.text) + "</p></li>";
     }).join("");
     if (isToday) items += '<li class="piece"><a class="add-tile" href="#write"><span class="plus" aria-hidden="true">+</span>조각 추가</a></li>';
     return '<ul class="pieces" aria-label="' + label(day.date) + '의 조각">' + items + "</ul>";
@@ -46,10 +54,11 @@
       (isToday ? '<button class="text-btn" type="button" id="sum-edit">' + (day.summary ? "고쳐 쓰기" : "한 줄 쓰기") + "</button>" : "") + "</section>";
   }
 
-  function boardHTML(day, isToday, sub) {
+  function boardHTML(day, isToday, sub, withSettings) {
     var n = day.moments.length;
     var head = '<header class="board-head"><h1 tabindex="-1">' + label(day.date) + '의 조각<span class="count">' + n + '<span class="sr-only">개</span></span></h1>' +
-      (sub ? '<p class="sub">' + sub + "</p>" : "") + "</header>";
+      (sub ? '<p class="sub">' + sub + "</p>" : "") +
+      (withSettings ? '<a class="text-btn set-link" href="#settings">기록 글꼴 설정</a>' : "") + "</header>";
     if (!n) {
       return head + '<section class="first" aria-labelledby="f-h">' + STAR +
         '<h2 id="f-h">첫 조각을 붙여 보세요</h2><p>사진 한 장이나 메모 한 줄이면 충분해요. 매일 채우지 않아도 괜찮아요.</p>' +
@@ -111,37 +120,76 @@
       '<section><h2>글꼴</h2>' +
       '<div class="type-sample"><p style="font-size:30px;font-weight:800">11월 2일 월요일의 조각</p><code>제목 · 고딕 24–30 / 800 · --font-ui</code></div>' +
       '<div class="type-sample"><p style="font-size:15px">공원 은행나무 길이 반쯤 노랗다.</p><code>조각 글 · 15 / 행간 1.55</code></div>' +
-      '<div class="type-sample"><p class="hand" style="font-size:22px">12:15 · 오늘을 한 줄로</p><code>손글씨는 시각·작은 이름표만 · --font-hand (나눔손글씨 펜이 없으면 고딕으로 대체)</code></div></section>' +
+      '<div class="type-sample"><p class="hand" style="font-size:22px">12:15 · 오늘을 한 줄로</p><code>손글씨는 시각·작은 이름표만 · --font-hand (나눔손글씨 펜이 없으면 고딕으로 대체)</code></div>' +
+      '<div class="type-sample"><p class="rec-text" style="font-size:15px">동네 국숫집 줄이 생각보다 짧았다.</p><code>기록 글꼴 · --font-record (조각 글·하루 한 줄·쓰는 칸만, 설정에서 고딕 기본/명조/손글씨)</code></div></section>' +
       '<section><h2>간격·모서리·구성 요소</h2><p class="hint">간격 8·12·20·32·48, 모서리 4(조각)·10(버튼), 테두리 2px, 조각 기울기 ±1° 이하(움직이지 않음).</p>' +
       '<div class="row" style="margin-top:12px"><a class="btn-main" href="#write">조각 추가</a><a class="btn-ghost" href="#days">모아보기</a></div></section></section>';
   }
 
+  function settingsHTML() {
+    var opts = FONTS.map(function (f) {
+      return '<label class="font-opt"><input type="radio" name="record-font" value="' + f[0] + '"' + (f[0] === recordFont ? " checked" : "") + ">" +
+        '<span class="font-name">' + f[1] + '</span><span class="font-desc">' + f[2] + '</span><span class="font-eg" data-f="' + f[0] + '" aria-hidden="true">가나다 하루의 조각</span></label>';
+    }).join("");
+    return '<header class="board-head"><h1 tabindex="-1">설정</h1><p class="sub">나에게 맞게</p></header>' +
+      '<section class="settings" aria-labelledby="font-h"><h2 id="font-h">기록 글꼴</h2>' +
+      '<p class="hint">조각 글·하루 한 줄·쓰는 칸에만 적용돼요. 메뉴·버튼·제목 글꼴과 화면 배치는 그대로예요.</p>' +
+      '<fieldset class="font-pick"><legend class="sr-only">기록 글꼴 고르기</legend>' + opts + "</fieldset>" +
+      '<div class="font-preview"><p class="lbl">미리보기</p><div class="note y sample"><time class="hand">12:15</time>' +
+      "<p>동네 국숫집 줄이 생각보다 짧았다. 멸치 국물 한 그릇에 몸이 풀렸다.</p></div></div>" +
+      '<div class="row"><button class="btn-ghost" type="button" id="font-reset">기본값(고딕)으로 되돌리기</button><a class="text-btn" href="#today">오늘로 돌아가기</a></div>' +
+      '<p class="hint">시안이라 이 화면 메모리에만 유지돼요. 새로고침하면 고딕으로 돌아가고 기기·계정에 저장되지 않아요.</p></section>';
+  }
+  function fontName(v) { return FONTS.filter(function (f) { return f[0] === v; })[0][1]; }
+  function setFont(v) {
+    recordFont = v;
+    if (v === "gothic") document.documentElement.removeAttribute("data-record-font");
+    else document.documentElement.setAttribute("data-record-font", v);
+  }
+
+  function paint(r) {
+    if (r.view === "days") view.innerHTML = daysHTML(r.date);
+    else if (r.view === "tokens") view.innerHTML = tokensHTML();
+    else if (r.view === "settings") view.innerHTML = settingsHTML();
+    else view.innerHTML = boardHTML(find(S.today), true, "오늘", true);
+  }
   function render(r) {
     if (r.view === "empty") { if (mode !== "first") first = [{ date: S.today, summary: "", moments: [] }]; mode = "first"; }
     else if (r.view === "today" || r.view === "tokens") mode = "sample";
-    editing = false;
-    if (r.view === "days") view.innerHTML = daysHTML(r.date);
-    else if (r.view === "tokens") view.innerHTML = tokensHTML();
-    else view.innerHTML = boardHTML(find(S.today), true, "오늘");
+    editing = false; cur = r;
+    paint(r);
     document.querySelectorAll("[data-tab]").forEach(function (t) {
       var on = (t.getAttribute("data-tab") === "days") === (r.view === "days");
-      if (on && r.view !== "tokens") t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
+      if (on && r.view !== "tokens" && r.view !== "settings") t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
     });
     if (r.view === "write") openCompose();
     else {
       if (dlg.open) dlg.close();
+      endEdit();
       var target = r.view === "days" && r.date ? document.getElementById("picked-h") : null;
       if (target) target.scrollIntoView({ block: "start" });
     }
   }
 
   function rerenderToday(sel) {
-    view.innerHTML = boardHTML(find(S.today), true, "오늘");
+    paint(cur);
     var f = view.querySelector(sel); if (f) f.focus();
   }
   view.addEventListener("click", function (e) {
     if (e.target.id === "sum-edit") { editing = true; rerenderToday("#sum-text"); }
     if (e.target.id === "sum-cancel") { editing = false; rerenderToday("#sum-edit"); }
+    var ed = e.target.closest("[data-edit]");
+    if (ed) { var k = ed.getAttribute("data-edit").split("|"); openEdit(k[0], Number(k[1])); }
+    if (e.target.id === "font-reset") {
+      setFont("gothic");
+      view.querySelector('input[name="record-font"][value="gothic"]').checked = true;
+      P.announce("기록 글꼴을 기본값 고딕으로 되돌렸어요.");
+    }
+  });
+  view.addEventListener("change", function (e) {
+    if (e.target.name !== "record-font") return;
+    setFont(e.target.value);
+    P.announce("기록 글꼴을 " + fontName(e.target.value) + "(으)로 바꿨어요. 이 화면 메모리에만 유지되고 새로고침하면 고딕으로 돌아갑니다.");
   });
   view.addEventListener("submit", function (e) {
     if (e.target.id !== "sum-form") return;
@@ -157,24 +205,76 @@
       (img ? '<img src="' + img.src + '" alt="">' : '<span class="blank" aria-hidden="true">메모만</span>') + "<span>" + o[1] + "</span></label>";
   }).join("");
 
-  function openCompose() {
-    document.getElementById("compose-time").textContent = P.nowTime();
-    err.hidden = true; text.removeAttribute("aria-invalid");
-    // 비교판 미리보기(embed): showModal은 포커스를 옮기고, 닫을 때 연 사람의 포커스로 복원해 부모 조작을 끊는다.
-    // 그래서 open 속성으로만 겹쳐 보이고, 사용자가 이 미리보기를 직접 조작 중일 때만 입력칸에 포커스를 준다.
+  function imgVal() { return form.querySelector('input[name="img"]:checked').value || null; }
+  function setImg(v) { form.querySelectorAll('input[name="img"]').forEach(function (i) { i.checked = i.value === (v || ""); }); }
+  function showDialog() {
     if (P.embed) { if (!dlg.open) dlg.setAttribute("open", ""); if (!P.quiet()) text.focus(); return; }
     if (!dlg.open) dlg.showModal();
     text.focus();
   }
+  /* 수정 상태: 같은 대화상자를 쓰되 제목·버튼·시각을 바꾸고, 추가 중이던 초안은 따로 보관한다 */
+  function openEdit(date, idx) {
+    var day = find(date), m = day && day.moments[idx];
+    if (!m) return;
+    if (!editTarget) addDraft = { text: text.value, img: imgVal() };
+    editTarget = { date: date, idx: idx };
+    titleEl.textContent = "조각 고치기"; submitEl.textContent = "고치기";
+    timeEl.textContent = m.time;
+    hintEl.textContent = "시안이라 이 화면에만 고쳐지고 저장되지 않아요. 기록 시각은 그대로예요.";
+    text.value = m.text; setImg(m.img);
+    err.hidden = true; text.removeAttribute("aria-invalid");
+    showDialog();
+  }
+  function endEdit() {
+    if (!editTarget) return;
+    editTarget = null;
+    titleEl.textContent = "조각 붙이기"; submitEl.textContent = "붙이기"; hintEl.textContent = ADD_HINT;
+    text.value = addDraft ? addDraft.text : ""; setImg(addDraft ? addDraft.img : null); addDraft = null;
+    err.hidden = true; text.removeAttribute("aria-invalid");
+  }
+  function leaveEdit(msg, repaint) {
+    var key = editTarget.date + "|" + editTarget.idx;
+    if (dlg.open) dlg.close();
+    endEdit();
+    if (repaint) {
+      var sum = document.getElementById("sum-text"), keep = sum ? sum.value : null;
+      paint(cur);
+      if (keep !== null && document.getElementById("sum-text")) document.getElementById("sum-text").value = keep;
+    }
+    var b = view.querySelector('[data-edit="' + key + '"]');
+    if (b && !P.quiet()) b.focus();
+    P.announce(msg);
+  }
+  function cancelCompose() {
+    if (editTarget) leaveEdit("고치기를 취소했어요. 조각은 그대로예요.", false);
+    else closeTo(homeHash());
+  }
+
+  function openCompose() {
+    endEdit();
+    timeEl.textContent = P.nowTime();
+    err.hidden = true; text.removeAttribute("aria-invalid");
+    // 비교판 미리보기(embed): showModal은 포커스를 옮기고, 닫을 때 연 사람의 포커스로 복원해 부모 조작을 끊는다.
+    // 그래서 open 속성으로만 겹쳐 보이고, 사용자가 이 미리보기를 직접 조작 중일 때만 입력칸에 포커스를 준다.
+    showDialog();
+  }
   function closeTo(hash) { if (dlg.open) dlg.close(); if (location.hash !== hash) location.hash = hash; }
-  document.getElementById("compose-close").addEventListener("click", function () { closeTo(homeHash()); });
-  dlg.addEventListener("cancel", function (e) { e.preventDefault(); closeTo(homeHash()); });
+  document.getElementById("compose-close").addEventListener("click", cancelCompose);
+  dlg.addEventListener("cancel", function (e) { e.preventDefault(); cancelCompose(); });
+  // 비교판 미리보기는 open 속성으로만 열어 cancel 이벤트가 없다. Esc를 직접 받는다.
+  dlg.addEventListener("keydown", function (e) { if (P.embed && e.key === "Escape") { e.preventDefault(); cancelCompose(); } });
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     var v = text.value.trim();
     if (!v) {
       err.hidden = false; text.setAttribute("aria-invalid", "true"); text.focus();
       P.announce("메모를 한 줄 적어 주세요.");
+      return;
+    }
+    if (editTarget) {
+      var m = find(editTarget.date).moments[editTarget.idx];
+      m.text = v; m.img = imgVal(); // 시각·순서·개수는 그대로
+      leaveEdit("조각을 고쳤어요. 이 화면에만 반영되고 저장되지 않아 새로고침하면 사라집니다.", true);
       return;
     }
     lastNewKey = "n" + Date.now();
@@ -184,5 +284,6 @@
     P.announce(P.NOT_SAVED);
   });
 
+  P.addView("settings", "설정");
   P.onRoute(render);
 })();
