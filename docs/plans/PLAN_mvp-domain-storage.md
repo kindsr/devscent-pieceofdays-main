@@ -1,6 +1,6 @@
 # PLAN — F3 도메인·PostgreSQL 저장 (공급자 중립)
 
-- 상태: **slice ① 구현·CI 검증 완료. slice ②·③은 계획.** 실행 결과는 §9에 기록한다.
+- 상태: **slice ①·② 구현·CI 검증 완료. slice ③은 계획.** 실행 결과는 §9·§10에 기록한다.
 - 기준: `dev` `d4d1b5c`. F2가 통합됐고 CI·개발 자동배포·컨테이너/HTTPS 검증까지 끝났다.
   - 실서버 DB는 없고, 앱은 정적 dev에 연결돼 있지 않다.
   - **F3 baseline(동결): 단위 71 · DB 57 · Node 24/26 prod 6·E2E 12 · root 42.**
@@ -125,8 +125,8 @@ export function createPgDiaryStore(db: Db, opts?: { now?: () => Date }): DiarySt
 2. `id`가 UUID가 아님 → `not_found`
 3. `expectedVersion`이 안전한 정수 ≥ 1이 아님 → `invalid_version`. 한 줄 생성 때만 `null`을 허용한다.
 4. `date`가 `parseLocalDate`에 실패하거나 서울 오늘보다 미래 → `invalid_date`. 지난 날은 허용한다.
-5. 본문: `String.prototype.trim()` 후 코드포인트 수(`[...s].length`, DB `char_length`와 같다)가 조각은 1~300, 한 줄은 0~300이어야 한다. 아니면 `invalid_body`.
-6. SQL. 정상 UUID지만 없는 사용자는 FK 오류(23503)를 `not_found`로 바꾼다. raw 오류는 밖으로 내보내지 않는다.
+5. 본문: `String.prototype.trim()` 후 코드포인트 수(`[...s].length`, DB `char_length`와 같다)가 조각은 1~300, 한 줄은 0~300이어야 한다. 아니면 `invalid_body`다. 저장하는 값도 trim한 결과다.
+6. SQL. 정상 UUID지만 없는 사용자는 FK 오류(23503)를 `not_found`로 바꾼다. raw 오류는 밖으로 내보내지 않는다. 한 줄의 `null`+빈 본문 no-op도 사용자가 없으면 `not_found`다.
 
 **규칙:**
 - 작성: `occurred_at = now()`(주입된 시계), `local_date = seoulLocalDate(occurred_at)`. 호출자는 날짜를 넘기지 않는다. 수정할 때는 시각·날짜를 바꾸지 않는다.
@@ -324,7 +324,7 @@ slice마다 **RED 커밋(`TEST_PATTERNS` 경로만) → 독립 runner로 실패 
 | 사용자별 시간대 | [가정] `Asia/Seoul` |
 | client→server 전이 import | lint 경로 규칙의 한계. F4/F5에서 강화 검증 |
 | `lintText` 가상 경로·`$1::uuid::text` 동작 | slice ① CI에서 확인 |
-| 서울 시간대 과거 이력 | 현재 helper는 UTC+9 고정. slice ②에서 IANA 기반으로 보완하고 PG 읽기와 비교 |
+| 서울 시간대 과거 이력 | slice ②에서 IANA 기반으로 보완했고 Node 24/26·PG18.6의 1960·1988년 이력 일치를 검증(§10) |
 
 ## 9. Slice ① 실행 결과 (2026-11-02)
 
@@ -334,3 +334,13 @@ slice마다 **RED 커밋(`TEST_PATTERNS` 경로만) → 독립 runner로 실패 
 - 앱 Pool은 지연 생성하고 실제 HTTP·인증·UI 저장 연결은 하지 않았다. UI 네 곳은 공유 타입 import만 바꿨다. 실서버 DB·권한·migration·배포 프로그램은 변경하지 않았다.
 - 독립 검토의 비차단 P2(UTC+9 고정)는 slice ②의 RED/PG 시각 비교에서 보완한다. [IANA 이력](https://data.iana.org/time-zones/tzdb/asia)과 명시한 `Asia/Seoul`을 따르며 Date 입력 범위를 임의로 제한하지 않는다.
 - 다음 slice의 BASE는 이 결과가 통합된 dev의 정확한 SHA로 동결한다. 앱은 계속 정적 시안과 별개이며 실제 로그인·지급 연결은 F4다. FullCheck 스크립트 전체 실행과 실서버 DB 적용은 미실행이다.
+
+## 10. Slice ② 실행 결과 (2026-11-02)
+
+- 기준 `a6e35e4` → RED `a30cb464cc68f943fef1134a1aa59f1f8e3f093b` → GREEN `e36fe7d1f9e20127fc3f61889eddd0f758c5f06c`. RED는 시험 4파일만, GREEN은 제품 6파일만 바꿨고 두 범위 관문과 `diff --check`를 통과했다. 독립 Cloud 검토가 두 단계의 CI 원문과 계약을 대조했고 차단 문제 없이 수락했다.
+- [CI `41538131128`](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41538131128): Node 24·26 각각 단위 83·운영 경계 6·E2E 12개, PG18.6 DB 88개 통과(건너뜀 0). [배포 계약 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41538131166)는 42개와 Compose 검사를 통과했다. 기존 단위 81·DB 69개도 유지됐다.
+- 조각·하루 정리 CRUD, 소유자 조건, 버전 충돌·큰 안전 정수 비교, 한 줄 표 8칸, 월 경계·잘못된 값의 SQL 미실행을 검증했다. 두 app 연결에서 수정·삭제·한 줄 생성/수정 경합의 단일 승자를 확인했다. 삭제 우선/수정 우선 두 분기를 모두 강제 실행하는 장치는 없다.
+- `Intl`의 명시 IANA `Asia/Seoul`과 PG 읽기 시각이 1960년 UTC+8:30·1988년 서머타임을 포함해 일치했다. slice ①의 UTC+9 고정 P2는 해소됐다. 본문은 trim한 결과를 저장하고, 미래 판정의 오늘은 주입 시계의 서울 날짜다.
+- `DiaryMoment.version`·`DiaryDay.summaryVersion`을 필수화하고 제품 fixture·빈 날짜 대체값을 보정했다. D 화면·스타일, F2 스키마·권한, 환경 변수·의존성은 바꾸지 않았다. 실제 인증·HTTP·화면 저장 연결·실서버 DB 적용과 FullCheck 스크립트 전체 실행은 미실행이다.
+- 월별 결과의 일자 순서는 아직 계약이 없다. 화면에서의 정렬은 F5에서 정한다. 조각·한 줄은 별도 SELECT로 읽으며 같은 snapshot을 보장하지 않는다.
+- 다음 slice ③은 개인 꾸미기 manifest·불변 버전·기록 글꼴 저장이다. BASE는 이 결과가 통합된 dev의 정확한 SHA로 동결한다.
