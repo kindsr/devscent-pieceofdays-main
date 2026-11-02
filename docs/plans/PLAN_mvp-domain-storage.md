@@ -98,6 +98,7 @@ completeSuccessfulLogin(db: Db, identity: LoginIdentity): Promise<Result<LoginOu
 
 ```ts
 // app/src/shared/diary.ts — slice ① GREEN에서 이동(필드 그대로), slice ② GREEN에서 version 필드 추가
+import type { LocalDate } from "./local-date";
 export type SampleImageKey = "window" | "noodle" | "ginkgo";
 export type DiaryMoment = { id: string; time: string; text: string; image: SampleImageKey | null; version: number };       // version: ②
 export type DiaryDay = { date: LocalDate; summary: string; summaryVersion: number | null; moments: DiaryMoment[] };    // summaryVersion: ②
@@ -236,6 +237,7 @@ applyDesign(db: Db, userId: string, versionId: string | null): Promise<Result<nu
   - `src/app/x.tsx`의 `@/server/context`는 허용된다.
   - `src/ui/d/x.tsx`의 `@/shared/diary`는 허용된다.
 - 위험: 가상 경로가 타입 기반 lint에 걸려 lint 자체가 실패하면 그것은 RED가 아니라 환경 실패다. 이 경우 멈추고 메인에 보고한다.
+- ESLint 설정 첫 로드를 고려해 각 lint fixture 시험의 제한은 30초로 둔다. 시간 초과도 환경 실패로 구분한다.
 
 **①-b 로그인·지급:**
 - 새 identity → `createdUser=true`, `granted=true`, 잔액 10, 원장 1행, `first_login_at`이 채워진다.
@@ -273,7 +275,7 @@ applyDesign(db: Db, userId: string, versionId: string | null): Promise<Result<nu
 slice마다 **RED 커밋(`TEST_PATTERNS` 경로만) → 독립 runner로 실패 이유 확인 → GREEN 커밋(제품 경로만, 시험 변경 0)** 순서다. `TEST_PATTERNS`에 제품 경로를 넣지 않는다.
 
 **RED 작성 규칙 (B1, F2 `sql-policy.test.ts`의 `loadPolicy` 선례):**
-- 새 제품 모듈은 정적으로 import하지 않는다. 시험 파일 위쪽에 절대경로 상수(`path.join(APP_DIR, "src/server/…")`)를 두고, **각 `it` 안에서 `await import(/* @vite-ignore */ MOD)`** 한다.
+- 새 제품 모듈과 기존 모듈의 새 export(`seoulLocalDate`·`seoulTime`)는 정적으로 import하지 않는다. 시험 파일 위쪽에 절대경로 상수(`path.join(APP_DIR, "src/server/…")`)를 두고, **각 `it` 안에서 `await import(/* @vite-ignore */ MOD)`** 한 뒤 함수 존재를 단언한다.
 - 필요한 공개 타입은 시험 파일 안에 **최소 로컬 계약 타입**으로 둔다. 그래서 TS2307이 나지 않고 typecheck와 lint가 통과한다.
 - **RED로 인정하는 조건:**
   - lint·typecheck 성공
@@ -287,7 +289,7 @@ slice마다 **RED 커밋(`TEST_PATTERNS` 경로만) → 독립 runner로 실패 
 - RED가 `diary-memory-store.test.ts`의 `const days: DiaryDay[] = [...]`를 **타입 주석 없는 변수**로 바꾼다. 신선한 리터럴이 아니므로 excess property 검사가 없다.
 - 같은 RED에서 `version: 1`, `summaryVersion`(본문이 있으면 1, 빈 값이면 `null`)을 미리 넣고, 쓰지 않게 된 `DiaryDay` 타입 import를 지운다.
 - 현재 `LocalDate`는 string alias이고 이미지는 `null`이라, 구조 타입으로 기존 `createMemoryDiaryStore` 인자와 호환된다.
-- GREEN은 `shared/diary.ts`의 타입, `fixture.ts`, 필요하면 `store.memory.ts`만 바꾼다.
+- GREEN의 기존 코드 타입 대응은 `shared/diary.ts`, `fixture.ts`, `src/app/page.tsx`의 빈 날짜 대체값(`summaryVersion: null`), 필요하면 `store.memory.ts`다. 쓰기 port·PG 구현은 §3 파일 표를 따른다. 시험 파일은 바꾸지 않는다.
 - version 필수화는 slice ②에서만 한다. slice ①의 타입 이동은 필드를 그대로 옮긴다.
 
 | 단계 | 명령 (저장소 루트) | 예상 |

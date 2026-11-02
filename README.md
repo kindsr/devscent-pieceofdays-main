@@ -47,6 +47,7 @@ docker compose -f docker-compose.yml -p devscent-pieceofdays-main config --quiet
 - [기술 구성 결정](docs/product/00_TECH_STACK_DECISION.md), [MVP 범위](docs/product/03_MVP.md), [첫 구현 계획](docs/plans/PLAN_mvp-foundation.md)
 - [하루 꾸미기·마켓 확장 구조](docs/product/DECORATION_MARKET_ARCHITECTURE.md), [단계별 개발 계획](docs/plans/PLAN_product-evolution.md)
 - [데이터 계약](docs/product/DATA_CONTRACT.md), [DB·마이그레이션 시험 계획](docs/plans/PLAN_mvp-database.md)
+- [도메인·기록 저장 구현 계획](docs/plans/PLAN_mvp-domain-storage.md): 첫 로그인 지급·기록 CRUD·개인 꾸미기 저장을 순서대로 구현
 - [Actions 전환 계획](docs/plans/PLAN_github-actions-deployment.md), [초기 경로 분리 검토](docs/plans/PLAN_workspace-deployment-separation.md)
 - [CHANGELOG.md](CHANGELOG.md)
 
