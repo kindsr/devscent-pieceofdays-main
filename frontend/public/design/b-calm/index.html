@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>시안 B 차분한 일기장 — pieceofdays</title>
+  <link rel="stylesheet" href="../shared/review.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="review-bar" data-concept="b-calm"></div>
+  <div class="layout">
+    <header class="mbar">
+      <button class="mbar-btn" type="button" id="toc-btn" aria-expanded="false" aria-controls="index">목차</button>
+      <a class="brand" href="#today">pieceofdays</a>
+      <a class="mbar-btn" href="#write">쓰기</a>
+    </header>
+    <aside class="index" id="index">
+      <div class="index-head">
+        <a class="brand" href="#today">pieceofdays</a>
+        <p class="index-sub">일기장</p>
+      </div>
+      <a class="btn-ink" href="#write">새 순간 쓰기</a>
+      <nav aria-label="날짜 목차" id="index-list"></nav>
+    </aside>
+    <main id="view" tabindex="-1"></main>
+  </div>
+  <p id="live" class="sr-only" aria-live="polite"></p>
+
+  <script src="../shared/sample.js"></script>
+  <script src="../shared/review.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -20,7 +20,7 @@
 - [PRD](docs/PRD.md)는 사용자 응답 전 검토 초안이다. 운영은 준비중 페이지, dev는 정적 개발 환경이며 앱 스택·DB는 정하지 않았다(DB 없음).
   과거 문서의 PostgreSQL14 등 특정 DB를 이 서비스의 선택으로 보지 않는다.
 - 운영: `docker-compose.yml`의 `pieceofdays-comingsoon`은 준비중 페이지를 이미지로 빌드한다. 전환 전 bind mount 방식은 §3의 주의를 확인한다.
-- dev: `docker-compose.dev.yml`의 `pieceofdays-frontend-dev`가 `frontend/`를 정적 이미지로 빌드한다.
+- dev: `docker-compose.dev.yml`의 `pieceofdays-frontend-dev`가 `frontend/`를 정적 이미지로 빌드한다. `/design/`은 [선택 대기 중인 시안 3안](docs/design/concepts/README.md) 비교판이다.
 - 현행 경로·도메인·확인 명령은 [README.md](README.md), 배포 절차는 [deploy/README.md](deploy/README.md)다.
 
 ## 2. 다음 진행 순서
@@ -31,6 +31,9 @@
 3. 공통 09 §2.4: 스토리보드 → 디자인 브리프 → 서로 다른 시안 3안·사용자 선택 → 선택안 하이파이 아트보드와
    `docs/design/README.md` 핸드오프. 텍스트 와이어프레임·하이파이 문서를 필수 산출물로 만들지 않는다.
 4. 공통 09 §2.5 구현 계획(`docs/plans/PLAN_<작업명>.md`) → 구현·시험.
+
+2026-11-02 사용자 요청으로 선택용 정적 시안은 가정을 표시해 개발 도메인에 먼저 게시한다.
+시안 게시는 제품 요구·AI 사용 방식·기술 스택·디자인 선택의 확정을 뜻하지 않는다.
 
 ## 3. GitHub·개발·운영 배포 경계
 
