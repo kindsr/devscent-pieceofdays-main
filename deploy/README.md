@@ -1,54 +1,42 @@
-# pieceofdays 배포 구성 (준비중 단계)
+# pieceofdays GitHub Actions 배포
 
-> 전체 워크플로우는 `~/server-runbook/15_DEV_PROD_WORKFLOW_RUNBOOK.md` 참고.
+2026-11-02 사용자 승인으로 이 서비스는 GitHub dev/main 자동배포를 사용한다. 공통 수동 운영 배포 규칙의 서비스별 예외다.
+전환 계획과 수락 기준은 [PLAN](../docs/plans/PLAN_github-actions-deployment.md)이다. 아래 기록은 구축 계약이며 실제 성공은 Actions 실행·서버 기록·HTTPS로 판정한다.
 
-> 2026-11-02 점검: 작업·dev·운영 경로 분리는 [PLAN](../docs/plans/PLAN_workspace-deployment-separation.md)의
-> **권고안·미적용**이다. 아래 현행 구성이 유효하다. 이 문서의 배포·인증서 명령은 운영 작업 설명이며,
-> 문서 정리 요청만으로 실행하지 않는다.
+## 반영 흐름
 
-## 현재 상태 (2026-08-20)
+1. GitHub 작업 브랜치에서 개발하고 `dev`에 반영한다.
+2. `dev` push가 Actions의 검사와 개발 배포를 실행한다. 개발 경로는 `~/development/devscent-pieceofdays-main`, URL은 `https://dev.pieceofdays.com`이다.
+3. 개발 검증을 마친 `dev`를 PR로 `main`에 병합한다. Actions가 운영 배포를 실행하며, 서버는 해당 소스 tree가 성공한 개발 배포와 같은지 확인한다.
+4. 운영 실행 자료는 `~/deployment/pieceofdays`에 둔다. 소스 bind mount 없이 고정 이미지로 `pieceofdays.com`을 제공한다.
 
-| 구분 | 도메인 | 내용 | 소스 |
-|---|---|---|---|
-| 운영 | https://pieceofdays.com | 정적 "준비중" 페이지 (`pieceofdays-comingsoon`) | `~/projects/devscent-pieceofdays-main` (master) |
-| 운영(보조) | https://pieceofdays.co.kr (+www), https://www.pieceofdays.com | 301 → https://pieceofdays.com | nginx conf 에서 처리 |
-| 개발 | https://dev.pieceofdays.com | dev 스택 (`pieceofdays-frontend-dev`, 자동배포) | `~/development/devscent-pieceofdays-main` (dev) |
+앱은 아직 없으며 현재 준비중/개발 안내 페이지를 배포한다. 개발·운영 Compose project는 각각 `pieceofdays-dev`·`devscent-pieceofdays-main`, 컨테이너는 기존 이름을 유지한다.
 
-- 두 스택 모두 호스트 포트 게시 없음 — 공용 nginx → `edge` 네트워크로만 접근.
-- nginx conf: `/opt/infra/nginx/conf/services-enabled/99-pieceofdays.conf`, `99-pieceofdays-dev.conf`
-  (원본은 이 디렉터리의 동명 파일).
+## 서버와 GitHub 설정
 
-## 도메인 정책 (canonical: pieceofdays.com)
+- GitHub 정본: `https://github.com/kindsr/pieceofdays.git`. 서버의 두 체크아웃 origin도 같은 주소다.
+- GitHub 호스팅 러너만 사용한다. 배포 job은 `dev` 또는 `production` 환경을 선택하며 각 환경은 `dev`·`main` 브랜치에만 허용된다.
+- 각 환경의 `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_SSH_KEY`는 GitHub Secrets에 둔다. 값은 문서에 적지 않는다.
+- 서버 키는 환경별로 분리하고 `authorized_keys`에서 `restrict`와 고정 환경 강제 명령을 건다. PTY·포워딩·일반 쉘을 제공하지 않는다.
+- 검토한 `scripts/ops/deploy.py`만 `~/deployment/bin/pieceofdays-deploy.py`에 설치한다. 설정은 `~/deployment/pieceofdays/deploy.json`이며 후보 저장소가 설치본을 자동 갱신하지 않는다.
+- 배포 프로그램은 서비스 공통 파일 잠금 안에서 SHA·tree·상태를 검사한다. 실행 Compose는 신뢰된 프로그램이 생성하며 다른 서비스·호스트 마운트·포트·특권을 허용하지 않는다.
+- 기존 1분 폴링 목록의 pieceofdays 한 줄만 제외한다. 공유 크론·다른 서비스는 유지한다.
 
-- `pieceofdays.com` 을 canonical 도메인으로 사용한다.
-- `pieceofdays.co.kr`(+www), `www.pieceofdays.com` 은 nginx 에서
-  `301 https://pieceofdays.com$request_uri` 로 경로/쿼리를 보존한 채 리다이렉트한다.
-- 이유: 중복 콘텐츠 방지(SEO), 세션/쿠키 도메인 단일화, 분석·로그 단일화,
-  OAuth 콜백 등 외부 연동 URI 단순화.
-- 인증서는 도메인별 2장 (`pieceofdays.com` = com+www / `pieceofdays.co.kr` = co.kr+www)
-  으로 발급해 갱신 실패 영향을 서로 분리한다. 갱신은 공용 certbot 크론이 일괄 처리.
+## 최초 전환과 복귀
 
-## 운영(준비중 페이지) 배포
+- 전환 전 Git 번들·현행 이미지 ID·Compose·서빙 HTML 해시를 `~/backups/pieceofdays/github-actions-20261102T124526Z/`에 보관했다.
+- 운영 HTML은 기존 nginx base 위에 COPY한 독립 복귀 이미지를 준비하고, dev는 기존 실행 이미지로 동결한 bootstrap 기록을 사용한다. 첫 교체 전에 복귀 자료가 없으면 배포를 거부한다.
+- 이미지 교체 후 health·HTTPS 본문·이미지 ID가 일치해야 성공한다. 실패하면 직전 동결 Compose/이미지로 복귀하고 복귀 자체도 검증한다.
+- `~/projects`에서 `docker compose up/build/pull`로 운영을 직접 변경하지 않는다. 자동 배포와 수동 작업의 경합을 만들지 않는다.
+- DB·migration은 현재 없다. 앱·DB를 추가할 때는 백업·확장/수축 migration·호환성 관문을 먼저 설계한다.
 
-```bash
-cd ~/projects/devscent-pieceofdays-main
-docker compose up -d
-```
+## 도메인과 인증서
 
-PLAN 채택 후 bind 없는 새 운영 Compose가 master에 들어오면, 실제 전환·검증이 끝날 때까지 위 명령을
-`~/projects`에서 실행하지 않는다(PLAN §4-2).
+canonical은 `pieceofdays.com`이며 `.co.kr`(+www)·`www.pieceofdays.com`은 경로·쿼리를 보존한 301이다.
+dev는 접근 제한+noindex다. nginx upstream 이름을 유지하므로 이번 전환에서 DNS·TLS·공용 nginx 설정을 바꾸지 않는다.
+운영 nginx dev conf의 `security-headers.inc` 차이는 별도 현황이며 이번 원격 전환에 섞지 않는다.
 
-운영 컨테이너는 이 체크아웃의 `deploy/comingsoon/html`을 bind mount(`:ro`)한다. 따라서
-`deploy/comingsoon/html/index.html`을 이 경로에서 **저장하는 순간** 커밋·재시작 없이 운영 화면에 반영된다.
-`:ro`는 컨테이너 안의 쓰기만 막으며 호스트 편집의 반영을 막지 않는다. 이 파일 수정은 운영 변경으로 보고
-사용자 승인 뒤 진행하고, 반영 후 커밋해 운영 내용과 Git을 일치시킨다.
-
-## dev 배포
-
-`origin/dev`에 push된 새 커밋을 `~/development/devscent-pieceofdays-main`이 감지해 1분 주기로 자동배포한다.
-(작업 경계 제안·미적용, AGENTS §3: 채택 후 개발·커밋은 `~/projects` 아래 별도 worktree에서 하고 `dev`를 push한다.
-`~/development` 체크아웃은 자동배포가 `ff-only`로 받는 배포본이라 직접 편집하지 않는다.)
-로그: `~/development/ops/dev_autodeploy.log` / 빌드 로그: `dev_autodeploy.build.log`
+아래 절은 초기 발급 기록이다. 자동 배포는 인증서 발급이나 nginx 설정 복사를 실행하지 않는다.
 
 ## 인증서 발급 절차 (기록)
 
@@ -79,10 +67,3 @@ docker cp deploy/nginx/99-pieceofdays-dev.conf nginx:/etc/nginx/conf.d/services-
 docker exec nginx chown 1000:1000 /etc/nginx/conf.d/services-enabled/99-pieceofdays.conf /etc/nginx/conf.d/services-enabled/99-pieceofdays-dev.conf
 docker exec nginx nginx -t && docker exec nginx nginx -s reload
 ```
-
-## 실서비스 전환 시 (개발 완료 후)
-
-1. `docker-compose.yml` 을 실제 앱 스택(web/api, loopback 포트는 `04_PORT_EXPOSURE_POLICY.md` 에서 확정)으로 교체
-2. `deploy/nginx/99-pieceofdays.conf` 의 proxy 대상을 앱 컨테이너로 변경 후 재설치
-   (canonical/리다이렉트 블록 구조는 그대로 유지)
-3. `pieceofdays-comingsoon` 컨테이너 제거, 운영 문서(`02_SERVICE_INVENTORY.md` 등) 갱신

@@ -1,7 +1,7 @@
 # PLAN — pieceofdays 작업·dev·운영 경로 분리
 
 - 작성: 2026-11-02
-- **상태: 권고안·미적용.** 채택·이전·배포 승인 기록이 아니다. 아래 "현행"이 계속 유효하다.
+- **상태: 초기 권고 기록.** 이후 사용자가 GitHub Actions dev/main 자동배포를 승인했다(2026-11-02). 실제 전환 계약·검증은 [후속 계획](PLAN_github-actions-deployment.md)을 따른다. 아래 현행은 전환 전 조사 시점의 상태다.
 - 범위: pieceofdays 한 서비스. 도메인은 유지한다.
 - 근거: 2026-11-02 메인 배정 읽기 전용 조사(`docker inspect` 라벨·마운트, `curl`, `git ls-remote`/`fetch`)의 실측값을 §1에 옮겼다.
   조사 보고 원문은 임시 파일이라 보존되지 않는다. 대조할 정본 경로: `~/server-runbook/15_DEV_PROD_WORKFLOW_RUNBOOK.md` §1~4,
