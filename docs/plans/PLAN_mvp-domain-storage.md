@@ -1,6 +1,6 @@
 # PLAN — F3 도메인·PostgreSQL 저장 (공급자 중립)
 
-- 상태: **slice ①·② 구현·CI 검증 완료. slice ③은 계획.** 실행 결과는 §9·§10에 기록한다.
+- 상태: **slice ①·②·③ 구현·CI·독립 검증 완료.** 실행 결과는 §9~§11에 기록한다. 실제 인증·화면 저장 연결은 F4·F5, 앱 배포는 F6다.
 - 기준: `dev` `d4d1b5c`. F2가 통합됐고 CI·개발 자동배포·컨테이너/HTTPS 검증까지 끝났다.
   - 실서버 DB는 없고, 앱은 정적 dev에 연결돼 있지 않다.
   - **F3 baseline(동결): 단위 71 · DB 57 · Node 24/26 prod 6·E2E 12 · root 42.**
@@ -181,9 +181,13 @@ asset 허용 목록:
 - 기본값이 빈 목록이므로 asset을 배치하면 거부된다. 펜만 쓴 manifest는 유효하다.
 - F5가 검증한 registry를 서버·편집기 설정으로 주입한다. 허용 목록을 HTTP 사용자 값으로 받지 않는다.
 
-**렌더 정책 (`manifestForRender`)**
-- 다음은 전체 `null`(기본 D)이다: 모르는 `schema`/`base`, 루트 구조 오류, 알려진 항목의 잘못된 수치·형식.
-- 다음은 그 항목만 버린다: 모르는 slot, 허용 목록에 없는 asset.
+**렌더 정책 (`manifestForRender`, 메인 기술 기본값 R1)**
+- 필터 전에 원문 `JSON.stringify`의 UTF-8 크기를 검사한다. 직렬화 실패·65,536바이트 초과는 전체 `null`(기본 D), 정확히 65,536바이트는 허용한다.
+- 모르는 `schema`/`base`·루트 구조 오류, 객체가 아닌 항목·문자열이 아닌/누락된 slot은 전체 `null`이다. 알려진 slot을 잘못된 종류에 쓴 경우(ink의 `board.backdrop`·`oneline.tape`·`piece.sticker`)도 전체 `null`이다.
+- 알려진 5개 슬롯에 없는 문자열 slot은 그 항목만 제외하고 나머지 필드는 해석하지 않는다. 단 원문 직렬화·크기 검사는 적용한다.
+- 알려진 항목은 수치·형식을 먼저 검사한다. 잘못됐으면 asset 허용 목록 여부와 무관하게 전체 `null`이다. 형식이 정상인데 asset만 목록 밖이면 그 항목만 제외한다.
+- 제외한 뒤 남은 항목으로 슬롯별 배치 수·획 수·획당 점·전체 점을 센다. 상한 초과는 전체 `null`이며 일부를 잘라내지 않는다. 제외한 항목은 개수에 넣지 않고 남은 순서·입력은 유지한다.
+- `validateManifest`는 같은 형식·상한을 엄격히 검사하며 모르는 slot·목록 밖 asset도 거부한다. `issues`는 문자열 배열이고 문구·순서·개수는 공개 계약이 아니다.
 - D 안전 영역으로 자르는(clip) 처리는 F5 렌더러가 한다.
 
 ```ts
@@ -203,6 +207,7 @@ applyDesign(db: Db, userId: string, versionId: string | null): Promise<Result<nu
 - `getPreferences`: 행이 없거나 사용자가 비UUID면 `gothic`/`null`이다.
 - 쓰기 3종(`saveDesignVersion`·`setFontKey`·`applyDesign`):
   - 비UUID 사용자와 없는 사용자는 `not_found`다. FK 오류(23503)는 밖으로 내보내지 않는다.
+  - 비UUID 사용자·무효 manifest/font는 SQL 전에 거부한다. 여러 종류의 오류가 겹칠 때의 검증 우선순위는 계약으로 고정하지 않는다.
   - `setFontKey`는 `parseFontKey`(F1) 결과가 `null`이면 `invalid_font`다.
   - `applyDesign`은 먼저 소유자 조건으로 버전을 조회하고, 없으면 `not_found`다. 그 뒤 `INSERT … ON CONFLICT (user_id) DO UPDATE SET applied_design_version_id`로 적용하며 복합 FK는 마지막 방어선이다. `null`이면 해제한다.
   - 글꼴과 적용 값은 서로의 열을 건드리지 않는다.
@@ -344,3 +349,12 @@ slice마다 **RED 커밋(`TEST_PATTERNS` 경로만) → 독립 runner로 실패 
 - `DiaryMoment.version`·`DiaryDay.summaryVersion`을 필수화하고 제품 fixture·빈 날짜 대체값을 보정했다. D 화면·스타일, F2 스키마·권한, 환경 변수·의존성은 바꾸지 않았다. 실제 인증·HTTP·화면 저장 연결·실서버 DB 적용과 FullCheck 스크립트 전체 실행은 미실행이다.
 - 월별 결과의 일자 순서는 아직 계약이 없다. 화면에서의 정렬은 F5에서 정한다. 조각·한 줄은 별도 SELECT로 읽으며 같은 snapshot을 보장하지 않는다.
 - 다음 slice ③은 개인 꾸미기 manifest·불변 버전·기록 글꼴 저장이다. BASE는 이 결과가 통합된 dev의 정확한 SHA로 동결한다.
+
+## 11. Slice ③ 실행 결과 (2026-11-02)
+
+- 기준 `0d7191d` → RED `633bd46`·보완 `88814b68baf249c73f81790168e2e49f57bf4055` → GREEN `754a8ec`. 시험 3파일과 신규 제품 3파일의 소유를 나눴고 각 범위 관문을 통과했다. 독립 검토로 `issues` 길이 조건을 제거하고 위 R1 렌더 정책을 구체화했다.
+- 독립 코드 검토에서 비정상 배열(sparse)의 예외 P2가 확인돼 회귀 RED `c9e211731135d6793258b4dc768ffefd231097df`(시험 2파일만) → 수정 GREEN `c69384f7d03dfd967d7716518b1fe30427ffe6f4`(manifest 순회 1파일만)로 보완했다. 각 GREEN에서 시험 변경은 0이며 최종 독립 검토에서 P2 해소·새 지적 없음을 확인했다.
+- [최종 CI `41548015623`](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41548015623): Node 24.22.2·26.13.0 각각 단위 103·운영 경계 6·E2E 12개, PG18.6 DB 99개 통과(건너뜀 0). [배포 계약 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41548015606)는 42개와 Compose 검사를 통과했다. 최초 F3 기준 단위 71·DB 57개도 유지됐다.
+- 64 KiB 경계·필터 전 크기/필터 후 개수, 슬롯·asset 분류, 불변 private 버전·본인 접근·목록, 설정 기본값·열별 upsert와 두 연결의 동시 글꼴/적용 저장을 검증했다. 저장은 자동 적용하지 않으며 화면 조율은 F5다.
+- sparse placements/ink·정상 항목+구멍의 네 가지 입력은 예외 없이 `invalid_manifest`, 렌더 `null`, 저장 SQL 0회·행 불변으로 확인했다. 알려진 형식 오류를 asset 허용 목록보다 먼저 검사하는 순서는 독립 코드 검토로 확인했으며 이 조합의 별도 회귀 it은 없다.
+- 새 migration·권한·환경 변수·의존성·D UI 변경은 없다. 실제 인증·HTTP·화면 저장·편집기·registry·안전 영역 clip·실서버 DB 적용과 FullCheck 스크립트 전체 실행은 미실행이다. 실제 로그인 제공자와 세션은 F4, 글꼴 동봉·편집기·화면 연결은 F5, 앱 배포는 F6에서 진행한다.

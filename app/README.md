@@ -1,6 +1,6 @@
 # pieceofdays app (F1 화면·F2 DB·F3 도메인 개발)
 
-Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기, 공급자 중립 첫 로그인 지급 함수·기록 저장 모듈을 검증했다. **실제 로그인·화면의 PG 저장 연결·이미지 저장소는 아직 구현 전**이다. 지급 함수를 실제 인증 성공 사건에 연결하는 것은 F4다. MVP 완료가 아니다.
+Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기, 첫 로그인 지급·기록 CRUD·개인 꾸미기 버전·기록 글꼴 저장 코어를 검증했다. **실제 로그인·화면의 PG 저장 연결·이미지 저장소는 아직 구현 전**이다. 지급 함수를 실제 인증 성공 사건에 연결하는 것은 F4다. MVP 완료가 아니다.
 루트 `frontend/`(정적 nginx 이미지)와 별개이며, **현재 dev 정적 배포(`dev.pieceofdays.com`)에 자동으로 포함되지 않는다**.
 앱 배포 전환은 PLAN_mvp-foundation F6(메인 주도)에서 따로 정한다.
 
@@ -17,9 +17,10 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 | `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부 |
 | `src/server/context.ts` | 요청의 기록 문맥. 고정 사용자 모드가 아니면 "연결 안 됨" |
 | `src/server/diary/` | 읽기·쓰기 port(`store.ts`)와 PG CRUD 구현, 메모리 구현·예시 기록(로컬·시험 전용) |
-| `src/server/account/`, `src/server/credit/` | identity별 계정 해석·첫 성공 로그인 10개 1회 지급·잔액 조회(실제 인증 연결 전) |
+| `src/server/account/`, `src/server/credit/` | identity별 계정 해석·첫 성공 로그인 10개 1회 지급·잔액 조회, 글꼴·디자인 적용 설정(실제 인증 연결 전) |
+| `src/server/decoration/` | 본인 소유 개인 디자인 버전의 저장·목록·읽기 |
 | `src/server/db/`, `migrations/` | 앱 Pool·트랜잭션, SQL 정책 검사·migration 실행기와 8개 테이블·권한·원장 보호 |
-| `src/shared/` | UI 공유 타입, 글꼴 허용 목록, 날짜 파싱·서울 날짜/시각 |
+| `src/shared/` | UI 공유 타입, 글꼴 허용 목록, 날짜 파싱·서울 날짜/시각, 꾸미기 manifest 검증·렌더용 필터 |
 | `tests/unit/`, `tests/db/`, `tests/e2e/`, `tests/prod/` | Vitest 단위·일회용 PG18 통합 시험 / Playwright E2E / 운영 모드 경계 smoke |
 | `docs/screenshots/` | F1 확인 스크린샷(로컬 고정 사용자 모드, 375/768/1440) |
 
@@ -83,11 +84,19 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 `createPgDiaryStore(db, { now })`는 조각·하루 정리의 읽기·작성·수정·삭제를 제공한다. 소유자 조건과 기대 버전으로 타인 접근·낡은 수정 요청을 거부하며, 본문은 앞뒤 공백을 제거한 뒤 코드포인트 수로 검사한다. 시각·날짜는 작성 때 고정하고 수정 때 유지한다. 서울 날짜는 명시한 IANA 시간대로 계산하며, 읽은 시각은 PG의 `time_zone` 변환을 따른다. 이미지 값은 `null`이다.
 
-[F3 slice ② CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41538131128): 단위 83·DB 88개, Node 24·26 각각 운영 경계 6·E2E 12개 통과. 두 app 연결의 버전 경합, 한 줄 생성·삭제 조건, 소유권, 검증 실패 시 SQL 미실행, 1960·1988년 서울 시간대 이력까지 확인했다. 현재 화면은 이 저장 모듈을 호출하지 않는다. 다음 개인 꾸미기·기록 글꼴 저장은 [F3 계획](../docs/plans/PLAN_mvp-domain-storage.md)을 따른다.
+[F3 slice ② CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41538131128): 단위 83·DB 88개, Node 24·26 각각 운영 경계 6·E2E 12개 통과. 두 app 연결의 버전 경합, 한 줄 생성·삭제 조건, 소유권, 검증 실패 시 SQL 미실행, 1960·1988년 서울 시간대 이력까지 확인했다. 현재 화면은 이 저장 모듈을 호출하지 않는다.
+
+## 개인 꾸미기·설정 저장 코어 (F3 slice ③)
+
+`validateManifest`는 D의 슬롯·토큰·좌표와 64 KiB·획·점 수 상한을 검사한다. 장식 asset 허용 목록은 기본 빈 목록이며 펜만 쓴 manifest는 허용한다. 렌더용 필터는 원문 크기를 먼저 검사하고, 모르는 슬롯·형식이 정상인 목록 밖 asset만 제외한다. 알려진 항목의 형식 오류나 남은 항목의 상한 초과는 기본 D로 돌아가게 한다. 실제 clip·그리기 편집기·스티커 registry는 F5다.
+
+개인 버전은 검증 후 매번 새 private 행으로 저장하고 본인만 조회·적용할 수 있다. 글꼴 저장과 디자인 적용은 각자 담당 열만 바꾸므로 동시에 호출해도 서로의 값을 덮어쓰지 않는다. 저장과 적용은 별도 함수이며 화면에서의 조율은 후속이다.
+
+[최종 F3 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41548015623): 단위 103·DB 99개, Node 24·26 각각 운영 경계 6·E2E 12개 통과. 개인 버전 권한·목록·기본값·동시 설정 저장과 비정상 배열 입력을 Result로 거부하는 회귀를 확인했다. 각 TDD 구간·독립 검토·미실행 범위는 [F3 계획](../docs/plans/PLAN_mvp-domain-storage.md)에 기록한다.
 
 ## 한계 (제품 구현)
 
-- 실제 로그인·앱의 PG 기록 저장 연결·버킷 없음. 지급 트랜잭션·기록 CRUD는 도메인 함수로 검증했으며 실제 인증 연결은 F4다. 화면의 조각 삭제·하루 꾸미기 편집기는 아직 없다.
+- 실제 로그인·앱의 PG 저장 연결·버킷 없음. 지급·기록·개인 꾸미기·글꼴 저장은 도메인 함수로 검증했으며 실제 인증 연결은 F4다. 화면의 조각 삭제·하루 꾸미기 편집기는 아직 없다.
 - 기록 변경은 화면 이동·새로고침으로 초기화된다(위 실행 모드 참고). F1에서는 영구 저장이나 클라이언트 전역 store를 추가하지 않는다.
 - Konva는 스티커 1개 끌기·펜 획 1개 스모크만 확인했다(`/dev/konva-smoke`, 시험 전용).
 - 글꼴은 시스템 글꼴 스택만 쓴다(동봉·라이선스 확인은 F5). 시험 VM에는 한국어 명조·손글씨 글꼴이 없어 글꼴 차이는 속성 값으로만 확인했다.

@@ -3,7 +3,7 @@
 개인의 일상에서 순간을 기록하고 하루를 정리하여 스토리텔링을 만들어가는 감정정리 장소, pieceofdays
 
 운영은 준비중 페이지이며, 개발 환경에서는 사용자가 선택한 **D안(C 화면 구성 + A 색)**을 확인할 수 있다. 조각별 수정과 기록 글꼴 설정은 현재 메모리에서 동작하는 프로토타입이며 새로고침하면 초기화된다.
-실제 앱은 **TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소**, 그리기는 **Konva**로 개발한다(2026-11-02 사용자 선택). [Next.js 앱 골격](app/README.md)에 D 화면과 시험·빌드 기반을 만들었다. 이 앱은 현재 dev의 정적 시안 배포와 별개다. MVP는 기록·하루 정리·다시 보기와 개인용 **하루 꾸미기**를 포함하고, 디자인 마켓·구매·정산은 이후 단계다. 실제 계정·영구 저장·그리기 편집기는 아직 구현 전이다.
+실제 앱은 **TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소**, 그리기는 **Konva**로 개발한다(2026-11-02 사용자 선택). [Next.js 앱](app/README.md)에 D 화면과 시험·빌드 기반, PG 저장 코어를 만들었다. 이 앱은 현재 dev의 정적 시안 배포와 별개다. MVP는 기록·하루 정리·다시 보기와 개인용 **하루 꾸미기**를 포함하고, 디자인 마켓·구매·정산은 이후 단계다. 실제 로그인·화면의 영구 저장 연결·그리기 편집기는 아직 구현 전이다.
 
 - [선택한 D 화면](https://dev.pieceofdays.com/design/d-warm-pieces/) · [기록 글꼴 설정](https://dev.pieceofdays.com/design/d-warm-pieces/#settings)
 - [20초 세로 홍보영상](https://dev.pieceofdays.com/promo/) · [MP4 내려받기](https://dev.pieceofdays.com/promo/pieceofdays-d-vertical.mp4)
@@ -11,7 +11,7 @@
 
 홍보영상은 예시 기록으로 서비스를 사용하는 모습을 보여 주는 콘셉트 영상이다. 제품 진행과 작업 경계는 [AGENTS.md](AGENTS.md)를 따른다.
 
-DB 기반(F2)은 8개 테이블·권한·migration 실행기까지 일회용 PostgreSQL 18에서 검증했다. 실제 앱의 기록 저장·로그인·첫 로그인 지급 연결은 후속이며, 자세한 검증 결과는 [앱 문서](app/README.md)에 있다.
+DB 기반(F2)과 첫 로그인 지급·기록 CRUD·개인 꾸미기 버전·기록 글꼴 저장 코어(F3)를 일회용 PostgreSQL 18에서 검증했다. 단위 103·DB 99개와 앱 회귀를 통과했으며, 실제 인증·화면 저장 연결은 후속이다. 자세한 검증 결과는 [앱 문서](app/README.md)에 있다.
 
 ## GitHub와 자동배포
 
