@@ -23,23 +23,34 @@ export function dateLabel(date: LocalDate): string {
   return `${p.m}월 ${p.d}일 ${p.w}요일`;
 }
 
-/** [가정] 사용자 시간대 Asia/Seoul. 1988년 이후 일광절약시간이 없어 UTC+9 고정이며 프로세스 TZ와 무관하다. */
-const SEOUL_OFFSET_MS = 9 * 60 * 60 * 1000;
+/**
+ * [가정] 사용자 시간대 Asia/Seoul. 명시한 IANA 시간대로 계산하므로 프로세스 TZ와 무관하고
+ * 과거 이력(1988 서머타임 UTC+10, 1954~1961 UTC+8:30 등)도 tzdb를 따른다.
+ */
+const SEOUL_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
-function seoulWallClock(instant: Date): Date {
-  return new Date(instant.getTime() + SEOUL_OFFSET_MS);
+function seoulPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
+  const part = parts.find((p) => p.type === type);
+  if (!part) throw new Error(`Asia/Seoul date part ${type} is missing`);
+  return part.value;
 }
-
-const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** 순간(instant)의 서울 날짜 YYYY-MM-DD. */
 export function seoulLocalDate(instant: Date): LocalDate {
-  const t = seoulWallClock(instant);
-  return `${String(t.getUTCFullYear()).padStart(4, "0")}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+  const parts = SEOUL_PARTS.formatToParts(instant);
+  return `${seoulPart(parts, "year").padStart(4, "0")}-${seoulPart(parts, "month")}-${seoulPart(parts, "day")}`;
 }
 
 /** 순간(instant)의 서울 시각 24시간제 HH:MM. 초는 버린다. */
 export function seoulTime(instant: Date): string {
-  const t = seoulWallClock(instant);
-  return `${pad2(t.getUTCHours())}:${pad2(t.getUTCMinutes())}`;
+  const parts = SEOUL_PARTS.formatToParts(instant);
+  return `${seoulPart(parts, "hour")}:${seoulPart(parts, "minute")}`;
 }
