@@ -1,5 +1,7 @@
 # pieceofdays
 
+개인의 일상에서 순간을 기록하고 하루를 정리하여 스토리텔링을 만들어가는 일기장.
+
 DevScent 서비스 pieceofdays의 저장소다. 아직 PRD가 없고 운영·dev 모두 정적 placeholder 단계다.
 앱 스택·DB는 정하지 않았다(DB 없음). 진행 순서는 [AGENTS.md](AGENTS.md) §2를 따른다.
 
