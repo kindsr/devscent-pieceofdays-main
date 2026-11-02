@@ -2,7 +2,8 @@
 
 - **결정:** [TECH_STACK_OPTIONS](TECH_STACK_OPTIONS.md)의 A안. TypeScript + React/Next.js(서버 기능 포함) + PostgreSQL 18 + 서비스 전용 비공개 이미지 저장소 + Konva(react-konva).
 - **선택자:** 사용자. **일자:** 2026-11-02. 메인이 추천안 A를 명시적으로 선택했다고 전달했다.
-- **승인 범위:** 기술 스택과 MVP 범위. 이 선택으로 **프레임워크·패키지 설치는 허용**된다(PLAN_mvp-foundation §1.1의 호환 확인 후). 공용 서버 설정, 배포 프로그램 변경, 서버 dev/prod DB·버킷 생성은 승인 범위가 아니다. 이 PR 시점에는 아무것도 설치·생성하지 않았다.
+- **승인 범위:** 사용자는 앱 개발 시작과 추천 스택을 승인했다. 따라서 이 앱(`app/`) 전용 프레임워크·패키지 설치는 구현 작업에서 진행할 수 있고, 별도 승인을 기다릴 대상이 아니다(PLAN_mvp-foundation §1.1의 호환 확인 후 설치). 공용 서버 설정 변경, 다른 서비스 영향, 배포 권한 확대는 이 승인과 별개다.
+- **이번 담당의 범위:** 문서만 작성했다. 그래서 이 PR에서는 아무것도 설치·생성하지 않았다.
 - 후속 실행 계획: [PLAN_mvp-foundation](../plans/PLAN_mvp-foundation.md). 제품 단계: [PLAN_product-evolution](../plans/PLAN_product-evolution.md). 도메인 설계: [DECORATION_MARKET_ARCHITECTURE](DECORATION_MARKET_ARCHITECTURE.md).
 
 ## 1. 목적과 근거
@@ -43,7 +44,10 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
 ## 3. 데이터·저장소·권한 계약
 
 - **DB:** PostgreSQL 18. **dev와 prod는 서로 다른 DB(데이터·계정·비밀값 분리)**를 쓴다. dev 데이터를 prod로 복사하지 않는다.
-  다른 서비스와 DB나 계정을 공유하지 않는다. 실행 형태는 [미정]이며 메인이 비공개 런북에 따라 정한다(서비스 전용 컨테이너인지, 기존 DB 호스트 안의 전용 DB인지).
+  다른 서비스와 DB나 계정을 공유하지 않는다.
+- **실행 형태 [기본 추천]:** 새로 두는 공유 PostgreSQL 18 인스턴스 안에 **서비스·환경별 전용 DB**(pieceofdays dev용, prod용)를 만들고, 각 DB에 전용 계정을 둔다.
+  - 실제 프로비저닝(인스턴스·DB·계정 생성, 백업 설정)은 별도 운영 절차로 메인이 비공개 런북에 따라 수행한다.
+  - 실제 서버 값은 공개 문서에 쓰지 않는다.
 - **DB 계정 최소 권한:**
   - 마이그레이션 계정: DDL만.
   - 앱 실행 계정: 자기 스키마의 DML만. `emotion_ledger`에는 `INSERT`·`SELECT`만 주고 `UPDATE`·`DELETE`는 주지 않는다.
