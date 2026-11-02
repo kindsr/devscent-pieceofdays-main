@@ -60,7 +60,12 @@ export function runMigrateCli(args: string[], databaseUrl: string): Promise<CliR
       [CLI_PATH, ...args],
       {
         cwd: APP_DIR,
-        env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", POD_MIGRATE_DATABASE_URL: databaseUrl },
+        env: {
+          NODE_ENV: "test",
+          PATH: process.env.PATH ?? "",
+          HOME: process.env.HOME ?? "",
+          POD_MIGRATE_DATABASE_URL: databaseUrl,
+        },
         timeout: 60_000,
         encoding: "utf8",
         maxBuffer: 4 * 1024 * 1024,
