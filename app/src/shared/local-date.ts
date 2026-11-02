@@ -22,3 +22,24 @@ export function dateLabel(date: LocalDate): string {
   const p = dateParts(date);
   return `${p.m}월 ${p.d}일 ${p.w}요일`;
 }
+
+/** [가정] 사용자 시간대 Asia/Seoul. 1988년 이후 일광절약시간이 없어 UTC+9 고정이며 프로세스 TZ와 무관하다. */
+const SEOUL_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function seoulWallClock(instant: Date): Date {
+  return new Date(instant.getTime() + SEOUL_OFFSET_MS);
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** 순간(instant)의 서울 날짜 YYYY-MM-DD. */
+export function seoulLocalDate(instant: Date): LocalDate {
+  const t = seoulWallClock(instant);
+  return `${String(t.getUTCFullYear()).padStart(4, "0")}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+}
+
+/** 순간(instant)의 서울 시각 24시간제 HH:MM. 초는 버린다. */
+export function seoulTime(instant: Date): string {
+  const t = seoulWallClock(instant);
+  return `${pad2(t.getUTCHours())}:${pad2(t.getUTCMinutes())}`;
+}

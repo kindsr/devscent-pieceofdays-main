@@ -1,4 +1,4 @@
-import type { SampleImageKey } from "@/server/diary/store";
+import type { SampleImageKey } from "@/shared/diary";
 
 /** 앱 동봉 예시 이미지(D 시안에서 직접 그린 SVG). 실제 사진이 아니다. */
 export const SAMPLE_IMAGES: Record<SampleImageKey, { src: string; alt: string; name: string }> = {

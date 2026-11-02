@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import type { DiaryDay, SampleImageKey } from "@/server/diary/store";
+import type { DiaryDay, SampleImageKey } from "@/shared/diary";
 import { dateLabel } from "@/shared/local-date";
 import { SAMPLE_IMAGES } from "./sample-images";
 

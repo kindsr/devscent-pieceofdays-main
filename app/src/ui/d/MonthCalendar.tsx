@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { DiaryDay } from "@/server/diary/store";
+import type { DiaryDay } from "@/shared/diary";
 import { WEEK, dateLabel } from "@/shared/local-date";
 import { SAMPLE_IMAGES } from "./sample-images";
 

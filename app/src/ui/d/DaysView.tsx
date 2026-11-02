@@ -1,4 +1,4 @@
-import type { DiaryContext } from "@/server/context";
+import type { DiaryContext } from "@/shared/diary";
 import { dateParts } from "@/shared/local-date";
 import { DayBoard } from "./DayBoard";
 import { MonthCalendar } from "./MonthCalendar";
