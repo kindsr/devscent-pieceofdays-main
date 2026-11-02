@@ -15,6 +15,7 @@ import json
 import os
 import pathlib
 import shutil
+import stat
 import sys
 import tempfile
 import unittest
@@ -287,6 +288,23 @@ class ReleaseRollbackTests(unittest.TestCase):
         self.assertTrue(self.pending.exists(), "복귀 실패 시 다음 배포가 복구할 pending이 남아야 한다")
         self.assertEqual(json.loads(self.pending.read_text())["sha"], OLD_SHA)
         self.assertNotEqual(self.recorded_current_sha(), SHA, "실패한 새 릴리스가 current로 기록됐다")
+
+    def test_release_directories_are_private_even_with_group_writable_umask(self):
+        # 운영 실측: umask 002에서 STATE/releases·releases/production이 775로 만들어져
+        # 다음 배포의 trusted_file 경로 검사가 막혔다. 만들어진 경로는 모두 700이어야 한다.
+        self.new_verify_fails = False
+        previous_umask = os.umask(0o002)
+        try:
+            self.run_deploy()
+        finally:
+            os.umask(previous_umask)
+        releases = self.state / "releases"
+        env_dir = releases / self.ENV
+        leaves = [p for p in env_dir.iterdir() if p.is_dir()] if env_dir.is_dir() else []
+        self.assertEqual(len(leaves), 1, "이번 배포의 릴리스 폴더가 하나 있어야 한다")
+        for path in (releases, env_dir, leaves[0]):
+            with self.subTest(path=str(path.relative_to(self.state))):
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
 
     def test_failed_rollback_verification_also_preserves_pending(self):
         def verify(record, env, settings):
