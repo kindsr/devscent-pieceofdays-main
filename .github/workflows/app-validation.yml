@@ -1,0 +1,63 @@
+name: Validate pieceofdays app (F1)
+
+# app/ 전용 검사. 배포 job·배포 키·Secrets를 쓰지 않는다. 기존 deploy.yml과 별개다.
+on:
+  pull_request:
+    paths: ["app/**", ".github/workflows/app-validation.yml"]
+  push:
+    branches: [dev, main]
+    paths: ["app/**", ".github/workflows/app-validation.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["26.13.0", "24.22.2"]
+    defaults:
+      run:
+        working-directory: app
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      # actions/checkout v6.1.0 (official tag commit, resolved with git ls-remote 2026-11-02)
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      # actions/setup-node v6.5.0 (official tag commit, resolved with git ls-remote 2026-11-02)
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install (lockfile only)
+        run: npm ci
+      - name: Dependency tree and peers
+        run: npm ls --all
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Fixed local user is refused in a production build
+        run: |
+          if POD_LOCAL_FIXTURE=1 npx next build > fixture-build.log 2>&1; then
+            echo "production build accepted POD_LOCAL_FIXTURE=1"; exit 1
+          fi
+          grep -q "POD_LOCAL_FIXTURE=1 is refused in phase-production-build" fixture-build.log
+      - name: Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: E2E (Konva smoke, D screens 375/768/1440)
+        run: npx playwright test

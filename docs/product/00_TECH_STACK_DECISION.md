@@ -38,6 +38,24 @@ PLAN_mvp-foundation F1의 호환 확인(§1.1)을 거친 뒤 아래 기준으로
 | Konva / react-konva | **konva 10.x**(npm `latest` 10.9.1), **react-konva 19.x**(npm `latest` 19.3.2, peer `react ^19.3.0`) | react-konva의 메이저 버전은 React 메이저 버전과 같아야 하고 브라우저 전용이라는 공식 문서 내용 | https://konvajs.org/docs/react/index.html , https://registry.npmjs.org/react-konva |
 | PostgreSQL | **18**(현재 18.6) | 지원 종료 2030-11-14. 각 메이저 버전은 5년 지원하며, 최신 마이너 버전을 쓰라는 공식 권고 | https://www.postgresql.org/support/versioning/ |
 
+### 2.1 F1에서 정확히 고정한 버전 (2026-11-02, `app/package.json`·`package-lock.json`)
+
+| 구성 | 고정 | 비고 |
+|---|---|---|
+| Node.js | 26.13.0(`app/.nvmrc`, CI 기준) · 24.22.2(CI 함께 실행) | 26.13.0은 v26 첫 LTS 릴리스(2026-10-28). `engines` `^24.22.2 \|\| >=26.13.0` |
+| npm | Node 동봉(26.13.0 → 11.20.0, 24.22.2 → 11.19.1) | `engine-strict`, `save-exact`(app `.npmrc`) |
+| next / eslint-config-next | 16.4.3 | 16.4.4가 확인 당일(2026-11-02) 출시돼 직전 패치 사용 |
+| react / react-dom | 19.3.1 / 19.3.1 | |
+| react-konva / konva | 19.3.2 / 10.9.1 | peer `react ^19.3.0`, `konva ^10` 충족 |
+| typescript | 6.0.3 | typescript-eslint peer `<6.1.0` 충족 |
+| @types/react / @types/react-dom / @types/node | 19.3.0 / 19.3.0 / 24.12.0 | @types/node는 지원 하한(24)에 맞춤 |
+| eslint | 9.39.5 | npm deprecated(지원 종료) 표시. ESLint 10은 eslint-plugin-react·jsx-a11y·import peer 범위 밖이라 9 유지. 플러그인이 10을 지원하면 올린다 |
+| vitest | 5.0.5 | 5.1.0이 확인 당일 출시돼 직전 패치 사용 |
+| @playwright/test | 1.63.0 | 저장소의 홍보영상 도구와 같은 버전 |
+
+확인: Node 26.13.0·24.22.2 각각 깨끗한 복사본에서 `npm ci`, `npm ls --all`(peer 문제 없음), lint·typecheck·unit·build·E2E 통과.
+`npm audit --omit=dev` 0건. 개발 전용 lint 체인(minimatch)에 moderate 16건. lockfile 라이선스는 대부분 MIT·Apache-2.0·ISC이며, Next 이미지 최적화용 선택 의존성(sharp libvips)이 LGPL-3.0-or-later, lightningcss가 MPL-2.0이다.
+
 라이선스: npm 레지스트리 메타데이터상 next·konva·react-konva는 MIT다. 설치 시 lockfile 기준으로 의존성 전체 라이선스를 다시 확인한다.
 npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 공식 문서 기준이다.
 

@@ -152,8 +152,20 @@
 
 마켓·구매·정산 구현, 전문 드로잉 도구, 별도 백엔드 플랫폼(Python 서버·Redis·큐), 외부 AI 연동, 공용 서버 설정 변경, 서버 dev/prod DB·버킷 생성(메인 담당).
 
-## 10. F1 실행 결과 (진행 중 — Claude Cloud 하위 구현, 작업 브랜치 `claude/nextjs-foundation-mvp-0p73cn`)
+## 10. F1 실행 결과 (Claude Cloud 하위 구현, 작업 브랜치 `claude/nextjs-foundation-mvp-0p73cn`)
 
-- 기준: `origin/dev` `e5ebd58`(통합 `c82c2d2` 포함). 결과는 Draft PR로 반환하며 dev/main 반영·배포는 메인이 판단한다.
-- 진행: §1.1 호환 확인·버전 고정 완료(`app/package.json`·`package-lock.json`), 경계 시험 RED 확인. 이후 최소 GREEN·화면 골격·Konva 스모크·CI 순서로 진행한다.
-- 최종 결과·검증 명령·종료 코드는 완료 시 이 절에 갱신한다.
+- 기준: `origin/dev` `e5ebd58`(통합 `c82c2d2` 포함). Draft PR로 반환하며 dev/main 반영·배포는 메인이 판단한다.
+- **F1은 앱 골격이다.** 실제 로그인·영구 저장·DB·버킷·원장은 없고 MVP 완료가 아니다. 앱은 현재 dev 정적 배포에 포함되지 않는다.
+- 버전: [00_TECH_STACK_DECISION §2.1](../product/00_TECH_STACK_DECISION.md). §1.1 통과 조건 확인 결과:
+  - `npm ls --all` peer 문제 없음, `next build` 성공(Node 26.13.0·24.22.2).
+  - Konva는 `src/ui/decorate/`의 클라이언트 모듈에서 `ssr: false`로만 불러온다. ESLint `no-restricted-imports`로 그 밖의 import를 막고, 서버 HTML에 캔버스가 없음을 E2E로 확인했다.
+  - 스티커 1개 끌기·펜 획 1개 스모크 E2E가 Node 26·24 모두 통과(시험 fixture `/dev/konva-smoke`, 로컬 고정 사용자 모드 밖에서는 404).
+- 만든 것: `app/` App Router 골격(오늘·모아보기·특정 날·작성/수정 팝업·기록 글꼴 설정, D 스타일 이식), diary 저장 port + 메모리 구현(읽기 전용), 로컬 고정 사용자 모드와 운영 거부, `.github/workflows/app-validation.yml`.
+- 고른 도구: 단위 Vitest, E2E Playwright(§1의 migration 도구 선택은 DB를 다루는 F2로 미룬다).
+- TDD: 경계 시험(고정 사용자 운영 거부, 글꼴 허용 목록, URL 날짜, 메모리 저장 소유자 제한)을 먼저 커밋해 RED(모듈 없음, exit 1)를 확인한 뒤 최소 구현으로 GREEN(20건).
+- 검증 명령과 종료 코드(깨끗한 복사본, Node 26.13.0과 24.22.2 각각 같은 결과):
+  `npm ci` 0 · `npm ls --all` 0 · `npm run lint` 0 · `npm run typecheck` 0 · `npm test` 0(20 passed) · `npm run build` 0 ·
+  `POD_LOCAL_FIXTURE=1 npx next build` 1(의도한 거부) · `POD_LOCAL_FIXTURE=1 next start` 1(의도한 거부) · `npx playwright test` 0(9 passed).
+  저장소 배포 계약 시험 `python3 -B -m unittest discover -s tests -p 'test_*.py'` 42 OK, `git diff --check` 0.
+- 화면: 375/768/1440 수평 넘침 없음(E2E), 스크린샷 `app/docs/screenshots/`.
+- 남은 것: F2(migration·PG18 컨테이너 시험), F3(도메인·PG 구현·시간대), F4(실제 로그인·첫 로그인 지급), F5(꾸미기 Lite 편집기·글꼴 동봉·조각 삭제), F6(배포 전환).
