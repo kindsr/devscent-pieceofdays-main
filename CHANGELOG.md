@@ -15,6 +15,7 @@
 ## [Unreleased]
 
 ### Added
+- 디자인 시안 3안 정적 비교판 (2026-11-02, 선택 대기): `docs/design/concepts/`(정본)와 게시 사본 `frontend/public/design/` → dev `/design/`. A 따뜻한 기록장·B 차분한 일기장·C 조각 모음, 같은 샘플 하루, 저장 없음. 계획 `docs/plans/PLAN_design-preview.md`, 스토리보드·브리프 초안 `docs/product/04~05`. dev 안내 페이지에 시안 링크를 추가하고 배포 설명을 GitHub Actions로 정정.
 - GitHub Actions 개발·운영 자동배포 구성 (2026-11-02): `dev` push 개발 배포, 성공한 dev를 `main`에 병합하면 운영 배포. 서비스 전용 SSH 키, SHA/tree·Compose 격리 검사, 후보 health 확인과 실패 시 이미지 복귀.
 - `docs/product/UI_UX_RESEARCH_2026-11-02.md` 추가 (2026-11-02): 디자인 소스·제품 레퍼런스 조사와 잠정 추천(미확정, PRD·시안 선택 전).
 - `README.md` 추가 (2026-11-02): 현재 운영(bind mount)·dev(정적 이미지) 상태, 도메인, 문서 진입, 읽기 전용 확인 명령.

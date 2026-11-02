@@ -4,6 +4,7 @@
 
 현재는 정적 준비중 페이지와 개발 placeholder 단계다. PRD·앱 스택·DB는 아직 정하지 않았다.
 제품 진행은 [AGENTS.md](AGENTS.md), UI 방향은 [조사 문서](docs/product/UI_UX_RESEARCH_2026-11-02.md)를 참고한다.
+디자인 시안 3안은 https://dev.pieceofdays.com/design/ 에서 비교한다(아직 선택 전, 정본 [docs/design/concepts](docs/design/concepts/README.md)).
 
 ## GitHub와 자동배포
 

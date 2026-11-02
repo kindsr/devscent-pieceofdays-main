@@ -11,7 +11,7 @@
   --note-pink: #FBDDD8;
   --tape: #F2E3A0;
   --marker: #E2672E;
-  --font-ui: "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", "맑은 고딕", "Nanum Gothic", sans-serif;
+  --font-ui: "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", "맑은 고딕", "NanumGothic", "나눔고딕", sans-serif;
   --font-hand: "Nanum Pen Script", "Nanum Pen", "나눔손글씨 펜", var(--font-ui);
   --r: 10px;
   --border: 2px solid var(--ink);
