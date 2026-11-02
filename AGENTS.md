@@ -17,7 +17,7 @@
 
 ## 1. 현재 상태
 
-- PRD가 없다. 운영·dev 모두 정적 placeholder 단계이며 앱 스택·DB는 정하지 않았다(DB 없음).
+- [PRD](docs/PRD.md)는 사용자 응답 전 검토 초안이다. 운영은 준비중 페이지, dev는 정적 개발 환경이며 앱 스택·DB는 정하지 않았다(DB 없음).
   과거 문서의 PostgreSQL14 등 특정 DB를 이 서비스의 선택으로 보지 않는다.
 - 운영: `docker-compose.yml`의 `pieceofdays-comingsoon`은 준비중 페이지를 이미지로 빌드한다. 전환 전 bind mount 방식은 §3의 주의를 확인한다.
 - dev: `docker-compose.dev.yml`의 `pieceofdays-frontend-dev`가 `frontend/`를 정적 이미지로 빌드한다.
@@ -25,7 +25,7 @@
 
 ## 2. 다음 진행 순서
 
-1. PRD 작성(`docs/PRD.md`) → 공통 09 §2.1~2.3(PRD 분석·shaping·MVP, `docs/product/`).
+1. PRD 초안 검토·요건 확정(`docs/PRD.md`) → 공통 09 §2.1~2.3(PRD 분석·shaping·MVP, `docs/product/`).
 2. 공통 docs/10에 따라 목적별 전체 구성 2~3안 제시 → 사용자 선택 → `docs/product/00_TECH_STACK_DECISION.md` 기록.
    선택 전에는 중립 문서·기획만 진행한다.
 3. 공통 09 §2.4: 스토리보드 → 디자인 브리프 → 서로 다른 시안 3안·사용자 선택 → 선택안 하이파이 아트보드와
@@ -47,6 +47,7 @@
 
 ## 3.1 Claude Cloud 작업
 
+- 사용자 선택(2026-11-02): pieceofdays에서 위임할 수 있는 기획·구현·검증은 개별 Claude Cloud 세션을 우선 사용한다. 메인은 계획·검토·통합과 서버에서 필요한 확인을 맡는다. 다른 서비스와 전역 CLI 설정에는 적용하지 않는다.
 - 클라우드 작업은 GitHub 작업 브랜치와 PR로 반환한다. 운영 서버 SSH·배포 키·서버 비밀값을 클라우드 개발 환경에 제공하지 않는다.
 - 클라우드에 `../_template`·서버 경로·`hc`가 없으면 읽거나 실행했다고 보고하지 않는다. 메인이 전달한 작업 범위와 이 저장소 지침으로 조사·구현·시험하고 제약을 보고한다.
 - PR 검사에는 배포 키를 제공하지 않는다. dev/main 반영·자동배포와 운영 결과 검증은 메인이 통합 단계에서 확인한다.
