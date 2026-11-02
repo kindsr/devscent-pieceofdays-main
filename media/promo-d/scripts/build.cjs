@@ -82,10 +82,10 @@ const lines = T.copyLines.map((l, i) => {
 }).join(" ");
 
 const audio = [];
-audio.push(`<audio id="sfx-clicks" class="clip" data-start="0" data-duration="${T.duration}" data-volume="1" src="assets/audio/clicks.m4a"></audio>`);
+audio.push(`<audio id="sfx-clicks" class="clip" data-start="0" data-duration="${T.duration}" data-volume="1.8" src="assets/audio/clicks.m4a"></audio>`);
 const bgm = fs.readdirSync(path.join(ROOT, "assets/audio")).find((f) => /^bgm\.(mp3|wav|m4a|aac|ogg)$/.test(f));
 if (bgm) audio.push(`<!-- BGM: 메인 서버의 Sunra MCP(model elevenlabs-music, task 4ae0454e-28fd-4209-8d1a-43409a2234c0)로 생성한 20초 연주곡. 화면은 생성형이 아닌 실제 D 화면 캡처다. 출처·해시는 ASSETS.md -->`);
-if (bgm) audio.push(`<audio id="bgm" class="clip" data-start="0" data-duration="${T.duration}" data-volume="0.32" data-fade-in="0.6" data-fade-out="1.6" src="assets/audio/${bgm}"></audio>`);
+if (bgm) audio.push(`<audio id="bgm" class="clip" data-start="0" data-duration="${T.duration}" data-volume="0.56" data-fade-in="0.6" data-fade-out="1.6" src="assets/audio/${bgm}"></audio>`);
 
 const data = { K, SCREEN, cursorKeys, clickTimes, scroll: T.scroll.map((s) => ({ t0: s.t0, t1: s.t1, y: r2(-s.to * K) })),
   captions: T.captions.map((c, i) => ({ i, start: c.start, end: c.end })), outro: O, nLines: T.copyLines.length,

@@ -74,7 +74,9 @@ ffmpeg -ss 19.5 -i /tmp/pod-promo.mp4 -frames:v 1 -q:v 3 ../../frontend/public/p
 
 중간 렌더·snapshot·`.hyperframes/`·`node_modules/`는 Git에 넣지 않는다.
 
-## BGM
+## 오디오
 
-메인이 생성해 전달한다(이 Cloud 세션은 음악을 생성하지 않는다). 받으면 `assets/audio/bgm.<ext>`로 두고 `build.cjs`를 다시 실행한다.
-기본값: `data-volume=0.32`, fade-in 0.6초, fade-out 1.6초. 클릭음보다 아래에 깔리는 크기로 믹스 후 `hyperframes audio`/ffmpeg `volumedetect`로 확인한다.
+- BGM `assets/audio/bgm.mp3`: 메인 서버의 Sunra MCP로 생성한 20초 연주곡(출처·해시는 ASSETS.md). 원본은 15초부터 스스로 잦아든다.
+  컴포지션에서 0–20초로 자르고 `data-volume=0.56`, fade-in 0.6초, fade-out 1.6초.
+- 클릭음 `assets/audio/clicks.m4a`: `data-volume=1.8`, press 프레임 6회.
+- 결과: 통합 -18.4 LUFS, 최대 -6.6 dBFS. 클릭 구간은 BGM보다 약 4 dB 높아 들리되 튀지 않는다.
