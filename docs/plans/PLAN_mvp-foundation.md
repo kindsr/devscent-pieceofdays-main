@@ -151,3 +151,9 @@
 ## 9. 비목표
 
 마켓·구매·정산 구현, 전문 드로잉 도구, 별도 백엔드 플랫폼(Python 서버·Redis·큐), 외부 AI 연동, 공용 서버 설정 변경, 서버 dev/prod DB·버킷 생성(메인 담당).
+
+## 10. F1 실행 결과 (진행 중 — Claude Cloud 하위 구현, 작업 브랜치 `claude/nextjs-foundation-mvp-0p73cn`)
+
+- 기준: `origin/dev` `e5ebd58`(통합 `c82c2d2` 포함). 결과는 Draft PR로 반환하며 dev/main 반영·배포는 메인이 판단한다.
+- 진행: §1.1 호환 확인·버전 고정 완료(`app/package.json`·`package-lock.json`), 경계 시험 RED 확인. 이후 최소 GREEN·화면 골격·Konva 스모크·CI 순서로 진행한다.
+- 최종 결과·검증 명령·종료 코드는 완료 시 이 절에 갱신한다.
