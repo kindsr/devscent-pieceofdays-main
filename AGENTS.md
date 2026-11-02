@@ -17,11 +17,12 @@
 
 ## 1. 현재 상태
 
-- [PRD](docs/PRD.md)는 사용자 확정 요건과 미정 항목을 구분한 초안이다. 운영은 준비중 페이지, dev는 정적 프로토타입이다. 사용자 선택(2026-11-02)은 TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소, 그리기 Konva다. 실제 앱·DB 생성은 아직 하지 않았다.
+- [PRD](docs/PRD.md)는 사용자 확정 요건과 미정 항목을 구분한 초안이다. 운영은 준비중 페이지, dev는 정적 프로토타입이다. 사용자 선택(2026-11-02)은 TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소, 그리기 Konva다. [app/](app/README.md)에 F1 앱 골격·D 화면·시험 기반을 구현했으며 실제 로그인·DB·영구 저장은 아직 없다. 현재 정적 배포에는 앱 골격이 포함되지 않는다.
   신규 DB는 공통 docs/10의 PostgreSQL18 기준으로 계획하고, 과거 PostgreSQL14 등 표기를 이 서비스의 선택으로 보지 않는다.
 - 운영: `docker-compose.yml`의 `pieceofdays-comingsoon`은 준비중 페이지를 이미지로 빌드한다. 전환 전 bind mount 방식은 §3의 주의를 확인한다.
 - dev: `docker-compose.dev.yml`의 `pieceofdays-frontend-dev`가 `frontend/`를 정적 이미지로 빌드한다. `/design/`은 [시안 4안](docs/design/concepts/README.md) 비교판이며 **D 선택 완료**다. 기준은 [디자인 핸드오프](docs/design/README.md)다. 조각 수정·기록 글꼴은 메모리 시안이며 실제 저장과 혼동하지 않는다. `/promo/`는 D 화면의 20초 세로 콘셉트 영상이다.
 - MVP: 기록 CRUD·하루 정리·날짜별 다시 보기·기록 글꼴·개인용 하루 꾸미기 기본. 마켓·디자인 구매·제작자 정산은 후속이다. 감정덩어리는 첫 성공 로그인에 계정당 10개 한 번 지급, 디자인 구매 시 1개 사용이 확정 정책이며 정산·환불 세부는 확정 전이다.
+- 앱 검사는 `.github/workflows/app-validation.yml`과 `app/README.md`를 따른다. 로컬 예시 사용자 모드는 개발·시험 전용이며 운영 빌드·실행에서 거부한다. 앱 배포 전환은 [F6 계획](docs/plans/PLAN_mvp-foundation.md)에 따라 별도 검토하고 현행 정적 배포 프로그램을 임의 완화하지 않는다.
 - 현행 경로·도메인·확인 명령은 [README.md](README.md), 배포 절차는 [deploy/README.md](deploy/README.md)다.
 
 ## 2. 다음 진행 순서

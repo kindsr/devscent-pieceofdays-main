@@ -3,7 +3,7 @@
 개인의 일상에서 순간을 기록하고 하루를 정리하여 스토리텔링을 만들어가는 감정정리 장소, pieceofdays
 
 운영은 준비중 페이지이며, 개발 환경에서는 사용자가 선택한 **D안(C 화면 구성 + A 색)**을 확인할 수 있다. 조각별 수정과 기록 글꼴 설정은 현재 메모리에서 동작하는 프로토타입이며 새로고침하면 초기화된다.
-실제 앱은 **TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소**, 그리기는 **Konva**로 개발한다(2026-11-02 사용자 선택). MVP는 기록·하루 정리·다시 보기와 개인용 **하루 꾸미기**를 포함하고, 디자인 마켓·구매·정산은 이후 단계다. 실제 계정·영구 저장·그리기 편집기는 아직 구현 전이다.
+실제 앱은 **TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소**, 그리기는 **Konva**로 개발한다(2026-11-02 사용자 선택). [Next.js 앱 골격](app/README.md)에 D 화면과 시험·빌드 기반을 만들었다. 이 앱은 현재 dev의 정적 시안 배포와 별개다. MVP는 기록·하루 정리·다시 보기와 개인용 **하루 꾸미기**를 포함하고, 디자인 마켓·구매·정산은 이후 단계다. 실제 계정·영구 저장·그리기 편집기는 아직 구현 전이다.
 
 - [선택한 D 화면](https://dev.pieceofdays.com/design/d-warm-pieces/) · [기록 글꼴 설정](https://dev.pieceofdays.com/design/d-warm-pieces/#settings)
 - [20초 세로 홍보영상](https://dev.pieceofdays.com/promo/) · [MP4 내려받기](https://dev.pieceofdays.com/promo/pieceofdays-d-vertical.mp4)
@@ -36,7 +36,7 @@ docker compose -f docker-compose.dev.yml -p pieceofdays-dev config --quiet
 docker compose -f docker-compose.yml -p devscent-pieceofdays-main config --quiet
 ```
 
-현재 시험은 배포 권한·격리 계약을 다루며 제품 기능 시험은 앱 구현 후 추가한다. 실행용 이미지 값은 배포 프로그램이 제공한다.
+위 시험은 배포 권한·격리 계약을 다룬다. 앱의 경계·브라우저 시험과 실행 명령은 [app/README.md](app/README.md)에 있으며 Node 26·24에서 별도로 검사한다. 실행용 이미지 값은 배포 프로그램이 제공한다.
 소스 저장소의 Compose로 운영을 직접 실행하지 않는다. 배포 결과는 GitHub Actions에서 확인한다.
 
 ## 문서
