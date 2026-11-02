@@ -1,7 +1,7 @@
 # GitHub Actions 개발·운영 자동배포 계획
 
 - 날짜: 2026-11-02
-- 사용자 승인: NAS Git 대신 kindsr/pieceofdays 사용, dev push 자동 개발 배포, dev→main 병합 자동 운영 배포. 이 서비스에 한정하며 다른 서비스의 수동 배포 규칙은 유지한다.
+- 사용자 승인: NAS Git 대신 kindsr/pieceofdays 사용(2026-11-02 사용자가 `kindsr/devscent-pieceofdays-main`으로 이름 변경), dev push 자동 개발 배포, dev→main 병합 자동 운영 배포. 이 서비스에 한정하며 다른 서비스의 수동 배포 규칙은 유지한다.
 - 개발 경로 오타 `~/developmemt`는 기존 `~/development`로 해석한다.
 
 ## 목표와 경계

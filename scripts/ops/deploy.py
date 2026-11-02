@@ -18,7 +18,7 @@ import time
 import urllib.request
 import uuid
 
-REPOSITORY = "https://github.com/kindsr/pieceofdays.git"
+REPOSITORY = "https://github.com/kindsr/devscent-pieceofdays-main.git"
 HOME = Path(pwd.getpwuid(os.getuid()).pw_dir)
 STATE = HOME / "deployment/pieceofdays"
 ENVIRONMENTS = {

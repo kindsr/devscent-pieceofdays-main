@@ -37,7 +37,7 @@
 
 ## 3. GitHub·개발·운영 배포 경계
 
-- Git 정본은 `https://github.com/kindsr/pieceofdays.git` 하나다. 기존 NAS 이력은 병합해 보존하며 NAS 원격을 계속 사용하지 않는다.
+- Git 정본은 `https://github.com/kindsr/devscent-pieceofdays-main.git` 하나다(2026-11-02 `kindsr/pieceofdays`에서 이름 변경). 기존 NAS 이력은 병합해 보존하며 NAS 원격을 계속 사용하지 않는다.
 - 사용자 승인(2026-11-02): `dev` push → 개발 자동배포, `dev`를 `main`에 병합 → 운영 자동배포. 이 서비스에만 적용한다.
 - AI 개발·커밋은 `~/projects/devscent-pieceofdays-main`의 `dev` 또는 별도 worktree에서 진행한다.
 - 개발 배포본은 `~/development/devscent-pieceofdays-main`, 도메인은 `dev.pieceofdays.com`이다. 배포본을 직접 편집하지 않는다.

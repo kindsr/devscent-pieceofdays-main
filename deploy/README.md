@@ -14,7 +14,7 @@
 
 ## 서버와 GitHub 설정
 
-- GitHub 정본: `https://github.com/kindsr/pieceofdays.git`. 서버의 두 체크아웃 origin도 같은 주소다.
+- GitHub 정본: `https://github.com/kindsr/devscent-pieceofdays-main.git`(2026-11-02 `kindsr/pieceofdays`에서 이름 변경). 서버의 두 체크아웃 origin과 설치된 배포 프로그램의 `REPOSITORY`도 같은 주소여야 한다.
 - GitHub 호스팅 러너만 사용한다. 배포 job은 `dev` 또는 `production` 환경을 선택하며 각 환경은 `dev`·`main` 브랜치에만 허용된다.
 - 각 환경의 `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_SSH_KEY`는 GitHub Secrets에 둔다. 값은 문서에 적지 않는다.
 - 서버 키는 환경별로 분리하고 `authorized_keys`에서 `restrict`와 고정 환경 강제 명령을 건다. PTY·포워딩·일반 쉘을 제공하지 않는다.

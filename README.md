@@ -8,7 +8,7 @@
 
 ## GitHub와 자동배포
 
-Git 정본: https://github.com/kindsr/pieceofdays.git
+Git 정본: https://github.com/kindsr/devscent-pieceofdays-main.git
 
 | 역할 | 경로·브랜치 | 도메인 | 반영 |
 |---|---|---|---|
