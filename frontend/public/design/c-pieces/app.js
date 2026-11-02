@@ -156,6 +156,9 @@
   function openCompose() {
     document.getElementById("compose-time").textContent = P.nowTime();
     err.hidden = true; text.removeAttribute("aria-invalid");
+    // 비교판 미리보기(embed): showModal은 포커스를 옮기고, 닫을 때 연 사람의 포커스로 복원해 부모 조작을 끊는다.
+    // 그래서 open 속성으로만 겹쳐 보이고, 사용자가 이 미리보기를 직접 조작 중일 때만 입력칸에 포커스를 준다.
+    if (P.embed) { if (!dlg.open) dlg.setAttribute("open", ""); if (!P.quiet()) text.focus(); return; }
     if (!dlg.open) dlg.showModal();
     text.focus();
   }

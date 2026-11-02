@@ -142,7 +142,7 @@
     else view.innerHTML = pageHTML(find(S.today));
     renderIndex();
     var h = view.querySelector(r.view === "write" ? "#w-text" : "h1");
-    if (h && location.hash) h.focus({ preventScroll: true });
+    if (h && location.hash && !P.quiet()) h.focus({ preventScroll: true });
     window.scrollTo(0, 0);
   }
 

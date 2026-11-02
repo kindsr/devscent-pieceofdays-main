@@ -28,3 +28,5 @@
 }
 /* 화면 전환 시 제목으로 옮긴 프로그램 포커스는 테두리를 그리지 않는다(키보드 탭 포커스는 그대로 표시). */
 [tabindex="-1"]:focus { outline: none; }
+/* 비교판 미리보기에서 포커스 없이 연 작성 대화상자(open 속성만)를 모달처럼 겹쳐 보인다 */
+.is-embed dialog[open]:not(:modal) { position: fixed; inset: 0; z-index: 20; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45); }

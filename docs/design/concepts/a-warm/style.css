@@ -67,7 +67,7 @@ p { margin: 0; }
 .day-head { padding-bottom: var(--s-3); border-bottom: 1px solid var(--ink); margin-bottom: var(--s-3); }
 .kicker { font-size: 14px; color: var(--ink-muted); }
 .day-title { font-size: 36px; letter-spacing: -0.01em; margin-top: 4px; }
-.day-title .wd { font-size: 0.55em; font-weight: 400; color: var(--ink-muted); margin-left: 6px; }
+.day-title .wd { font-size: 0.55em; font-weight: 400; color: var(--ink-muted); margin-left: 2px; }
 .day-meta { margin-top: 6px; font-size: 14px; color: var(--ink-muted); }
 .back { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink-muted); }
 

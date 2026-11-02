@@ -99,6 +99,8 @@
   window.POD = {
     esc: esc, parts: parts, nowTime: nowTime, onRoute: onRoute, announce: announce,
     contrast: contrast, tokenRows: tokenRows, WEEK: WEEK, embed: embed,
+    /* 비교판 미리보기에서 사용자가 이 iframe을 조작 중이 아니면 부모 화면의 포커스를 가져가지 않는다 */
+    quiet: function () { return embed && !document.hasFocus(); },
     clone: function (o) { return JSON.parse(JSON.stringify(o)); },
     /* 순간을 시간순으로 넣는다 */
     addMoment: function (day, m) {

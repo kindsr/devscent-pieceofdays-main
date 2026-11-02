@@ -1,7 +1,7 @@
 # 디자인 시안 3안 — 선택 대기
 
 - 상태: **선택 대기.** 확정 디자인·토큰이 아니다. 선택 뒤 `docs/design/README.md`에 핸드오프를 새로 쓴다.
-- 보기: 개발 도메인 `https://dev.pieceofdays.com/design/` (접근 제한·noindex). 로컬은 `python3 -m http.server -d docs/design/concepts` 후 `http://127.0.0.1:8000/`.
+- 보기: 개발 도메인 `https://dev.pieceofdays.com/design/` (접근 제한·noindex). 로컬은 `python3 -m http.server --bind 127.0.0.1 -d docs/design/concepts` 후 `http://127.0.0.1:8000/`.
 - 근거: [계획](../../plans/PLAN_design-preview.md), [스토리보드](../../product/04_STORYBOARD.md), [브리프](../../product/05_DESIGN_PROMPTS.md).
 
 | 경로 | 내용 |

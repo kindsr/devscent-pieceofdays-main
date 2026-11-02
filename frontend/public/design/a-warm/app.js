@@ -54,7 +54,7 @@
     var side = '<div class="day-side">' +
       (fromList ? '<a class="back" href="#days">← 날짜 목록</a>' : "") +
       '<header class="day-head"><p class="kicker">' + (isToday ? "오늘 · " : "") + p.y + "년</p>" +
-      '<h1 class="day-title" tabindex="-1">' + p.m + "월 " + p.d + '일<span class="wd">' + p.w + "요일</span></h1>" +
+      '<h1 class="day-title" tabindex="-1">' + p.m + "월 " + p.d + '일 <span class="wd">' + p.w + "요일</span></h1>" +
       '<p class="day-meta">' + (n ? "순간 " + n + "개" : "아직 남긴 순간 없음") + "</p></header>" +
       summaryHTML(day, isToday) + "</div>";
     var body = n ? '<ol class="moments" aria-label="' + dateLabel(day.date) + '의 순간">' + day.moments.map(momentHTML).join("") + "</ol>"
@@ -67,7 +67,15 @@
 
   function listHTML() {
     var groups = {};
-    days().forEach(function (d) {
+    var filled = days().filter(function (d) { return d.moments.length; });
+    if (!filled.length) {
+      return '<section class="list-head"><h1 tabindex="-1">다시 보기</h1><p>기록이 있는 날만 날짜순으로 모아요.</p></section>' +
+        '<section class="empty" aria-labelledby="list-empty-h"><span class="rule" aria-hidden="true"></span>' +
+        '<h2 id="list-empty-h">아직 다시 볼 날이 없어요</h2>' +
+        "<p>오늘 순간을 하나 남기면 여기에 날짜별로 쌓여요.</p>" +
+        '<a class="btn btn-primary" href="#write">순간 남기기</a></section>';
+    }
+    filled.forEach(function (d) {
       var p = P.parts(d.date), k = p.y + "년 " + p.m + "월";
       (groups[k] = groups[k] || []).push(d);
     });
@@ -159,6 +167,9 @@
   function openCompose() {
     document.getElementById("compose-time").textContent = P.nowTime();
     err.hidden = true; text.removeAttribute("aria-invalid");
+    // 비교판 미리보기(embed): showModal은 포커스를 옮기고, 닫을 때 연 사람의 포커스로 복원해 부모 조작을 끊는다.
+    // 그래서 open 속성으로만 겹쳐 보이고, 사용자가 이 미리보기를 직접 조작 중일 때만 입력칸에 포커스를 준다.
+    if (P.embed) { if (!dlg.open) dlg.setAttribute("open", ""); if (!P.quiet()) text.focus(); return; }
     if (!dlg.open) dlg.showModal();
     text.focus();
   }
