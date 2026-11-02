@@ -233,3 +233,14 @@ db:
 | 사용자별 시간대 / 사진 / 버전 보관 / 탈퇴 | 각각 CHECK 확장, 테이블, DELETE 권한, 삭제 절차를 추가하는 migration |
 | dev/prod DB·role 프로비저닝 | 운영 절차(메인·비공개 런북). 실제 role 이름·비밀번호는 공개 문서에 쓰지 않는다 |
 | PostgreSQL 이미지 마이너·digest, `pg` 버전 | F2 구현 시 공식 출처로 확인해 고정 |
+
+## 9. 시험 환경 준비 결과 (2026-11-02)
+
+- Cloud `15397e1`: `pg`·`@types/pg` 8.23.1 정확 고정, CI PostgreSQL 18.6 서비스와 시험 전용 role·DB 하네스. 제품 `pod` 스키마·8개 테이블·migration 실행기는 아직 없다.
+- 이미지 digest는 CI 파일에 고정했다. 메인은 공식 registry의 tag `18` 조회로 같은 OCI index를 확인했다.
+- CI `41507022434` 원문: DB 환경 시험 8개, Node 26·24 각각 단위 20개·운영 경계 6개·E2E 12개 통과. `3b956c8` RED는 CREATE 후 권한 부여 실패 시 DB가 남는 실패를 확인했고, `15397e1`은 호출자 정리에 기대지 않고 직접 정리해 GREEN이 됐다.
+- Cloud VM의 Docker 데몬 부재로 수행한 native PG18 클러스터 실험은 보조 근거다. 공식 판정은 일회용 CI 서비스 컨테이너 결과로 한다. 공유 서버 DB·전역 패키지·운영 설정은 변경하지 않았다.
+- 원 담당자가 `5625548` 초안을 보존하고 `F2_OWNER_STOPPED`로 소유권을 반환했다. 메인은 시험 설정·문서를 마무리하며, `.claude/tdd.conf`는 제품 파일을 시험 패턴으로 넓히지 않는다. `FULL_CHECK`는 환경 누락 시 시험 진입 전에 거부하고 DB→배포→앱 순서로 실행한다. 공유 운영 서버에서는 실행하지 않는다.
+- 후속 CLI 계약: `app/src/server/db/migrate-cli.ts`에 `status|up|down`, `--migrations-dir <dir>`, down의 `--to <N>`·`--allow-down`을 둔다. 기본 디렉터리는 `app/migrations`이며 `POD_MIGRATE_DATABASE_URL`을 사용한다. 실패는 exit 1, 성공은 0, 체크섬 오류에는 `checksum mismatch`를 포함하고 URL·비밀번호를 출력하지 않는다. CLI 코드는 이번에 만들지 않았다.
+- 후속 순수 정책 함수는 `app/src/server/db/sql-policy.ts`의 `validateSqlPolicy(sql: string): void`다. 위반 시 오류를 던진다. Node의 직접 TS 실행에는 상대 `.ts` import를 쓰고, GREEN에서 `allowImportingTsExtensions`를 설정한다(`noEmit` 전제). Node CLI에서 Next의 `@/` 별칭을 쓰지 않는다.
+- 다음 단계의 RED 기준은 이 준비가 통합된 `dev`의 정확한 SHA로 확정한다. 그 이후 시험 작성·독립 실행 확인·GREEN 구현을 다른 역할로 나누며, 준비 작업을 제품 스키마 구현 완료로 보지 않는다.

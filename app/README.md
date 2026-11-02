@@ -55,7 +55,21 @@ POD_LOCAL_FIXTURE=1 npm run dev   # 로컬에서 예시 기록으로 보기
 `SCREENSHOT_DIR=<dir> npm run test:e2e`이면 화면별 375/768/1440 스크린샷을 남긴다.
 CI는 `.github/workflows/app-validation.yml`(app 변경 PR·push, Node 26/24, Secrets·배포 권한 없음)이다.
 
-## 한계 (F1)
+## PostgreSQL 시험 환경 (F2 bootstrap)
+
+`npm run test:db`는 실행 전용 PostgreSQL 18과 가짜 CI role·임시 DB를 검증한다. 아직 제품 테이블·마이그레이션·DB 저장 구현은 없다. CI의 `db` job은 고정 digest의 공식 PostgreSQL 18 서비스 컨테이너를 사용하며, 실제 서비스 DB에 연결하지 않는다.
+
+로컬에서는 [일회용 컨테이너 준비](../docs/plans/PLAN_mvp-database.md)의 환경을 먼저 마련한다. 아래 URL은 그 컨테이너의 가짜 값이다(`app/`에서 실행).
+
+```bash
+POD_TEST_DB_DISPOSABLE=1 POD_TEST_ADMIN_URL=postgres://postgres:ci-only-not-a-secret@127.0.0.1:55432/postgres npm run test:db
+```
+
+전체 검사는 저장소 루트에서 `POD_FULL_CHECK_ISOLATED=1`, `POD_TEST_DB_DISPOSABLE=1`, `POD_TEST_ADMIN_URL`을 지정하고 `bash app/tests/full-check.sh`로 실행한다. **격리된 Cloud/CI/개발 PC 전용이며 공유 운영 서버에서 실행하지 않는다.** 조건이 없으면 시험을 시작하지 않는다. DB 시험을 먼저 통과한 뒤 배포·앱 검사를 순차 실행한다. 플래그는 격리 환경이라는 운영 전제를 명시하는 것이며 머신 격리를 자동 보장하지 않는다.
+
+Cloud VM의 추가 검증은 Docker 대신 세션 전용 native PostgreSQL 클러스터로 수행했다. 공식 수락 근거는 CI 서비스 컨테이너의 실제 결과다. 부분 실패 정리를 포함한 환경 시험 8개와 기존 앱 검사가 통과했다.
+
+## 한계 (제품 구현)
 
 - 로그인·DB(PostgreSQL 18)·버킷·원장·첫 로그인 지급 없음. 조각 삭제·하루 꾸미기 편집기 없음.
 - 기록 변경은 화면 이동·새로고침으로 초기화된다(위 실행 모드 참고). F1에서는 영구 저장이나 클라이언트 전역 store를 추가하지 않는다.

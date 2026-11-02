@@ -18,16 +18,17 @@ if [[ "${POD_FULL_CHECK_ISOLATED:-}" != "1" || "${POD_TEST_DB_DISPOSABLE:-}" != 
   fail "POD_FULL_CHECK_ISOLATED=1, POD_TEST_DB_DISPOSABLE=1 and POD_TEST_ADMIN_URL are required (isolated Cloud/CI/dev machine only)"
 fi
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-APP="$ROOT/app"
+POD_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+POD_APP_DIR="$POD_REPO_DIR/app"
+[[ -z "${POD_LOCAL_FIXTURE:-}" ]] || fail "POD_LOCAL_FIXTURE must be unset for the production build checks"
 
-# 2) Node 지원 버전(app/package.json engines: ^24.22.2 || >=26.13.0).
+# 2) 실제 CI가 검사하는 Node 24·26 계열만 허용한다.
 command -v node >/dev/null 2>&1 || fail "node not found"
 node -e '
   const [a, b, c] = process.versions.node.split(".").map(Number);
-  const ok = (a === 24 && (b > 22 || (b === 22 && c >= 2))) || a > 26 || (a === 26 && (b > 13 || (b === 13 && c >= 0)));
+  const ok = (a === 24 && (b > 22 || (b === 22 && c >= 2))) || (a === 26 && (b > 13 || (b === 13 && c >= 0)));
   process.exit(ok ? 0 : 1);
-' || fail "unsupported Node version (need ^24.22.2 || >=26.13.0)"
+' || fail "unsupported Node version (need Node 24.22.2+ or 26.13.0+ within those major lines)"
 
 # 3) 관리자 URL: postgres 프로토콜, loopback 호스트, 쿼리·조각 없음. 값은 출력하지 않는다.
 node -e '
@@ -36,20 +37,23 @@ node -e '
   if (u.protocol !== "postgres:" && u.protocol !== "postgresql:") process.exit(4);
   if (u.hostname !== "localhost" && u.hostname !== "127.0.0.1") process.exit(5);
   if (u.search !== "" || u.hash !== "") process.exit(6);
+  if (!u.username) process.exit(7);
 ' || fail "POD_TEST_ADMIN_URL must be postgres://<user>:<pw>@localhost|127.0.0.1:<port>/<db> without query"
 
-[[ -d "$APP/node_modules" ]] || fail "app/node_modules missing (run npm ci in app first)"
+[[ -d "$POD_APP_DIR/node_modules" ]] || fail "app/node_modules missing (run npm ci in app first)"
 
 # 4) 시험. 하나라도 실패하면 set -e로 중단한다.
-cd "$ROOT"
-python3 -B -m unittest discover -s tests -p "test_*.py" -v
-cd "$APP"
+cd "$POD_APP_DIR"
 export NEXT_TELEMETRY_DISABLED=1
+# 실제 DB 환경이 잘못됐으면 Next 서버 시험에 도달하지 않는다.
+npm run test:db
+cd "$POD_REPO_DIR"
+python3 -B -m unittest discover -s tests -p "test_*.py" -v
+cd "$POD_APP_DIR"
 npm run lint
 npm run typecheck
 npm test
 npm run build
 npm run test:prod-smoke
 npm run test:e2e
-npm run test:db
 echo "full-check: all passed"
