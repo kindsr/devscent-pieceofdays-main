@@ -2,7 +2,8 @@
 
 ## 실행 범위
 
-- 캡처: `node scripts/capture.cjs` — 실제 D(embed=1)를 Playwright Chromium으로 클릭·타이핑, still 7장·crop 58장, 페이지 오류 0.
+- 캡처: `node scripts/capture.cjs` — 실제 D(embed=1, base `cb52350` = 개별 조각 수정·폰트 추가 PR #9 이전)를 Playwright Chromium으로 클릭·타이핑, still 7장·crop 58장, 페이지 오류 0.
+  그 시점 D에는 마켓·크레딧·그림 편집·개별 조각 수정이 없었고 영상에도 없다. 핵심 기록 흐름 시연이라 이후 D 변경으로 MP4를 다시 캡처하지 않는다.
 - HyperFrames 0.8.179(프로젝트 로컬 설치, `HYPERFRAMES_NO_TELEMETRY=1`):
   - `hyperframes check --json`: ok. lint 오류 0·경고 5, runtime/layout/motion/contrast 오류 0(대비 9/9 통과).
     남은 경고 5건은 `nested_structure_needs_subcomposition`(자막·끝 카피 clip 안 자식 노드). 계약상 clip 자체는 움직이지 않고 자식만 움직이도록 의도한 구조다.
@@ -31,3 +32,11 @@
 - `timeline.cjs`를 장면·프레임 대응 기준으로 사용하고, 2초 간격 디코딩 콘택트시트와 18초 원본 크기 프레임을 확인했다. 별도 episode packet/scene CSV는 없으며 SPEC·타이밍 정본으로 대조했다.
 - 조각 추가·타이핑·하루 정리·지난 날 보기 / PASS. 끝 카피(frame 540) / PASS: 최신 문구와 일치하며 잘림 없이 읽힌다. 캡처와 D 색·구성이 일치한다.
 - 공개 플레이어 설명의 옛 '선택 대기' 문구는 D 선택 완료로 정정했다. 렌더 파일 자체는 변경하지 않았다. 실제 HTTPS 재생 확인은 배포 후 수행한다.
+
+## 후속 재현성 수정 (메인 리뷰 반영)
+
+- 지적: `capture.cjs`가 `require("playwright")`를 쓰는데 `package.json`에 선언이 없었다(최초 캡처는 VM 전역 `NODE_PATH`의 Playwright 1.63.0으로 해석됨).
+- 수정: `playwright` **1.63.0**(실제 사용 버전)을 정확 버전 devDependency로 `package.json`·`package-lock.json`에 고정.
+- 확인: `rm -rf node_modules && npm ci --ignore-scripts` 후 `NODE_PATH` 없이
+  - `require.resolve("playwright")` → `media/promo-d/node_modules/playwright` 1.63.0, `chromium.launch()` 성공(Chromium 153.0.8010.12, `/opt/pw-browsers`).
+  - `npm run capture` 실행: 페이지 오류 0, 결과가 커밋된 `assets/capture/*`와 바이트 단위로 같음(git 변경 0). MP4는 다시 렌더하지 않았다.

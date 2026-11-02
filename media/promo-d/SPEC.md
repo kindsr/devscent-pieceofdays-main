@@ -27,7 +27,8 @@
 | 13.25–14.25 | 모아보기 달력 | 11월 1일 칸 클릭 | 스토리텔링을 만들어가는 |
 | 14.25–20 | 11월 1일 다시 보기(앱의 scrollIntoView 위치 931px) | 커서 아래로 퇴장, 15.1부터 화면 카드가 아래로 물러남 | 15.45~ 전체 카피 5줄, 16.35 `pieceofdays` 밑줄 |
 
-- 마켓·크레딧·그림 편집·개별 조각 수정은 화면에 없다(현재 D에 없음).
+- 캡처 기준은 D base `cb52350`(dev, 개별 조각 수정·폰트 추가 PR #9 이전)이다. 그 시점 D에 없던 마켓·크레딧·그림 편집·개별 조각 수정은 화면에 없다.
+  이 영상은 요청된 핵심 기록 흐름 시연이므로 이후 D가 바뀌어도 MP4를 다시 캡처하지 않는다.
 - 준비 단계(화면 밖): 샘플 오늘의 한 줄을 실제 UI(`고쳐 쓰기` → 비우기 → `반영`)로 비워 "아직 정리하지 않은 하루"에서 시작한다.
 - 시계는 2026-11-02 22:30(Asia/Seoul)로 고정해 새 조각·팝업 시각이 `22:30`으로 재현된다.
 - 타이핑 메모 `자기 전 보리차 한 잔, 오늘은 여기까지.`, 한 줄 `찬 공기로 시작해 따뜻하게 끝난 하루.`는 예시 문장이다(개인정보 없음).
@@ -60,7 +61,7 @@ media/promo-d/
 
 ```bash
 cd media/promo-d
-npm ci --ignore-scripts                 # hyperframes 0.8.179 (영상 도구만)
+npm ci --ignore-scripts                 # hyperframes 0.8.179, playwright 1.63.0 (영상 도구만, package-lock 고정)
 export HYPERFRAMES_NO_TELEMETRY=1
 node scripts/capture.cjs                # D 화면을 바꾼 경우에만 다시 캡처
 node scripts/sfx.cjs
@@ -73,6 +74,14 @@ ffmpeg -ss 19.5 -i /tmp/pod-promo.mp4 -frames:v 1 -q:v 3 ../../frontend/public/p
 ```
 
 중간 렌더·snapshot·`.hyperframes/`·`node_modules/`는 Git에 넣지 않는다.
+
+### Playwright 브라우저(Cloud VM 개발용 안내)
+
+`capture.cjs`의 `require("playwright")`는 이 폴더의 devDependency `playwright@1.63.0`(정확 고정)으로 해석된다.
+브라우저 바이너리는 npm 패키지에 포함되지 않는다. 캡처는 **Cloud VM 같은 개발 환경에서만** 하고 운영 서버에는 설치하지 않는다.
+
+- 이 Claude Cloud VM: Chromium이 `/opt/pw-browsers`(`PLAYWRIGHT_BROWSERS_PATH`)에 미리 들어 있어 추가 설치 없이 동작했다(Chromium 153.0.8010.12).
+- 브라우저가 없는 개발 VM: `npx playwright install chromium`(같은 1.63.0 버전으로)을 그 VM에서만 실행한다. 이 저장소·서버 설정으로 기록하지 않는다.
 
 ## 오디오
 
