@@ -26,7 +26,7 @@ async function load(): Promise<SeoulDate> {
 
 const at = (iso: string) => new Date(iso);
 
-describe("seoulLocalDate / seoulTime (Asia/Seoul, UTC+9)", () => {
+describe("seoulLocalDate / seoulTime (IANA Asia/Seoul; UTC+9 since 1988, history before)", () => {
   it("midnight boundary: 14:59:59Z is the previous Seoul day, 15:00:00Z is the next", async () => {
     const { seoulLocalDate, seoulTime } = await load();
     expect(seoulLocalDate(at("2026-11-01T14:59:59Z"))).toBe("2026-11-01");
@@ -96,5 +96,18 @@ describe("seoulLocalDate / seoulTime (Asia/Seoul, UTC+9)", () => {
       if (saved === undefined) delete process.env.TZ;
       else process.env.TZ = saved;
     }
+  });
+
+  // slice ② 보강(PLAN §5 ②): IANA tzdb Asia/Seoul 과거 이력. 고정 UTC+9로는 맞지 않는다.
+  it("IANA history: 1988 Korean summer time (UTC+10) — 1988-08-01T14:30Z is 1988-08-02 00:30", async () => {
+    const { seoulLocalDate, seoulTime } = await load();
+    expect(seoulLocalDate(at("1988-08-01T14:30:00Z"))).toBe("1988-08-02");
+    expect(seoulTime(at("1988-08-01T14:30:00Z"))).toBe("00:30");
+  });
+
+  it("IANA history: 1960 standard time UTC+8:30 — 1960-01-01T15:15Z is 1960-01-01 23:45", async () => {
+    const { seoulLocalDate, seoulTime } = await load();
+    expect(seoulLocalDate(at("1960-01-01T15:15:00Z"))).toBe("1960-01-01");
+    expect(seoulTime(at("1960-01-01T15:15:00Z"))).toBe("23:45");
   });
 });
