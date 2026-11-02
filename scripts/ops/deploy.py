@@ -207,9 +207,12 @@ def assert_latest(env, sha):
 
 
 def validated_dev_tree(tree):
+    global PHASE
+    PHASE = "dev-validation"
     if (STATE / "dev-pending.json").exists():
         raise ValueError("dev has an interrupted deployment; recover dev first")
     record = validate_record(read_json(STATE / "dev-current.json"), "dev")
+    PHASE = "production-promotion-check"
     require_dev_validation(tree, record)
 
 
@@ -308,8 +311,12 @@ def deploy(env, sha, settings):
             raise ValueError("unexpected built image identity")
         PHASE = "candidate-health"
         candidate(env, image, html_hash)
-        release_dir = STATE / "releases" / env / (sha + "-" + uuid.uuid4().hex)
-        release_dir.mkdir(parents=True, mode=0o700)
+        PHASE = "release-directory-policy"
+        releases = STATE / "releases"
+        release_dir = releases / env / (sha + "-" + uuid.uuid4().hex)
+        for path in (releases, releases / env, release_dir):
+            path.mkdir(mode=0o700, exist_ok=True)
+            trusted_file(path)
         compose_path = release_dir / "compose.json"
         atomic_json(compose_path, runtime_compose(env, image))
         record = {"status": "success", "sha": sha, "tree": tree, "image_id": image, "serving_html_sha256": html_hash, "compose_path": str(compose_path), "compose_sha256": digest(compose_path.read_bytes()), "timestamp": datetime.now(timezone.utc).isoformat()}
