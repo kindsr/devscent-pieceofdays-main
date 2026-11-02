@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>디자인 시안 비교 (선택 대기) — pieceofdays</title>
+  <style>
+    :root {
+      --bg: #F4F4F2; --surface: #FFFFFF; --ink: #1E1E1E; --muted: #4A4A4A; --line: #C8C8C3; --focus: #0B57D0;
+      --font: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", "Noto Sans KR", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
+    a { color: inherit; }
+    :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+    h1, h2, h3, p, ul { margin: 0; }
+    .wrap { max-width: 1440px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px; }
+    header h1 { font-size: 26px; line-height: 1.3; }
+    .status { margin-top: 6px; color: var(--muted); }
+    .status strong { color: var(--ink); }
+    .box { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+    .box h2 { font-size: 17px; margin-bottom: 6px; }
+    .box ul { padding-left: 20px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: end; }
+    fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+    legend { font-weight: 700; font-size: 14px; margin-bottom: 6px; padding: 0; }
+    .seg { display: flex; flex-wrap: wrap; border: 1px solid var(--ink); border-radius: 6px; overflow: hidden; background: var(--surface); }
+    .seg label { position: relative; display: flex; align-items: center; min-height: 44px; padding: 0 14px; cursor: pointer; border-right: 1px solid var(--line); }
+    .seg label:last-child { border-right: 0; }
+    .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+    .seg label:has(input:checked) { background: var(--ink); color: #FFFFFF; font-weight: 700; }
+    .seg label:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: -3px; }
+    .grid { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
+    .concept { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+    .concept h2 { font-size: 21px; line-height: 1.35; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+    .rec { font-size: 13px; font-weight: 700; border: 1px solid var(--ink); border-radius: 4px; padding: 1px 8px; }
+    .one { color: var(--muted); }
+    .frame { position: relative; width: 100%; overflow: hidden; border: 1px solid var(--ink); border-radius: 4px; background: #DDD; }
+    .frame iframe { display: block; border: 0; width: 100%; height: 640px; background: #FFF; }
+    .frame.scaled iframe { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+    .frame-note { font-size: 13px; color: var(--muted); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--ink); border-radius: 6px; text-decoration: none; font-weight: 700; background: var(--surface); }
+    .btn.primary { background: var(--ink); color: #FFFFFF; }
+    .facts { display: grid; gap: 10px; font-size: 15px; }
+    .facts h3 { font-size: 14px; color: var(--muted); }
+    .facts ul { padding-left: 18px; }
+    .swatches { display: flex; gap: 4px; }
+    .swatches span { width: 28px; height: 28px; border: 1px solid rgba(0,0,0,.25); border-radius: 4px; }
+    footer { font-size: 14px; color: var(--muted); display: grid; gap: 8px; }
+    @media (min-width: 1100px) {
+      .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      header h1 { font-size: 30px; }
+    }
+    @media (min-width: 768px) and (max-width: 1099px) {
+      .grid.is-mobile { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>pieceofdays 디자인 시안 3안 비교</h1>
+      <p class="status"><strong>선택 대기</strong> · 시안·예시 기록이며 저장되지 않습니다 · 개발 도메인 전용 미리보기(운영 미반영)</p>
+    </header>
+
+    <section class="box" aria-labelledby="assume-h">
+      <h2 id="assume-h">세 시안의 공통 가정</h2>
+      <ul>
+        <li>제품: 하루의 순간을 기록하고 하루를 정리해 이야기로 쌓는 개인 일기장. 흐름은 <b>순간 기록 → 하루 정리 → 날짜별 다시 보기</b>.</li>
+        <li>세 안 모두 같은 샘플 하루(2026년 11월 2일)와 같은 화면(오늘·작성·다시 보기·첫날 빈 상태·토큰)을 그렸습니다.</li>
+        <li>사진+짧은 글, 본인만 보기, 하루 정리는 직접 쓰기는 <b>시안을 위한 가정</b>입니다(PRD 초안 미확정). 감정 기록·AI 스토리·공유는 그리지 않았습니다.</li>
+        <li>이미지는 직접 그린 예시 그림이고, 글꼴은 기기에 설치된 한국어 글꼴을 써서 기기마다 조금 다르게 보일 수 있습니다.</li>
+      </ul>
+    </section>
+
+    <section class="controls" aria-label="미리보기 설정">
+      <fieldset>
+        <legend>보는 화면</legend>
+        <div class="seg" id="screen-seg">
+          <label><input type="radio" name="screen" value="today" checked>오늘</label>
+          <label><input type="radio" name="screen" value="write">작성</label>
+          <label><input type="radio" name="screen" value="days">다시 보기</label>
+          <label><input type="radio" name="screen" value="empty">첫날 빈 상태</label>
+          <label><input type="radio" name="screen" value="tokens">토큰</label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>미리보기 폭</legend>
+        <div class="seg" id="width-seg">
+          <label><input type="radio" name="width" value="375" checked>휴대폰 375px</label>
+          <label><input type="radio" name="width" value="1280">데스크톱 1280px</label>
+        </div>
+      </fieldset>
+    </section>
+
+    <div class="grid is-mobile" id="grid">
+      <article class="concept" aria-labelledby="a-h">
+        <h2 id="a-h">A 따뜻한 기록장 <span class="rec">메인 추천 (가설)</span></h2>
+        <p class="one">사진과 짧은 글을 날짜별 편집 지면처럼. 따뜻한 종이, 절제된 테라코타, 명조 제목.</p>
+        <div class="swatches" aria-hidden="true"><span style="background:#F5EFE4"></span><span style="background:#2A211C"></span><span style="background:#9E4527"></span><span style="background:#2D5A4C"></span></div>
+        <div class="frame"><iframe data-src="a-warm/index.html" title="시안 A 따뜻한 기록장 미리보기" src="a-warm/index.html?embed=1#today"></iframe></div>
+        <p class="frame-note">미리보기 안에서 직접 눌러 볼 수 있어요.</p>
+        <div class="actions"><a class="btn primary" data-open="a-warm/index.html" href="a-warm/index.html#today">A 크게 보기</a></div>
+        <div class="facts">
+          <div><h3>출발 레퍼런스</h3><p><a href="https://github.com/nexu-io/open-design/tree/main/design-systems/warm-editorial">Open Design · Warm Editorial</a> (방향만, 값은 새로 정함)</p></div>
+          <div><h3>장점</h3><ul><li>사진이 크게 보여 하루가 한 장의 지면처럼 남음</li><li>하단 탭 + "순간 남기기" 하나로 주 동작이 분명</li><li>조사 문서 잠정 추천과 같은 방향</li></ul></div>
+          <div><h3>주의</h3><ul><li>사진이 없는 날은 지면이 비어 보일 수 있음</li><li>긴 글을 오래 읽기에는 B보다 밀도가 낮음</li></ul></div>
+        </div>
+      </article>
+
+      <article class="concept" aria-labelledby="b-h">
+        <h2 id="b-h">B 차분한 일기장</h2>
+        <p class="one">날짜 목차와 긴 글 중심의 읽는 화면. 정갈한 종이, 잉크 블루 하나, 명조 본문.</p>
+        <div class="swatches" aria-hidden="true"><span style="background:#F3F1E9"></span><span style="background:#1D2633"></span><span style="background:#1D3A63"></span><span style="background:#D3CDBD"></span></div>
+        <div class="frame"><iframe data-src="b-calm/index.html" title="시안 B 차분한 일기장 미리보기" src="b-calm/index.html?embed=1#today"></iframe></div>
+        <p class="frame-note">미리보기 안에서 직접 눌러 볼 수 있어요.</p>
+        <div class="actions"><a class="btn primary" data-open="b-calm/index.html" href="b-calm/index.html#today">B 크게 보기</a></div>
+        <div class="facts">
+          <div><h3>출발 레퍼런스</h3><p><a href="https://github.com/nexu-io/open-design/tree/main/design-systems/kami">Open Design · kami</a> (한국어 렌더는 따로 확인 필요)</p></div>
+          <div><h3>장점</h3><ul><li>하루 정리와 긴 글을 오래 읽기 좋음</li><li>날짜 목차·이전/다음 장으로 회상 동선이 짧음</li><li>장식이 거의 없어 오래 써도 질리지 않음</li></ul></div>
+          <div><h3>주의</h3><ul><li>사진은 작은 보조라 사진 중심 기록에는 약함</li><li>휴대폰에서 빠른 입력보다 "쓰는 페이지" 느낌이 강함</li></ul></div>
+        </div>
+      </article>
+
+      <article class="concept" aria-labelledby="c-h">
+        <h2 id="c-h">C 조각 모음</h2>
+        <p class="one">사진·메모 조각을 모으는 산뜻한 스크랩북. 달력 칸에 그날의 첫 조각. 손그림은 작게.</p>
+        <div class="swatches" aria-hidden="true"><span style="background:#FBFAF6"></span><span style="background:#22252B"></span><span style="background:#1F5CAB"></span><span style="background:#FFF0B3"></span></div>
+        <div class="frame"><iframe data-src="c-pieces/index.html" title="시안 C 조각 모음 미리보기" src="c-pieces/index.html?embed=1#today"></iframe></div>
+        <p class="frame-note">미리보기 안에서 직접 눌러 볼 수 있어요.</p>
+        <div class="actions"><a class="btn primary" data-open="c-pieces/index.html" href="c-pieces/index.html#today">C 크게 보기</a></div>
+        <div class="facts">
+          <div><h3>출발 레퍼런스</h3><p><a href="https://github.com/nexu-io/open-design/tree/main/design-systems/doodle">Open Design · Doodle</a> (원문 하늘색·주황은 글자에 쓰지 않음)</p></div>
+          <div><h3>장점</h3><ul><li>"조각을 모은다"는 서비스 이름과 가장 직접 연결</li><li>짧은 메모·사진을 가볍게 붙이는 부담 낮은 입력</li><li>달력에서 쌓인 날이 한눈에 보임</li></ul></div>
+          <div><h3>주의</h3><ul><li>하루 정리(긴 글)가 보조 위치라 스토리텔링이 약해질 수 있음</li><li>오래 쓰면 놀이감이 가볍게 느껴질 수 있음</li></ul></div>
+        </div>
+      </article>
+    </div>
+
+    <section class="box" aria-labelledby="pick-h">
+      <h2 id="pick-h">고르는 방법</h2>
+      <p>A·B·C 중 하나, 또는 "A 바탕에 B의 다시 보기"처럼 조합을 메인에게 알려 주세요. 선택 뒤 그 안만 하이파이로 다듬고 확정 토큰을 정합니다.</p>
+      <p style="margin-top:8px">선택에 영향을 주는 미확정 질문(PRD 초안):</p>
+      <ul>
+        <li>순간 기록은 짧은 글 중심인가요, 사진 중심인가요? (사진 중심이면 A·C, 글 중심이면 B가 유리)</li>
+        <li>하루 정리는 직접 쓰나요, AI 초안을 고치나요? (이 시안은 직접 쓰기만 그림)</li>
+        <li>첫 버전은 본인만 보기로 충분한가요?</li>
+      </ul>
+    </section>
+
+    <footer>
+      <p>예시 이미지 3종은 이 작업에서 직접 그린 SVG입니다(사진 아님). 외부 글꼴·라이브러리·분석 도구를 쓰지 않으며, 입력한 내용은 이 화면 밖으로 보내거나 저장하지 않습니다.</p>
+      <p>정본: 저장소 <code>docs/design/concepts/</code> · 이 페이지는 <code>frontend/public/design/</code> 게시 사본입니다.</p>
+    </footer>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+    var SIZES = { "375": [375, 760], "1280": [1280, 820] };
+    var grid = document.getElementById("grid");
+    var frames = Array.prototype.slice.call(document.querySelectorAll(".frame"));
+    function val(name) { return document.querySelector('input[name="' + name + '"]:checked').value; }
+    var screenName = { today: "오늘", write: "작성", days: "다시 보기", empty: "첫날 빈 상태", tokens: "토큰" };
+    function fit() {
+      var s = SIZES[val("width")];
+      frames.forEach(function (f) {
+        var ifr = f.querySelector("iframe");
+        var avail = f.parentNode.clientWidth - 32; /* .concept 좌우 padding 16px */
+        var k = Math.min(1, avail / s[0]);
+        f.classList.add("scaled");
+        f.style.width = Math.round(s[0] * k + 2) + "px"; /* 테두리 1px×2 */
+        ifr.style.width = s[0] + "px";
+        ifr.style.height = s[1] + "px";
+        ifr.style.transform = "scale(" + k + ")";
+        f.style.height = Math.round(s[1] * k) + "px";
+      });
+    }
+    function apply() {
+      var screen = val("screen"), w = val("width");
+      grid.classList.toggle("is-mobile", w === "375");
+      frames.forEach(function (f) {
+        var ifr = f.querySelector("iframe"), base = ifr.getAttribute("data-src");
+        var name = ifr.title.replace(/ — .*$/, "");
+        ifr.title = name + " — " + screenName[screen] + " 화면";
+        try { ifr.contentWindow.location.hash = screen; }
+        catch (e) { ifr.src = base + "?embed=1#" + screen; }
+      });
+      document.querySelectorAll("[data-open]").forEach(function (a) {
+        a.href = a.getAttribute("data-open") + "#" + screen;
+      });
+      fit();
+    }
+    document.querySelectorAll('input[name="screen"], input[name="width"]').forEach(function (i) {
+      i.addEventListener("change", apply);
+    });
+    if ("ResizeObserver" in window) new ResizeObserver(fit).observe(grid); else window.addEventListener("resize", fit);
+    apply();
+  })();
+  </script>
+</body>
+</html>
