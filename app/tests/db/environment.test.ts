@@ -1,7 +1,7 @@
 // F2 bootstrap smoke: 시험 환경과 하네스만 확인한다. 제품 스키마·migration 시험이 아니다.
 // 아직 제품 migration이 없으므로 pod 스키마·schema_migrations가 없는 것이 정상이다.
-import type pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import pg from "pg";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   CI_ROLES,
   ROLE_SPECS,
@@ -22,7 +22,7 @@ import {
 } from "./helpers";
 
 let env: HarnessEnv;
-let db: DisposableDatabase;
+let db: DisposableDatabase | undefined;
 
 beforeAll(async () => {
   env = readDisposableEnv();
@@ -30,14 +30,21 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // beforeAll이 db 할당 전에 실패해도 정리는 실행된다(createDisposableDatabase도 자체 정리한다).
+  if (!env) return;
   await cleanupAll(env);
   // 정리 뒤 이번 실행이 만든 DB가 서버에 남지 않아야 한다.
   const left = await withAdmin(env, (a) =>
-    a.query("SELECT datname FROM pg_database WHERE datname = $1", [db.name]),
+    a.query("SELECT datname FROM pg_database WHERE datname LIKE 'pod\\_ci\\_env\\_%'"),
   );
   expect(left.rowCount).toBe(0);
   expect(trackedDatabases()).toEqual([]);
 });
+
+function current(): DisposableDatabase {
+  if (!db) throw new Error("beforeAll did not create the disposable database");
+  return db;
+}
 
 async function asRole<T>(url: string, fn: (c: pg.Client) => Promise<T>): Promise<T> {
   const c = await openClient(url, env.adminUrl);
@@ -69,7 +76,7 @@ describe("F2 DB 시험 환경 bootstrap", () => {
   });
 
   it("app role은 실제로 비특권이다", async () => {
-    await asRole(db.urls.app, async (c) => {
+    await asRole(current().urls.app, async (c) => {
       const me = await c.query<RoleRow & { cu: string }>(
         `SELECT current_user AS cu, rolsuper, rolcreaterole, rolcreatedb, rolbypassrls, rolreplication
            FROM pg_roles WHERE rolname = current_user`,
@@ -91,7 +98,7 @@ describe("F2 DB 시험 환경 bootstrap", () => {
   });
 
   it("생성 DB·pod_meta·db_environment의 owner는 pod_ci_owner이고 제품 객체는 없다", async () => {
-    await asRole(db.urls.migrator, async (c) => {
+    await asRole(current().urls.migrator, async (c) => {
       await c.query(`SET ROLE ${CI_ROLES.owner}`);
       const owners = await c.query<{ db: string; schema: string; tbl: string }>(
         `SELECT (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()) AS db,
@@ -116,7 +123,7 @@ describe("F2 DB 시험 환경 bootstrap", () => {
     await dropDisposableDatabase(env, tmp.name);
     const gone = await withAdmin(env, (a) => a.query("SELECT 1 FROM pg_database WHERE datname = $1", [tmp.name]));
     expect(gone.rowCount).toBe(0);
-    expect(trackedDatabases()).toEqual([db.name]);
+    expect(trackedDatabases()).toEqual([current().name]);
 
     await expect(dropDisposableDatabase(env, "postgres")).rejects.toThrow(/이번 실행이 만든 DB가 아니다/);
     await expect(dropDisposableDatabase(env, "pod_ci_untracked_0000000000000000")).rejects.toThrow(
@@ -124,6 +131,38 @@ describe("F2 DB 시험 환경 bootstrap", () => {
     );
     const still = await withAdmin(env, (a) => a.query("SELECT 1 FROM pg_database WHERE datname = 'postgres'"));
     expect(still.rowCount).toBe(1);
+  });
+
+  it("CREATE 직후 권한 설정이 실패해도 함수가 스스로 그 DB를 지우고 추적에서 뺀다", async () => {
+    const original = pg.Client.prototype.query;
+    let injected = false;
+    let createdName: string | undefined;
+    const spy = vi.spyOn(pg.Client.prototype, "query").mockImplementation(function (
+      this: pg.Client,
+      ...args: unknown[]
+    ) {
+      const text = typeof args[0] === "string" ? args[0] : "";
+      const m = /^CREATE DATABASE "(pod_ci_fail_[0-9a-f]{16})"/.exec(text);
+      if (m) createdName = m[1];
+      if (!injected && text.startsWith("GRANT CONNECT ON DATABASE")) {
+        injected = true;
+        return Promise.reject(new Error("injected GRANT failure"));
+      }
+      return (original as (...a: unknown[]) => unknown).apply(this, args);
+    } as never);
+    try {
+      await expect(createDisposableDatabase(env, "fail")).rejects.toThrow(/injected GRANT failure/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(injected).toBe(true);
+    expect(createdName).toMatch(/^pod_ci_fail_[0-9a-f]{16}$/);
+    // 호출자가 cleanupAll을 부르기 전에 이미 서버·추적 모두 비어 있어야 한다.
+    const left = await withAdmin(env, (a) =>
+      a.query("SELECT datname FROM pg_database WHERE datname LIKE 'pod\\_ci\\_fail\\_%'"),
+    );
+    expect(left.rowCount).toBe(0);
+    expect(trackedDatabases()).toEqual([current().name]);
   });
 
   it("환경 검사는 disposable 플래그·loopback 호스트·쿼리 없음을 요구하고 URL을 메시지에 넣지 않는다", () => {
