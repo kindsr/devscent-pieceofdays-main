@@ -2,6 +2,10 @@
 
 > 전체 워크플로우는 `~/server-runbook/15_DEV_PROD_WORKFLOW_RUNBOOK.md` 참고.
 
+> 2026-11-02 점검: 작업·dev·운영 경로 분리는 [PLAN](../docs/plans/PLAN_workspace-deployment-separation.md)의
+> **권고안·미적용**이다. 아래 현행 구성이 유효하다. 이 문서의 배포·인증서 명령은 운영 작업 설명이며,
+> 문서 정리 요청만으로 실행하지 않는다.
+
 ## 현재 상태 (2026-08-20)
 
 | 구분 | 도메인 | 내용 | 소스 |
@@ -31,12 +35,19 @@ cd ~/projects/devscent-pieceofdays-main
 docker compose up -d
 ```
 
-준비중 페이지 내용 수정은 `deploy/comingsoon/html/index.html` 편집 후 커밋만 하면 됨
-(볼륨 마운트라 컨테이너 재시작 불필요).
+PLAN 채택 후 bind 없는 새 운영 Compose가 master에 들어오면, 실제 전환·검증이 끝날 때까지 위 명령을
+`~/projects`에서 실행하지 않는다(PLAN §4-2).
+
+운영 컨테이너는 이 체크아웃의 `deploy/comingsoon/html`을 bind mount(`:ro`)한다. 따라서
+`deploy/comingsoon/html/index.html`을 이 경로에서 **저장하는 순간** 커밋·재시작 없이 운영 화면에 반영된다.
+`:ro`는 컨테이너 안의 쓰기만 막으며 호스트 편집의 반영을 막지 않는다. 이 파일 수정은 운영 변경으로 보고
+사용자 승인 뒤 진행하고, 반영 후 커밋해 운영 내용과 Git을 일치시킨다.
 
 ## dev 배포
 
-`~/development/devscent-pieceofdays-main` 에서 `dev` 브랜치에 push → 1분 내 자동배포.
+`origin/dev`에 push된 새 커밋을 `~/development/devscent-pieceofdays-main`이 감지해 1분 주기로 자동배포한다.
+(작업 경계 제안·미적용, AGENTS §3: 채택 후 개발·커밋은 `~/projects` 아래 별도 worktree에서 하고 `dev`를 push한다.
+`~/development` 체크아웃은 자동배포가 `ff-only`로 받는 배포본이라 직접 편집하지 않는다.)
 로그: `~/development/ops/dev_autodeploy.log` / 빌드 로그: `dev_autodeploy.build.log`
 
 ## 인증서 발급 절차 (기록)
