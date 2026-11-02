@@ -15,6 +15,8 @@
   --focus: #2D5A4C;
   --font-ui: "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", "맑은 고딕", "NanumGothic", "나눔고딕", sans-serif;
   --font-hand: "Nanum Pen Script", "Nanum Pen", "나눔손글씨 펜", var(--font-ui);
+  --font-serif: "NanumMyeongjo", "나눔명조", "AppleMyungjo", "Noto Serif KR", "Noto Serif CJK KR", "Batang", "바탕", serif;
+  --font-record: var(--font-ui); /* 기록 글꼴(설정): 조각 글·하루 한 줄·쓰는 칸에만 */
   --r: 10px;
   --border: 2px solid var(--ink);
   --s-1: 8px; --s-2: 12px; --s-3: 20px; --s-4: 32px; --s-5: 48px;
@@ -148,6 +150,42 @@ textarea[aria-invalid="true"] { border-color: #8E2A12; border-width: 3px; }
 .pola:has(input:checked) { border: 3px solid var(--accent); }
 .pola:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 3px; }
 .pop-actions { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-1); }
+
+/* 개별 조각 수정 */
+.piece-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--s-1); }
+.piece-meta time { margin: 0; }
+.note .piece-meta { margin: -4px 0 6px; }
+.piece-edit {
+  min-width: 44px; min-height: 44px; margin: -6px -6px -6px 0; padding: 0 6px; flex: none;
+  background: none; border: 0; font: inherit; font-size: 14px; font-weight: 700; color: var(--ink);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.piece-edit:hover { color: var(--accent); }
+
+/* 기록 글꼴 (설정) — UI 글꼴·기하는 그대로, 기록 본문만 바뀐다 */
+html[data-record-font="serif"] { --font-record: var(--font-serif); }
+html[data-record-font="hand"] { --font-record: var(--font-hand); }
+.piece p:not(.tag), .oneline p, textarea, .font-preview .sample p, .rec-text { font-family: var(--font-record); }
+.set-link { margin-left: auto; font-size: 15px; }
+.settings { display: grid; gap: var(--s-2); max-width: 640px; }
+.settings h2 { font-size: 20px; font-weight: 800; }
+.font-pick { border: 0; padding: 0; margin: 0; display: grid; gap: var(--s-1); }
+.font-opt {
+  display: grid; grid-template-columns: auto 1fr; gap: 0 var(--s-1); align-items: center; min-height: 44px;
+  padding: var(--s-1) var(--s-2); background: var(--surface); border: var(--border); border-radius: var(--r); cursor: pointer;
+}
+.font-opt input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); grid-row: span 3; }
+.font-opt:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.font-name { font-weight: 800; }
+.font-desc { font-size: 14px; color: var(--muted); }
+.font-eg { font-size: 17px; }
+.font-eg[data-f="gothic"] { font-family: var(--font-ui); }
+.font-eg[data-f="serif"] { font-family: var(--font-serif); }
+.font-eg[data-f="hand"] { font-family: var(--font-hand); font-size: 21px; }
+.font-preview { display: grid; gap: var(--s-1); margin-top: var(--s-1); }
+.font-preview .sample { border: var(--border); border-radius: 4px; padding: var(--s-2) var(--s-2) var(--s-3); }
+.font-preview .sample time { display: block; font-size: 20px; line-height: 1.2; margin-bottom: 6px; }
+.font-preview .sample p { font-size: 15px; line-height: 1.55; }
 
 /* 토큰 */
 .tokens { display: grid; gap: var(--s-4); max-width: 900px; }

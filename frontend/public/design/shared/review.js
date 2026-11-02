@@ -99,6 +99,8 @@
   window.POD = {
     esc: esc, parts: parts, nowTime: nowTime, onRoute: onRoute, announce: announce,
     contrast: contrast, tokenRows: tokenRows, WEEK: WEEK, embed: embed,
+    /* 한 안에만 있는 화면을 라우팅·리뷰 바에 더한다(onRoute 전에 호출). 다른 안에는 영향 없음 */
+    addView: function (id, name) { VIEWS.push([id, name]); },
     /* 비교판 미리보기에서 사용자가 이 iframe을 조작 중이 아니면 부모 화면의 포커스를 가져가지 않는다 */
     quiet: function () { return embed && !document.hasFocus(); },
     clone: function (o) { return JSON.parse(JSON.stringify(o)); },
