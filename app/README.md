@@ -1,6 +1,6 @@
-# pieceofdays app (F1 화면·F2 DB 기반)
+# pieceofdays app (F1 화면·F2 DB·F3 도메인 개발)
 
-Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기가 있다. **앱의 실제 DB 연결·로그인·영구 저장·이미지 저장소·첫 로그인 지급은 아직 구현 전**이다. MVP 완료가 아니다.
+Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기, 공급자 중립 첫 로그인 지급 함수를 검증했다. **실제 로그인 연결·앱의 기록 저장·이미지 저장소는 아직 구현 전**이다. 지급 함수를 실제 인증 성공 사건에 연결하는 것은 F4다. MVP 완료가 아니다.
 루트 `frontend/`(정적 nginx 이미지)와 별개이며, **현재 dev 정적 배포(`dev.pieceofdays.com`)에 자동으로 포함되지 않는다**.
 앱 배포 전환은 PLAN_mvp-foundation F6(메인 주도)에서 따로 정한다.
 
@@ -17,8 +17,9 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 | `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부 |
 | `src/server/context.ts` | 요청의 기록 문맥. 고정 사용자 모드가 아니면 "연결 안 됨" |
 | `src/server/diary/` | 저장 port(`store.ts`)와 메모리 구현·예시 기록(로컬·시험 전용) |
-| `src/server/db/`, `migrations/` | SQL 정책 검사·체크섬·잠금 기반 실행기와 `0001_init`의 8개 테이블·권한·원장 보호 |
-| `src/shared/` | 글꼴 허용 목록, 날짜 파싱 |
+| `src/server/account/`, `src/server/credit/` | identity별 계정 해석·첫 성공 로그인 10개 1회 지급·잔액 조회(실제 인증 연결 전) |
+| `src/server/db/`, `migrations/` | 앱 Pool·트랜잭션, SQL 정책 검사·migration 실행기와 8개 테이블·권한·원장 보호 |
+| `src/shared/` | UI 공유 타입, 글꼴 허용 목록, 날짜 파싱·서울 날짜/시각 |
 | `tests/unit/`, `tests/db/`, `tests/e2e/`, `tests/prod/` | Vitest 단위·일회용 PG18 통합 시험 / Playwright E2E / 운영 모드 경계 smoke |
 | `docs/screenshots/` | F1 확인 스크린샷(로컬 고정 사용자 모드, 375/768/1440) |
 
@@ -70,11 +71,17 @@ POD_TEST_DB_DISPOSABLE=1 POD_TEST_ADMIN_URL=postgres://postgres:ci-only-not-a-se
 
 전체 검사는 저장소 루트에서 `POD_FULL_CHECK_ISOLATED=1`, `POD_TEST_DB_DISPOSABLE=1`, `POD_TEST_ADMIN_URL`을 지정하고 `bash app/tests/full-check.sh`로 실행한다. **격리된 Cloud/CI/개발 PC 전용이며 공유 운영 서버에서 실행하지 않는다.** 조건이 없으면 시험을 시작하지 않는다. DB 시험을 먼저 통과한 뒤 배포·앱 검사를 순차 실행한다. 플래그는 격리 환경이라는 운영 전제를 명시하는 것이며 머신 격리를 자동 보장하지 않는다.
 
-bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. 공식 수락 근거인 [최종 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41522328270)에서 DB 57개, Node 24·26 각각 단위 71개·운영 경계 6개·E2E 12개가 통과했다. FullCheck 스크립트 자체의 전체 실행은 별도로 검증하지 않았다.
+bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41522328270)에서 DB 57개, Node 24·26 각각 단위 71개·운영 경계 6개·E2E 12개가 통과했다. FullCheck 스크립트 자체의 전체 실행은 별도로 검증하지 않았다.
+
+## 첫 로그인 지급 코어 (F3 slice ①)
+
+`completeSuccessfulLogin(db, identity)`는 계정 해석·원장·잔액·첫 로그인 시각을 한 트랜잭션에서 처리한다. 생성 경합의 패자는 전체를 롤백한 뒤 새 트랜잭션에서 한 번 재시도한다. 지급은 계정 잠금과 canonical 사용자별 원장 키로 한 번만 반영된다. `getBalance`는 읽기 전용이고, `getAppDb`는 `POD_DATABASE_URL`로 지연 생성한다. 현재 앱 경로에서 이 함수들을 호출하지 않는다.
+
+[F3 slice ① CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41530631065): 단위 81·DB 69개, Node 24·26 각각 운영 경계 6·E2E 12개 통과. 8개 실제 app 연결에서 1회 지급, 새/기존 계정의 실패 롤백·재호출, 원장 합계와 잔액 일치를 검증했다. UI 공유 타입을 분리하고 UI·shared의 직접 server import를 lint로 막으며 Konva 제한을 유지한다. 실제 인증·세션은 미연결이고 전이 import 전체 보장은 F4/F5에서 강화한다. 다음 기록 저장·시간대 정합성 작업은 [F3 계획](../docs/plans/PLAN_mvp-domain-storage.md)을 따른다.
 
 ## 한계 (제품 구현)
 
-- 로그인·앱의 PG 저장 연결·버킷·첫 로그인 지급 트랜잭션 없음. 원장 테이블·제약·권한만 F2에 있으며 지급 동작은 F3·F4다. 조각 삭제·하루 꾸미기 편집기는 아직 없다.
+- 실제 로그인·앱의 PG 기록 저장 연결·버킷 없음. 지급 트랜잭션은 도메인 함수로 검증했으며 실제 인증과 함께 켜는 것은 F4다. 조각 삭제·하루 꾸미기 편집기는 아직 없다.
 - 기록 변경은 화면 이동·새로고침으로 초기화된다(위 실행 모드 참고). F1에서는 영구 저장이나 클라이언트 전역 store를 추가하지 않는다.
 - Konva는 스티커 1개 끌기·펜 획 1개 스모크만 확인했다(`/dev/konva-smoke`, 시험 전용).
 - 글꼴은 시스템 글꼴 스택만 쓴다(동봉·라이선스 확인은 F5). 시험 VM에는 한국어 명조·손글씨 글꼴이 없어 글꼴 차이는 속성 값으로만 확인했다.

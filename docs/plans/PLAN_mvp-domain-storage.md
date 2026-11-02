@@ -1,6 +1,6 @@
 # PLAN — F3 도메인·PostgreSQL 저장 (공급자 중립)
 
-- 상태: **계획. 구현·시험·패키지·migration을 바꾸지 않았다.**
+- 상태: **slice ① 구현·CI 검증 완료. slice ②·③은 계획.** 실행 결과는 §9에 기록한다.
 - 기준: `dev` `d4d1b5c`. F2가 통합됐고 CI·개발 자동배포·컨테이너/HTTPS 검증까지 끝났다.
   - 실서버 DB는 없고, 앱은 정적 dev에 연결돼 있지 않다.
   - **F3 baseline(동결): 단위 71 · DB 57 · Node 24/26 prod 6·E2E 12 · root 42.**
@@ -216,7 +216,7 @@ applyDesign(db: Db, userId: string, versionId: string | null): Promise<Result<nu
 | 파일 (신규·변경) | slice | 핵심 사례 |
 |---|---|---|
 | `tests/unit/client-boundary.test.ts` (신규) | ① | 아래 ①-a |
-| `tests/unit/seoul-date.test.ts` (신규) | ① | `14:59:59Z`→전날, `15:00:00Z`→다음날, 월말·연말, `HH:MM` |
+| `tests/unit/seoul-date.test.ts` | ①·② | 서울 자정·월말·연말·`HH:MM`. ② RED에서 IANA 과거 이력 두 사례를 보강 |
 | `tests/db/f3-login-grant.test.ts` (신규) | ① | 아래 ①-b |
 | `tests/unit/diary-memory-store.test.ts` (**RED에서 변경**) | ② | B2 정리만. 새 사례는 없고 기존 4건은 계속 통과 |
 | `tests/db/f3-diary.test.ts` (신규) | ② | 아래 ② |
@@ -256,7 +256,7 @@ applyDesign(db: Db, userId: string, versionId: string | null): Promise<Result<nu
 - 비UUID에 대한 `getBalance`는 0이다.
 
 **② 조각·하루 한 줄:**
-- 작성 후 읽기: 시각·순서·`version=1`, 경계 시각의 `local_date`를 확인한다.
+- 작성 후 읽기: 시각·순서·`version=1`, 경계 시각의 `local_date`를 확인한다. 주입 시계를 `1988-08-01T14:30Z`·`1960-01-01T15:15Z`로 둔 경우에도 IANA `Asia/Seoul`과 PG 읽기가 각각 `1988-08-02 00:30`·`1960-01-01 23:45`로 일치해야 한다. 같은 두 사례를 단위 시험에도 추가한다.
 - 본문: 300자 통과, 301자·공백만 있는 본문은 `invalid_body`.
 - 수정·삭제: 낡은 버전 `conflict`, 타인·삭제됨·비UUID id `not_found`, `expectedVersion` 0/1.5/NaN은 `invalid_version`.
 - 사용자 조건: 비UUID·없는 사용자로 쓰면 `not_found`. 타인의 `getDay`는 `null`, `listMonth`는 `[]`. `listMonth(2026, 13)`은 `[]`.
@@ -298,7 +298,7 @@ slice마다 **RED 커밋(`TEST_PATTERNS` 경로만) → 독립 runner로 실패 
 | ①RED | `npm --prefix app test -- tests/unit/client-boundary.test.ts tests/unit/seoul-date.test.ts` | 새 `it` 전부 실행 후 실패: server 금지 오류가 없거나 모듈 없음. 양성 제어 단언은 통과 |
 | ①RED | `npm --prefix app run test:db -- tests/db/f3-login-grant.test.ts` | 새 `it` 전부 실행 후 모듈 없음으로 실패. 다른 DB 시험 57건 통과 |
 | ①GREEN | 위 명령 + `npm --prefix app test` + `npm --prefix app run test:db` | 단위 71+u₁, DB 57+d₁ 통과 |
-| ②RED/GREEN | `… test -- tests/unit/diary-memory-store.test.ts`, `… test:db -- tests/db/f3-diary.test.ts` | RED: 메모리 4건 통과 + f3-diary 전부 실행 후 실패 / GREEN: 통과 |
+| ②RED/GREEN | `… test -- tests/unit/diary-memory-store.test.ts tests/unit/seoul-date.test.ts`, `… test:db -- tests/db/f3-diary.test.ts` | RED: 메모리 4건 통과 + IANA 두 사례·f3-diary 실패 / GREEN: 통과 |
 | ③RED/GREEN | `… test -- tests/unit/manifest.test.ts`, `… test:db -- tests/db/f3-decoration-preferences.test.ts` | 같은 형태 |
 | slice 끝 | `bash app/tests/full-check.sh` | 전체 통과(prod 6·E2E 12·root 42 유지) |
 
@@ -323,4 +323,14 @@ slice마다 **RED 커밋(`TEST_PATTERNS` 경로만) → 독립 runner로 실패 
 | 개인 버전 보관·삭제, 사진·예시 이미지, 잔액 표시, 탈퇴 | [미정] |
 | 사용자별 시간대 | [가정] `Asia/Seoul` |
 | client→server 전이 import | lint 경로 규칙의 한계. F4/F5에서 강화 검증 |
-| `lintText` 가상 경로·`$1::uuid::text` 동작 | 미실행. RED/GREEN CI에서 확인 |
+| `lintText` 가상 경로·`$1::uuid::text` 동작 | slice ① CI에서 확인 |
+| 서울 시간대 과거 이력 | 현재 helper는 UTC+9 고정. slice ②에서 IANA 기반으로 보완하고 PG 읽기와 비교 |
+
+## 9. Slice ① 실행 결과 (2026-11-02)
+
+- 기준 `e4db8be` → RED `fc079b8` → GREEN `b9ed5e8708b494e8c5e6fb46417e14f73545f3c8`. RED는 시험 4파일만, GREEN은 제품 15파일만 바꿨고 두 범위 관문을 메인이 확인했다. 독립 Cloud runner가 각 CI 원문과 코드 계약을 대조했다.
+- [CI `41530631065`](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41530631065): Node 24·26 각각 단위 81·운영 경계 6·E2E 12개, PG18 DB 69개 통과(건너뜀 0). [배포 계약 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41530630974)는 42개와 Compose 검사를 통과했다.
+- 8개 app 연결의 canonical 계정·1회 지급, 새/기존 계정의 네 가지 실패 주입과 롤백·재시도, 원장 합계·잔액 일치, SQL 전 형식 거부를 검증했다. 경합 패자 내부 분기의 매회 실행을 강제하는 배리어는 없다.
+- 앱 Pool은 지연 생성하고 실제 HTTP·인증·UI 저장 연결은 하지 않았다. UI 네 곳은 공유 타입 import만 바꿨다. 실서버 DB·권한·migration·배포 프로그램은 변경하지 않았다.
+- 독립 검토의 비차단 P2(UTC+9 고정)는 slice ②의 RED/PG 시각 비교에서 보완한다. [IANA 이력](https://data.iana.org/time-zones/tzdb/asia)과 명시한 `Asia/Seoul`을 따르며 Date 입력 범위를 임의로 제한하지 않는다.
+- 다음 slice의 BASE는 이 결과가 통합된 dev의 정확한 SHA로 동결한다. 앱은 계속 정적 시안과 별개이며 실제 로그인·지급 연결은 F4다. FullCheck 스크립트 전체 실행과 실서버 DB 적용은 미실행이다.
