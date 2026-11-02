@@ -169,3 +169,11 @@
   저장소 배포 계약 시험 `python3 -B -m unittest discover -s tests -p 'test_*.py'` 42 OK, `git diff --check` 0.
 - 화면: 375/768/1440 수평 넘침 없음(E2E), 스크린샷 `app/docs/screenshots/`.
 - 남은 것: F2(migration·PG18 컨테이너 시험), F3(도메인·PG 구현·시간대), F4(실제 로그인·첫 로그인 지급), F5(꾸미기 Lite 편집기·글꼴 동봉·조각 삭제), F6(배포 전환).
+
+### 10.1 F1 통합 전 보완 (메인 배정, 같은 PR)
+
+- 추가 팝업과 주소 `#write` 동기화: 뒤로 가기로 `#write`를 벗어나면 닫고, 앞으로 가기로 초안과 함께 다시 연다. E2E RED(뒤로 가기 후에도 팝업 보임) 확인 뒤 `DayBoard`만 최소 수정.
+- 특정 날(제목 h2)에서 한 줄 반영 뒤 포커스를 `#picked-h`로 돌린다(RED: 포커스 없음 → GREEN).
+- 완료 안내·README에 "새로고침하거나 다른 화면으로 이동하면 사라진다"를 명시하고 E2E로 확인. 영구 저장·클라이언트 전역 store는 추가하지 않는다.
+- 운영 모드 경계 smoke(`app/playwright.prod.config.ts`, `app/tests/prod/`): 이미 만든 빌드를 `next start`로 127.0.0.1:3200에서 플래그 없이 띄워 `/`·`/days`·`/days/2026-11-02` 준비 중 안내·예시 기록 없음, `/dev/konva-smoke` 404, 위조 `x-user-id` 헤더·`userId` 질의값으로도 노출 없음을 확인한다. 127.0.0.1:3201에서 `POD_LOCAL_FIXTURE=1 next start`가 거부 메시지와 exit 1로 끝나는지 확인한다(플래그는 자식 프로세스 env에만). CI `app-validation`에 같은 단계를 추가했다. dev E2E(3100)와 순차 실행.
+- 검증 결과는 PR 본문에 기록한다.

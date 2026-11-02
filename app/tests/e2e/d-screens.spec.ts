@@ -67,3 +67,46 @@ test("unknown dates are not found", async ({ page }) => {
   const res = await page.goto("/days/2026-02-30");
   expect(res?.status()).toBe(404);
 });
+
+test("browser Back closes the add dialog, Forward reopens it with the draft kept", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "조각 추가" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/#write$/);
+  await dialog.getByRole("textbox", { name: "메모" }).fill("뒤로 가기 초안");
+
+  await page.goBack();
+  await expect(page).not.toHaveURL(/#write/);
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".pieces")).not.toContainText("뒤로 가기 초안");
+
+  await page.goForward();
+  await expect(page).toHaveURL(/#write$/);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "메모" })).toHaveValue("뒤로 가기 초안");
+});
+
+test("changes also reset when moving to another screen, and the notice says so", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "조각 추가" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox", { name: "메모" }).fill("이동 시험 조각");
+  await dialog.getByRole("button", { name: "붙이기" }).click();
+  await expect(page.locator("[aria-live]").first()).toContainText("다른 화면으로 이동하면 사라집니다");
+  await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "모아보기" }).click();
+  await expect(page.locator("#view h1")).toHaveText("모아보기");
+  await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "오늘" }).click();
+  await expect(page.locator(".pieces")).toBeVisible();
+  await expect(page.getByText("이동 시험 조각")).toHaveCount(0);
+});
+
+test("one-line summary on a picked day returns focus to the picked heading", async ({ page }) => {
+  await page.goto("/days/2026-11-02");
+  await page.getByRole("button", { name: "고쳐 쓰기" }).click();
+  await page.getByRole("textbox", { name: "오늘을 한 줄로" }).fill("고친 한 줄");
+  await page.getByRole("button", { name: "반영" }).click();
+  await expect(page.locator(".oneline")).toContainText("고친 한 줄");
+  await expect(page.locator("#picked-h")).toBeFocused();
+  await expect(page.locator("[aria-live]").first()).toContainText("다른 화면으로 이동하면");
+});
