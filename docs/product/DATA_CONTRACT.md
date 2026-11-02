@@ -1,6 +1,6 @@
 # MVP 데이터 계약 (PostgreSQL 18)
 
-- 상태: **F2 설계 계약. 아직 SQL·DB·계정을 만들지 않았다.** 기준 `dev` `e5ebd58`. 실행 계획은 [PLAN_mvp-database](../plans/PLAN_mvp-database.md)에 있다.
+- 상태: **F2 설계·구현 계약.** `0001_init` SQL과 권한·제약을 일회용 PG18 CI에서 검증했다. 실서버 DB·계정은 만들지 않았다. 초기 설계 기준은 `dev` `e5ebd58`이며 [실행 계획·결과](../plans/PLAN_mvp-database.md)에 실제 구현 기준을 기록한다.
 - 정본 입력: [00_TECH_STACK_DECISION](00_TECH_STACK_DECISION.md) §3, [03_MVP](03_MVP.md), [PLAN_mvp-foundation](../plans/PLAN_mvp-foundation.md) §3·§5·F2·F3, [DECORATION_MARKET_ARCHITECTURE](DECORATION_MARKET_ARCHITECTURE.md) §3.4·§5·§6. F1 저장 port(작업 브랜치 `claude/nextjs-foundation-mvp-0p73cn` `e5dd64d`의 `app/src/server/diary/store.ts`)는 읽기만 했다.
 - 표기: **[계약]** F2 RED 시험이 그대로 검사할 값, **[가정]** 사용자 결정 전의 전제, **[미정]** 결정 필요.
 - 인증 공급자는 [미정]이다(메인이 질문 중). 이 계약은 공급자 중립이며, 이메일·이름·프로필 같은 공급자 개인정보 열을 두지 않는다.
@@ -163,6 +163,7 @@ RETURNING version;
 - 보호 트리거(심층 방어, owner 포함 모든 role에 적용): `BEFORE UPDATE OR DELETE … FOR EACH ROW`, `BEFORE TRUNCATE … FOR EACH STATEMENT`. 둘 다 `RAISE EXCEPTION 'emotion_ledger is append-only'`(SQLSTATE `P0001`)를 낸다.
 - 잔액의 권위는 `SUM(delta)`다. `credit_accounts.balance`는 같은 트랜잭션에서 갱신하는 사본이다. 일치 여부는 F3가 시험한다.
 - `ON DELETE RESTRICT`로 원장을 보존한다. 원장이 있는 사용자·계정은 지워지지 않는다. 사용자 삭제가 `CASCADE`로 일기를 지우려 해도 원장 쪽 `RESTRICT`가 전체 삭제를 막는다. 탈퇴 절차는 정책을 정한 뒤 별도 migration과 운영 절차로 만든다.
+- PostgreSQL 18의 부모 `DELETE` RESTRICT 위반은 SQLSTATE `23001`이며, 참조 없는 FK 값의 삽입·갱신 위반 `23503`과 구분해 시험한다.
 
 ### 4.9 책임 분리 (F2 / F3 / F4)
 
