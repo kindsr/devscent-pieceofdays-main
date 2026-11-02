@@ -15,7 +15,9 @@ const NOTE = ["y", "m", "p"] as const;
 type Note = (typeof NOTE)[number];
 type Piece = { key: string; time: string; text: string; image: SampleImageKey | null; note: Note };
 
-const NOT_SAVED = "이 화면에만 추가했어요. 저장되지 않아 새로고침하면 사라집니다.";
+// F1에는 영구 저장도 화면 간 공유 상태도 없다. 새로고침뿐 아니라 다른 화면으로 이동해도 사라진다.
+const GONE = "저장되지 않아 새로고침하거나 다른 화면으로 이동하면 사라집니다.";
+const NOT_SAVED = `이 화면에만 추가했어요. ${GONE}`;
 const ADD_HINT = "앱 골격이라 이 화면에만 붙고 저장되지 않아요.";
 const EDIT_HINT = "앱 골격이라 이 화면에만 고쳐지고 저장되지 않아요. 기록 시각은 그대로예요.";
 const IMAGE_CHOICES: Array<[SampleImageKey | null, string]> = [
@@ -87,10 +89,12 @@ export function DayBoard({
   }, [isToday]);
 
   // 상단 "조각 추가"(/#write)와 보드의 추가 칸은 해시로 팝업을 연다(D와 같은 주소).
+  // 브라우저 뒤로 가기 등으로 #write를 벗어나면 추가 팝업을 닫는다. 입력 중인 초안(text·image)은 그대로 둔다.
   useEffect(() => {
     if (!isToday) return;
     const sync = () => {
       if (location.hash === "#write") openAdd();
+      else setCompose((c) => (c?.mode === "add" ? null : c));
     };
     sync();
     window.addEventListener("hashchange", sync);
@@ -162,7 +166,7 @@ export function DayBoard({
       focusAfter.current = `[data-edit="${key}"]`;
       setCompose(null);
       endEdit();
-      announce("조각을 고쳤어요. 이 화면에만 반영되고 저장되지 않아 새로고침하면 사라집니다.");
+      announce(`조각을 고쳤어요. 이 화면에만 반영되고 ${GONE}`);
       return;
     }
     const key = `new-${Date.now()}`;
@@ -182,8 +186,8 @@ export function DayBoard({
     const v = String(new FormData(e.currentTarget).get("summary") ?? "").trim();
     setSummary(v);
     setEditingSummary(false);
-    focusAfter.current = "#view h1, #view .picked h2";
-    announce("한 줄을 이 화면에만 반영했어요. 저장되지 않습니다.");
+    focusAfter.current = headingLevel === 2 ? "#picked-h" : "#view h1";
+    announce(`한 줄을 이 화면에만 반영했어요. ${GONE}`);
   }
 
   const editing = compose?.mode === "edit";

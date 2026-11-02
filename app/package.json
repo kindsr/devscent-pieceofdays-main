@@ -15,7 +15,8 @@
     "lint": "eslint --max-warnings=0 .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:prod-smoke": "playwright test -c playwright.prod.config.ts"
   },
   "dependencies": {
     "konva": "10.9.1",
