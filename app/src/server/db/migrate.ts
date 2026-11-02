@@ -55,7 +55,8 @@ export type DbEnvironment = { name: string; appRole: string; ownerRole: string }
 export type Log = (line: string) => void;
 
 const FILE_RE = /^(\d{4})_([a-z0-9_]+)\.(up|down)\.sql$/;
-const utf8 = new TextDecoder("utf-8", { fatal: true });
+// ignoreBOM: 디코더가 BOM을 조용히 지우지 않게 해 아래 BOM 검사가 실제로 동작하도록 한다.
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 function decode(file: string, bytes: Buffer): string {
   let text: string;

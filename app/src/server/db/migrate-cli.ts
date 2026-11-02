@@ -5,8 +5,8 @@
  *   node src/server/db/migrate-cli.ts down --to <N> --allow-down [--migrations-dir <dir>]
  *
  * - 접속: POD_MIGRATE_DATABASE_URL(migrator). 기본 디렉터리는 app/migrations.
- * - 성공 0, 실행기의 거부·SQL 실패·접속 실패 1. 그 밖의 예기치 않은 오류(코드 결함)는 정상 거부로
- *   숨기지 않고 "internal error"와 stack을 출력하며 2로 끝낸다.
+ * - 성공 0, 모든 실패 1. 실행기의 거부·SQL 실패·접속 실패(잘못된 URL 포함)와 구분되도록
+ *   예기치 않은 오류(코드 결함)는 "internal error"와 stack을 출력한다. 정상 거부로 숨기지 않는다.
  * - URL·비밀번호·접속 오류 원문을 출력하지 않는다.
  */
 import path from "node:path";
@@ -68,12 +68,14 @@ function redact(text: string, secrets: string[]): string {
 class ConnectionError extends MigrationError {}
 
 async function connect(url: string): Promise<pg.Client> {
-  const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000, application_name: "pod-migrate" });
-  client.on("error", () => undefined);
+  let client: pg.Client | undefined;
   try {
+    // 생성자도 URL을 파싱하므로(형식 오류 시 throw) 같은 경계 안에서 처리한다.
+    client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000, application_name: "pod-migrate" });
+    client.on("error", () => undefined);
     await client.connect();
   } catch (err) {
-    await client.end().catch(() => undefined);
+    if (client) await client.end().catch(() => undefined);
     const code = (err as { code?: unknown }).code;
     throw new ConnectionError(`database connection failed${typeof code === "string" ? ` (${code})` : ""}`);
   }
@@ -112,7 +114,7 @@ async function main(argv: string[]): Promise<number> {
       return 1;
     }
     console.error(redact(`migrate: internal error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`, secrets));
-    return 2;
+    return 1;
   }
 }
 
