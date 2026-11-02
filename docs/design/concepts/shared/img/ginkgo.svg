@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="예시 이미지: 은행나무 길">
+  <title>예시 이미지: 은행나무 길 (직접 그린 그림)</title>
+  <rect width="400" height="300" fill="#DCE6E8"/>
+  <path d="M0 210 H400 V300 H0 Z" fill="#B9B2A3"/>
+  <path d="M150 300 L188 210 H212 L250 300 Z" fill="#D6CFC0"/>
+  <g fill="#6B5444">
+    <rect x="58" y="120" width="12" height="100"/><rect x="118" y="140" width="9" height="76"/>
+    <rect x="330" y="120" width="12" height="100"/><rect x="274" y="140" width="9" height="76"/>
+  </g>
+  <circle cx="64" cy="100" r="50" fill="#E9C23E"/><circle cx="40" cy="120" r="30" fill="#D9B030"/>
+  <circle cx="122" cy="126" r="36" fill="#9DB45A"/><circle cx="136" cy="112" r="22" fill="#E3C04A"/>
+  <circle cx="336" cy="100" r="50" fill="#B5BC52"/><circle cx="360" cy="124" r="30" fill="#E9C23E"/>
+  <circle cx="278" cy="126" r="36" fill="#E6C445"/><circle cx="262" cy="112" r="22" fill="#9DB45A"/>
+  <rect x="300" y="226" width="62" height="8" fill="#7A5E4B"/>
+  <rect x="304" y="234" width="5" height="16" fill="#5E4738"/><rect x="352" y="234" width="5" height="16" fill="#5E4738"/>
+  <g fill="#E9C23E"><circle cx="170" cy="260" r="4"/><circle cx="228" cy="276" r="4"/><circle cx="120" cy="246" r="3"/><circle cx="268" cy="250" r="3"/><circle cx="200" cy="236" r="3"/></g>
+  <rect x="10" y="266" width="86" height="24" rx="3" fill="#2B2420" fill-opacity="0.82"/>
+  <text x="53" y="283" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#FFFFFF">예시 이미지</text>
+</svg>
