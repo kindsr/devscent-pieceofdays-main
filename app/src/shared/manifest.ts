@@ -190,9 +190,10 @@ export function validateManifest(
   if ("issue" in checked) return { ok: false, error: "invalid_manifest", issues: [checked.issue] };
   const allowed = opts?.allowedAssets ?? EMPTY_ASSETS;
   const issues: string[] = [];
+  // Array.from은 구멍(sparse)도 undefined로 방문한다(.map은 건너뛰어 구멍 있는 결과를 만든다).
   const verdicts = [
-    ...checked.root.placements.map((p) => classifyPlacement(p, allowed)),
-    ...checked.root.ink.map((s) => classifyStroke(s)),
+    ...Array.from(checked.root.placements, (p) => classifyPlacement(p, allowed)),
+    ...Array.from(checked.root.ink, (s) => classifyStroke(s)),
   ];
   for (const v of verdicts) {
     if (v.kind === "invalid") issues.push(v.issue);
