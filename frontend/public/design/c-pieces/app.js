@@ -48,7 +48,7 @@
 
   function boardHTML(day, isToday, sub) {
     var n = day.moments.length;
-    var head = '<header class="board-head"><h1 tabindex="-1">' + label(day.date) + '의 조각<span class="count" aria-label="' + n + '개">' + n + "</span></h1>" +
+    var head = '<header class="board-head"><h1 tabindex="-1">' + label(day.date) + '의 조각<span class="count">' + n + '<span class="sr-only">개</span></span></h1>' +
       (sub ? '<p class="sub">' + sub + "</p>" : "") + "</header>";
     if (!n) {
       return head + '<section class="first" aria-labelledby="f-h">' + STAR +
