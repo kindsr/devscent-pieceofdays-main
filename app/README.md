@@ -1,6 +1,6 @@
-# pieceofdays app (F1 골격)
+# pieceofdays app (F1 화면·F2 DB 기반)
 
-Next.js App Router 앱 골격이다. **실제 로그인·영구 저장·DB·이미지 저장소·감정덩어리 원장은 없다**(F2 이후). MVP 완료가 아니다.
+Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기가 있다. **앱의 실제 DB 연결·로그인·영구 저장·이미지 저장소·첫 로그인 지급은 아직 구현 전**이다. MVP 완료가 아니다.
 루트 `frontend/`(정적 nginx 이미지)와 별개이며, **현재 dev 정적 배포(`dev.pieceofdays.com`)에 자동으로 포함되지 않는다**.
 앱 배포 전환은 PLAN_mvp-foundation F6(메인 주도)에서 따로 정한다.
 
@@ -17,8 +17,9 @@ Next.js App Router 앱 골격이다. **실제 로그인·영구 저장·DB·이�
 | `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부 |
 | `src/server/context.ts` | 요청의 기록 문맥. 고정 사용자 모드가 아니면 "연결 안 됨" |
 | `src/server/diary/` | 저장 port(`store.ts`)와 메모리 구현·예시 기록(로컬·시험 전용) |
+| `src/server/db/`, `migrations/` | SQL 정책 검사·체크섬·잠금 기반 실행기와 `0001_init`의 8개 테이블·권한·원장 보호 |
 | `src/shared/` | 글꼴 허용 목록, 날짜 파싱 |
-| `tests/unit/`, `tests/e2e/`, `tests/prod/` | Vitest 경계 시험 / Playwright E2E(로컬 고정 사용자) / 운영 모드 경계 smoke(`playwright.prod.config.ts`) |
+| `tests/unit/`, `tests/db/`, `tests/e2e/`, `tests/prod/` | Vitest 단위·일회용 PG18 통합 시험 / Playwright E2E / 운영 모드 경계 smoke |
 | `docs/screenshots/` | F1 확인 스크린샷(로컬 고정 사용자 모드, 375/768/1440) |
 
 ## 실행 모드
@@ -55,9 +56,11 @@ POD_LOCAL_FIXTURE=1 npm run dev   # 로컬에서 예시 기록으로 보기
 `SCREENSHOT_DIR=<dir> npm run test:e2e`이면 화면별 375/768/1440 스크린샷을 남긴다.
 CI는 `.github/workflows/app-validation.yml`(app 변경 PR·push, Node 26/24, Secrets·배포 권한 없음)이다.
 
-## PostgreSQL 시험 환경 (F2 bootstrap)
+## PostgreSQL 스키마·시험 (F2)
 
-`npm run test:db`는 실행 전용 PostgreSQL 18과 가짜 CI role·임시 DB를 검증한다. 아직 제품 테이블·마이그레이션·DB 저장 구현은 없다. CI의 `db` job은 고정 digest의 공식 PostgreSQL 18 서비스 컨테이너를 사용하며, 실제 서비스 DB에 연결하지 않는다.
+`npm run test:db`는 실행 전용 PostgreSQL 18에서 환경·마이그레이션·권한·데이터 제약을 검증한다. `0001_init`에는 사용자·기록·설정·개인 디자인·감정덩어리 원장 등 8개 테이블이 있다. 앱의 PG 저장 구현과 실제 로그인 지급은 F3·F4다. CI의 `db` job은 고정 digest의 공식 PostgreSQL 18 서비스 컨테이너를 사용하며, 실제 서비스 DB에 연결하지 않는다.
+
+실행기는 `npm run db:migrate -- status`·`up`을 제공한다. 접속에는 별도로 준비된 migrator role의 `POD_MIGRATE_DATABASE_URL`과 `pod_meta.db_environment`가 필요하다. role 생성·실서버 프로비저닝은 실행기가 하지 않는다. 파일은 BOM 없는 UTF-8·LF의 번호별 up/down 쌍이며, 적용된 up 파일의 수정·누락은 체크섬 검사로 거부한다. down은 다른 writer가 없는 빈 CI DB 리허설에서만 허용한다. [계약·보호 조건](../docs/plans/PLAN_mvp-database.md)을 먼저 확인한다.
 
 로컬에서는 [일회용 컨테이너 준비](../docs/plans/PLAN_mvp-database.md)의 환경을 먼저 마련한다. 아래 URL은 그 컨테이너의 가짜 값이다(`app/`에서 실행).
 
@@ -67,11 +70,11 @@ POD_TEST_DB_DISPOSABLE=1 POD_TEST_ADMIN_URL=postgres://postgres:ci-only-not-a-se
 
 전체 검사는 저장소 루트에서 `POD_FULL_CHECK_ISOLATED=1`, `POD_TEST_DB_DISPOSABLE=1`, `POD_TEST_ADMIN_URL`을 지정하고 `bash app/tests/full-check.sh`로 실행한다. **격리된 Cloud/CI/개발 PC 전용이며 공유 운영 서버에서 실행하지 않는다.** 조건이 없으면 시험을 시작하지 않는다. DB 시험을 먼저 통과한 뒤 배포·앱 검사를 순차 실행한다. 플래그는 격리 환경이라는 운영 전제를 명시하는 것이며 머신 격리를 자동 보장하지 않는다.
 
-Cloud VM의 추가 검증은 Docker 대신 세션 전용 native PostgreSQL 클러스터로 수행했다. 공식 수락 근거는 CI 서비스 컨테이너의 실제 결과다. 부분 실패 정리를 포함한 환경 시험 8개와 기존 앱 검사가 통과했다.
+bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. 공식 수락 근거인 [최종 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41522328270)에서 DB 57개, Node 24·26 각각 단위 71개·운영 경계 6개·E2E 12개가 통과했다. FullCheck 스크립트 자체의 전체 실행은 별도로 검증하지 않았다.
 
 ## 한계 (제품 구현)
 
-- 로그인·DB(PostgreSQL 18)·버킷·원장·첫 로그인 지급 없음. 조각 삭제·하루 꾸미기 편집기 없음.
+- 로그인·앱의 PG 저장 연결·버킷·첫 로그인 지급 트랜잭션 없음. 원장 테이블·제약·권한만 F2에 있으며 지급 동작은 F3·F4다. 조각 삭제·하루 꾸미기 편집기는 아직 없다.
 - 기록 변경은 화면 이동·새로고침으로 초기화된다(위 실행 모드 참고). F1에서는 영구 저장이나 클라이언트 전역 store를 추가하지 않는다.
 - Konva는 스티커 1개 끌기·펜 획 1개 스모크만 확인했다(`/dev/konva-smoke`, 시험 전용).
 - 글꼴은 시스템 글꼴 스택만 쓴다(동봉·라이선스 확인은 F5). 시험 VM에는 한국어 명조·손글씨 글꼴이 없어 글꼴 차이는 속성 값으로만 확인했다.

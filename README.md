@@ -11,6 +11,8 @@
 
 홍보영상은 예시 기록으로 서비스를 사용하는 모습을 보여 주는 콘셉트 영상이다. 제품 진행과 작업 경계는 [AGENTS.md](AGENTS.md)를 따른다.
 
+DB 기반(F2)은 8개 테이블·권한·migration 실행기까지 일회용 PostgreSQL 18에서 검증했다. 실제 앱의 기록 저장·로그인·첫 로그인 지급 연결은 후속이며, 자세한 검증 결과는 [앱 문서](app/README.md)에 있다.
+
 ## GitHub와 자동배포
 
 Git 정본: https://github.com/kindsr/devscent-pieceofdays-main.git

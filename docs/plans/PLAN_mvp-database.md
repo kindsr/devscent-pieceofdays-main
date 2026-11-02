@@ -1,8 +1,8 @@
 # PLAN — MVP 데이터베이스 F2 (migration 실행기·스키마·권한, PostgreSQL 18)
 
-- 상태: **계획. 패키지 설치·SQL·시험·CI 변경·DB 생성은 하지 않았다.** 기준 `dev` `e5ebd58`. 계약은 [DATA_CONTRACT](../product/DATA_CONTRACT.md)에 있다.
+- 상태: **F2 구현·CI 검증 완료, 실서버 DB 적용 전.** 초기 계획 기준은 `dev` `e5ebd58`이며 실제 실행 결과는 §9·§10이다. 계약은 [DATA_CONTRACT](../product/DATA_CONTRACT.md)에 있다.
 - 상위 문서: [PLAN_mvp-foundation](PLAN_mvp-foundation.md) F2(F3·F4와의 경계는 DATA_CONTRACT §4.9), [00_TECH_STACK_DECISION](../product/00_TECH_STACK_DECISION.md) §3.
-- 전제: F1 PR(`e5dd64d`, 후속 수정 중)이 `app/`·`app-validation.yml`을 만든다. **F2는 F1이 dev에 합쳐진 뒤 그 위에서 시작한다.** 이 계획은 F1 파일을 읽기만 했다.
+- 전제: F1 PR #12가 dev에 통합된 뒤 시험 환경 준비를 완료한 `e3c72fe`에서 제품 RED를 시작했다.
 - 인증 공급자 [미정]: F2는 공급자 중립이다. 실제 로그인·세션은 F4다.
 - 공용 서버 DB는 아직 없고 만들지 않는다. F2 시험은 **GitHub Actions의 PostgreSQL 18 서비스 컨테이너와 로컬 컨테이너에서만** 실행한다. 공용·실서버 DB를 시험 대신 쓰지 않는다.
 
@@ -35,9 +35,9 @@
 
 - 파일:
   - 형식: `app/migrations/NNNN_snake_name.up.sql`과 같은 번호의 `.down.sql`. 번호는 4자리이고 `0001`부터 빈 번호 없이 이어진다.
-  - 인코딩: UTF-8, LF.
+  - 인코딩: BOM 없는 UTF-8, LF.
   - 파일 정책: **최상위(top-level) 트랜잭션 제어문을 금지한다.** 실행기가 감싼 트랜잭션을 파일이 끊으면 원자성이 깨지기 때문이다.
-    - 금지 대상(최상위 문장의 첫 키워드): `BEGIN`, `START TRANSACTION`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, `RELEASE`, `PREPARE TRANSACTION`.
+    - 금지 대상(최상위 문장의 첫 키워드): `BEGIN`, `START TRANSACTION`, `COMMIT`, `END`, `ROLLBACK`, `ABORT`, `SAVEPOINT`, `RELEASE`, `PREPARE TRANSACTION`.
     - 트랜잭션 밖에서만 되는 문장도 금지한다: `CREATE INDEX CONCURRENTLY`, `VACUUM`, `CREATE DATABASE`, `ALTER SYSTEM`.
     - **허용:** `DO $$ … BEGIN … END $$`, `CREATE FUNCTION … AS $fn$ BEGIN … END $fn$`처럼 달러 인용 본문 안의 `BEGIN`/`END`(PL/pgSQL 블록), 주석과 문자열 리터럴 안의 단어.
     - SQL 표준 함수 본문(`BEGIN ATOMIC … END`)은 쓰지 않는다. 함수 본문은 달러 인용 PL/pgSQL로만 쓴다(문장 분리를 단순하게 유지하려는 것이다).
@@ -69,6 +69,7 @@
   4. 배포·운영 절차는 `up`만 실행한다.
 
   결과적으로 파괴적인 down은 **사용자 데이터가 없는 빈 CI DB의 리허설에서만** 실행된다. 데이터가 있는 DB에서는 자동이든 수동 플래그든 실행되지 않는다.
+  같은 CI DB에 다른 writer가 없는 상태에서만 리허설한다. 데이터 검사와 DROP 사이의 동시 쓰기는 현재 가드가 직렬화하지 않으므로, 검사 후 다른 연결이 쓰는 상황까지 보장하지 않는다. dev/prod down과 자동 복원은 계속 금지한다.
 - 실패 복구:
   - 아직 어디에도 적용되지 않은 migration은 파일을 고쳐도 된다.
   - 한 번이라도 적용된 migration은 고치지 않는다. 체크섬이 막는다. 새 번호로 바로잡는다(fix-forward).
@@ -167,7 +168,8 @@ F1 파일(`store.ts`·`fixture.ts`·`context.ts` 등)은 F2에서 바꾸지 않�
   - `reason='purchase'`
   - 잘못된 `provider`
 - `23505`(유일 위반): 같은 사용자의 두 번째 `first_login_grant`, 중복 `grant_key`, 같은 날 `day_summaries` 2행, 같은 `(provider, subject)`.
-- `23503`(FK 위반): 계정 없는 사용자의 원장 삽입, 다른 사용자의 버전을 `applied_design_version_id`로 지정, owner가 원장이 있는 사용자를 삭제.
+- `23503`(FK 위반): 계정 없는 사용자의 원장 삽입, 다른 사용자의 버전을 `applied_design_version_id`로 지정.
+- `23001`(PostgreSQL 18 RESTRICT 위반): owner가 원장이 있는 사용자·계정을 삭제. 행과 연결된 기록이 유지돼야 한다.
 - owner가 디자인 버전을 삭제하면 해당 `preferences.applied_design_version_id`가 `NULL`이 되고 `user_id`는 유지된다.
 
 F3로 넘기는 것(여기서 쓰지 않는다): 병렬 연결로 첫 로그인 N회 → 1행·잔액 10, `SUM(delta)` = 잔액, 낙관적 잠금 충돌과 "없음" 응답, 소유자 조건 조회.
@@ -244,3 +246,12 @@ db:
 - 후속 CLI 계약: `app/src/server/db/migrate-cli.ts`에 `status|up|down`, `--migrations-dir <dir>`, down의 `--to <N>`·`--allow-down`을 둔다. 기본 디렉터리는 `app/migrations`이며 `POD_MIGRATE_DATABASE_URL`을 사용한다. 실패는 exit 1, 성공은 0, 체크섬 오류에는 `checksum mismatch`를 포함하고 URL·비밀번호를 출력하지 않는다. CLI 코드는 이번에 만들지 않았다.
 - 후속 순수 정책 함수는 `app/src/server/db/sql-policy.ts`의 `validateSqlPolicy(sql: string): void`다. 위반 시 오류를 던진다. Node의 직접 TS 실행에는 상대 `.ts` import를 쓰고, GREEN에서 `allowImportingTsExtensions`를 설정한다(`noEmit` 전제). Node CLI에서 Next의 `@/` 별칭을 쓰지 않는다.
 - 다음 단계의 RED 기준은 이 준비가 통합된 `dev`의 정확한 SHA로 확정한다. 그 이후 시험 작성·독립 실행 확인·GREEN 구현을 다른 역할로 나누며, 준비 작업을 제품 스키마 구현 완료로 보지 않는다.
+
+## 10. F2 제품 실행 결과 (2026-11-02)
+
+- 제품 기준 `a488447b61188390ef8b8be6bfd5d26f0858435c`: SQL 정책 검사·migration 실행기·CLI와 `0001_init` up/down을 구현했다. 스키마·권한만 준비했으며 앱의 PG 저장 연결·실제 로그인·지급 트랜잭션은 F3·F4다. 실서버 DB·role·배포 프로그램은 변경하지 않았다.
+- 원 RED `2aaf59e`(정책 48·DB 기능 49개 실패) → 실행기 `6eaf66d` → 스키마 `47faf09`. `ABORT`는 [PostgreSQL 18의 ROLLBACK 별칭](https://www.postgresql.org/docs/18/sql-abort.html)이므로 최상위 차단 목록에 보강했다.
+- GREEN에서 드러난 시험 기대 오류는 별도 RED 담당이 `24af097`로 정정했다. 삭제 정책은 RESTRICT를 유지하며, [PG18 오류 코드](https://www.postgresql.org/docs/18/errcodes-appendix.html)에 따라 부모 삭제 거부는 `23001`, FK 삽입·갱신 위반은 `23503`이다.
+- 독립 코드 검토의 두 보완점은 새 RED `9a114db`에서 실패를 재현한 뒤 `a488447`로 해결했다. 잘못된 접속 URL도 비밀값 출력 없이 exit 1이며, BOM이 붙은 up/down 파일을 거부한다. `TextDecoder`의 [BOM 처리](https://nodejs.org/api/util.html#new-textdecoderencoding-options)를 반영했다. 두 GREEN 단계 모두 메인 관문에서 시험 변경 0을 확인했다.
+- [CI `41522328270`](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41522328270): Node 24·26 각각 단위 71·운영 경계 6·E2E 12개, PostgreSQL 18.6 DB 57개 통과(건너뜀 0). [배포 계약 CI `41522328281`](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41522328281): 42개·Compose 검사 통과, PR 배포는 생략됐다. 독립 Cloud runner가 같은 원문과 정확한 HEAD를 확인했다.
+- 한계: FullCheck 스크립트 전체 실행과 실서버 DB 적용은 하지 않았다. down은 §3의 고립된 CI DB·다른 writer 없음 전제를 따른다. 현재 dev는 정적 시안이며 앱 배포는 F6에서 별도로 전환한다.

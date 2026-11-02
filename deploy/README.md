@@ -13,7 +13,7 @@
 3. 개발 검증을 마친 `dev`를 PR로 `main`에 병합한다. Actions가 운영 배포를 실행하며, 서버는 해당 소스 tree가 성공한 개발 배포와 같은지 확인한다.
 4. 운영은 소스 bind mount 없이 서버의 릴리스 영역에 둔 고정 이미지로 `https://pieceofdays.com`을 제공한다.
 
-앱은 아직 없으며 현재 준비중/개발 안내 페이지를 배포한다. 개발·운영 Compose project는 각각 `pieceofdays-dev`·`devscent-pieceofdays-main`, 컨테이너는 기존 이름을 유지한다.
+`app/`에 앱·DB 기반이 있지만 현재 배포는 준비중/정적 시안 페이지다. 앱 배포 전환은 F6에서 별도로 검토한다. 개발·운영 Compose project는 각각 `pieceofdays-dev`·`devscent-pieceofdays-main`, 컨테이너는 기존 이름을 유지한다.
 
 ## GitHub와 배포 경계
 
@@ -29,7 +29,7 @@
 - 이미지 교체 후 health·HTTPS 본문·이미지 ID가 일치해야 성공한다. 실패하면 직전 동결 Compose/이미지로 복귀하고 복귀 자체도 검증한다.
 - 첫 교체 전에 복귀 자료가 없으면 배포를 거부한다. 전환 전 동결 자료는 서버 밖으로 공개하지 않는다.
 - 소스 작업 체크아웃에서 `docker compose up/build/pull`로 운영을 직접 변경하지 않는다. 자동 배포와 수동 작업의 경합을 만들지 않는다.
-- DB·migration은 현재 없다. 앱·DB를 추가할 때는 백업·확장/수축 migration·호환성 관문을 먼저 설계한다.
+- 실서버 DB는 아직 없다. `app/migrations/`는 일회용 CI에서만 검증했으며 자동 배포가 실행하지 않는다. F6에서 전용 DB·백업·확장/수축 migration·호환성 관문을 준비하며 운영 적용은 `up`만 사용한다.
 
 ## 도메인
 
