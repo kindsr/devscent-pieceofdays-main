@@ -229,7 +229,7 @@ describe("UNIQUE constraints (23505)", () => {
   });
 });
 
-describe("FOREIGN KEY constraints (23503) and delete actions", () => {
+describe("FOREIGN KEY constraints (23503), RESTRICT (23001) and delete actions", () => {
   it("ledger rows require an existing credit account; rows for unknown users are rejected", async () => {
     const d = await migrated();
     await withApp(env, d, async (c) => {
@@ -271,8 +271,9 @@ describe("FOREIGN KEY constraints (23503) and delete actions", () => {
       return id;
     });
     await withOwner(env, d, async (c) => {
-      await expectSqlError(c.query("DELETE FROM pod.users WHERE id = $1", [uid]), "23503");
-      await expectSqlError(c.query("DELETE FROM pod.credit_accounts WHERE user_id = $1", [uid]), "23503");
+      // PG18: ON DELETE RESTRICT 위반은 23001(restrict_violation)이다. 23503은 FK 삽입·갱신·NO ACTION 위반이다.
+      await expectSqlError(c.query("DELETE FROM pod.users WHERE id = $1", [uid]), "23001");
+      await expectSqlError(c.query("DELETE FROM pod.credit_accounts WHERE user_id = $1", [uid]), "23001");
       const counts = await c.query(
         `SELECT (SELECT count(*)::int FROM pod.users WHERE id = $1) AS users,
                 (SELECT count(*)::int FROM pod.diary_moments WHERE user_id = $1) AS moments,
