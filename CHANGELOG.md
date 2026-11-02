@@ -28,6 +28,9 @@
 - Codex 작업용 `AGENTS.md` 템플릿 추가: `$karpathy-guidelines`, PRD 기반 계획 산출물, 디자인/개발/운영 검증 흐름 정의.
 
 ### Changed
+- GitHub 저장소 이름 변경 반영 (2026-11-02): 사용자가 `kindsr/pieceofdays`를 `kindsr/devscent-pieceofdays-main`으로 바꿈. `scripts/ops/deploy.py`의 `REPOSITORY`와 공개 문서의 현재 주소를 `https://github.com/kindsr/devscent-pieceofdays-main.git`으로 정정. 서비스명·도메인·컨테이너·브랜치는 그대로.
+- 운영 릴리스 경로 계약 변경 (2026-11-02): `scripts/ops/deploy.py`의 `STATE`를 홈 기준 `deployment/devscent-pieceofdays-main`으로 변경(로직·검증 정책 불변). 작업 트리 밖 설치본·서버 디렉터리·배포 설정 이전은 자동으로 바뀌지 않으며 메인이 별도 반영한다.
+- 공개 문서의 서버 운영 정보 축소 (2026-11-02): README·deploy/README·AGENTS·CLAUDE·plans에서 서버 절대/홈 경로, 설정·설치·백업·인증서 경로와 운영 명령을 제거하거나 논리 역할·placeholder(`<source-dir>`·`<dev-dir>`·`<release-dir>`)로 바꿈. 상세 서버 절차는 비공개 운영 문서가 정본.
 - Git 정본을 `kindsr/pieceofdays`로 전환하고 NAS·GitHub 초기 이력을 보존해 통합 (2026-11-02). 개발은 `~/development`, 운영은 `~/deployment/pieceofdays`의 고정 이미지로 분리하는 사용자 승인 반영.
 - `CLAUDE.md`·`AGENTS.md`를 공통 정본(`../_template/`, Linux 절대경로는 AGENTS 읽기 fallback) 참조와 서비스 고유 경계만 남긴 짧은 문서로 정리 (2026-11-02). 공통 docs 사본 `docs/01~05_*.md`는 원격 master `281fc06`에서 삭제됨(정본 `_template`).
 - `deploy/README.md`에 2026-11-02 점검 안내를 추가하고, 운영 bind mount라 커밋 전 호스트 편집이 즉시 반영된다는 사실을 명시 (2026-11-02).

@@ -1,6 +1,6 @@
 # pieceofdays
 
-개인의 일상에서 순간을 기록하고 하루를 정리하여 스토리텔링을 만들어가는 일기장.
+개인의 일상에서 순간을 기록하고 하루를 정리하여 스토리텔링을 만들어가는 감정정리 장소.
 
 운영은 정적 준비중 페이지이며 개발 환경에서는 UI 시안 4안(초기 3안 + C 화면에 A 색을 입힌 D)을 비교한다. [PRD](docs/PRD.md)는 검토 초안이며 앱 스택·DB는 아직 정하지 않았다.
 제품 진행은 [AGENTS.md](AGENTS.md), UI 방향은 [조사 문서](docs/product/UI_UX_RESEARCH_2026-11-02.md)를 참고한다.
@@ -8,23 +8,21 @@
 
 ## GitHub와 자동배포
 
-Git 정본: https://github.com/kindsr/pieceofdays.git
+Git 정본: https://github.com/kindsr/devscent-pieceofdays-main.git
 
-| 역할 | 경로·브랜치 | 도메인 | 반영 |
+| 역할 | 브랜치 | 도메인 | 반영 |
 |---|---|---|---|
-| AI 소스 작업 | `~/projects/devscent-pieceofdays-main`, `dev` 또는 작업 브랜치/worktree | — | 작업 브랜치 → PR |
-| 개발 배포 | `~/development/devscent-pieceofdays-main`, `dev` | https://dev.pieceofdays.com | `dev` push → Actions 검사 → SSH 배포 |
-| 운영 배포 | `~/deployment/pieceofdays`, `main`의 고정 릴리스 | https://pieceofdays.com | 성공한 dev를 main에 병합 → Actions 검사 → SSH 배포 |
+| 소스 작업 | 작업 브랜치/worktree → `dev` | — | 작업 브랜치 → `dev` PR |
+| 개발 배포 | `dev` | https://dev.pieceofdays.com | `dev` push → Actions 검사 → 개발 배포 |
+| 운영 배포 | `main`의 고정 릴리스 | https://pieceofdays.com | 성공한 `dev`를 `main`에 병합 → Actions 검사 → 운영 배포 |
 
-- 사용자 승인: 2026-11-02, 이 서비스의 dev/main 자동배포. 기존 NAS와 GitHub 초기 이력은 강제 push 없이 통합한다.
-- 환경별 키·GitHub 브랜치 제한·서버의 고정 환경 검사로 dev/운영 권한을 나눈다. PR 검사에는 배포 키가 없다.
-- 서버는 최신 SHA·성공한 dev tree·Compose 격리를 검사하고 이미지를 빌드한다. 후보 및 실제 HTTPS/health를 확인한 뒤 성공 기록을 저장하고, 실패하면 직전 이미지를 복구한다.
-- 호스트 앱 포트 게시 없음. 기존 공용 nginx → `edge` 연결, 컨테이너 이름·TLS·도메인은 유지한다.
-- `.co.kr`(+www)·`www.pieceofdays.com`은 canonical으로 301한다. dev는 접근 제한+noindex를 유지한다.
-- 첫 전환 전 운영 HTML은 작업 폴더를 직접 마운트했다. 런타임 마운트가 제거됐는지 확인하기 전 파일 저장을 운영과 무관한 작업으로 보지 않는다.
-- 배포 정책을 바꾸거나 서버 프로그램을 갱신할 때는 [배포 런북](deploy/README.md)을 따른다. DB가 생기면 migration·복귀 관문을 추가한 뒤 이 파이프라인을 확장한다.
+- 사용자 승인: 2026-11-02, 이 서비스의 dev/main 자동배포. 기존 NAS와 GitHub 초기 이력은 강제 push 없이 통합했다.
+- PR은 검사만 실행하며 배포 키를 쓰지 않는다. 환경별 키·GitHub 브랜치 제한·서버의 고정 환경 검사로 dev/운영 권한을 나눈다.
+- 운영은 성공한 dev와 같은 소스 tree만 승격하고, 후보·실제 HTTPS/health 확인에 실패하면 직전 이미지로 복귀한다.
+- `.co.kr`(+www)·`www.pieceofdays.com`은 canonical(`pieceofdays.com`)로 301한다. dev는 접근 제한+noindex다.
+- 배포 흐름은 [배포 문서](deploy/README.md)에 있다. 서버 경로·설정·접속 등 상세 운영 절차는 공개 저장소에 두지 않고 비공개 운영 문서에서 관리한다.
 
-## 확인
+## 로컬 확인
 
 ```bash
 python3 -B -m unittest discover -s tests -p 'test_*.py' -v
@@ -34,7 +32,7 @@ docker compose -f docker-compose.yml -p devscent-pieceofdays-main config --quiet
 ```
 
 현재 시험은 배포 권한·격리 계약을 다루며 제품 기능 시험은 앱 구현 후 추가한다. 실행용 이미지 값은 배포 프로그램이 제공한다.
-소스 저장소의 Compose로 운영을 직접 실행하지 않는다. 실제 배포 기록은 `~/deployment/pieceofdays`에, 워크플로우 결과는 GitHub Actions에 남긴다.
+소스 저장소의 Compose로 운영을 직접 실행하지 않는다. 배포 결과는 GitHub Actions에서 확인한다.
 
 ## 문서
 

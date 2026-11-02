@@ -18,9 +18,9 @@ import time
 import urllib.request
 import uuid
 
-REPOSITORY = "https://github.com/kindsr/pieceofdays.git"
+REPOSITORY = "https://github.com/kindsr/devscent-pieceofdays-main.git"
 HOME = Path(pwd.getpwuid(os.getuid()).pw_dir)
-STATE = HOME / "deployment/pieceofdays"
+STATE = HOME / "deployment/devscent-pieceofdays-main"
 ENVIRONMENTS = {
     "dev": ("dev", "pieceofdays-dev", "pieceofdays-frontend-dev", "docker-compose.dev.yml", "frontend", "public", HOME / "development/devscent-pieceofdays-main", "https://dev.pieceofdays.com/"),
     "production": ("main", "devscent-pieceofdays-main", "pieceofdays-comingsoon", "docker-compose.yml", "deploy/comingsoon", "html", STATE, "https://pieceofdays.com/"),
