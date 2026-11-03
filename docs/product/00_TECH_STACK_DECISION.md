@@ -98,6 +98,14 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
   - JWT와 암호 알고리즘은 직접 구현하지 않는다.
   - 출처: npm 레지스트리, https://github.com/panva/openid-client , https://github.com/vvo/iron-session , https://nextjs.org/docs/app/guides/data-security (확인일 2026-11-03).
 - **세션:** 절대 만료 7일. 사용하더라도 연장하지 않는다. 재인증하면 새로 7일이다. 상세는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md).
-- **미검증:** Next 16.4.3·React 19.3.1·Node 24.22.2/26.13.0과 실제로 호환되는지. 격리된 bootstrap·CI에서 설치하고 build할 때까지 확정하지 않는다.
+- **검증 상태(2026-11-03):**
+  - `iron-session` 9.0.1은 Cloud scratch 사본(Node 26.13.0·npm 11.20.0, Next 16.4.3·React 19.3.1)에서 확인했다(PR27 호환 spike, 원본 저장소 불변).
+    - 설치(peer 없음), `npm ls`, lint·typecheck·단위 103, `next build` 통과
+    - `server-only` 패키지 없이 Next 내장 처리와 client import 거부 확인
+  - **미검증:**
+    - Node 24.22.2, DB·E2E·실서비스에서의 동작
+    - `openid-client` 6.8.9 전체(F4b에서 설치·검증)
+  - 제품 저장소 설치는 F4a 호환 bootstrap에서 Node 24·26 CI로 검증한다.
+  - 세션 정책 세부(R2)는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5.
 - **설치 시점:** F4a에서는 `iron-session`만 설치하고, `openid-client`는 필요해지는 F4b에서 설치한다.
 - **공급자:** Google / Kakao / 둘 다는 **사용자 답변 대기**다. 고르지 않았다.
