@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
-import { assertFixtureModeAllowed } from "./src/server/runtime-mode";
+import { assertAuthModeAllowed, assertFixtureModeAllowed } from "./src/server/runtime-mode";
 
 // 운영 빌드(next build)·운영 실행(next start)에서 로컬 고정 사용자 모드가 켜져 있으면 여기서 거부한다.
 export default function config(phase: string): NextConfig {
   assertFixtureModeAllowed(phase, process.env);
+  // 고정 사용자 + 실제 auth 동시 사용, 운영 phase의 mock issuer를 거부한다(PLAN_mvp-oidc-integration §4.2).
+  assertAuthModeAllowed(phase, process.env);
   return {
     reactStrictMode: true,
     poweredByHeader: false,
