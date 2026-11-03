@@ -1,3 +1,4 @@
+import "server-only";
 import type { DiaryContext } from "@/shared/diary";
 import type { DiaryStore } from "./diary/store";
 import { createMemoryDiaryStore } from "./diary/store.memory";

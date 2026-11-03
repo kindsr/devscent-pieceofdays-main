@@ -5,6 +5,7 @@
  * - 쓰기는 각자 담당 열만 upsert한다(글꼴은 적용 id를, 적용은 글꼴을 덮어쓰지 않는다).
  * - 비UUID·없는 사용자는 not_found이고 FK 오류(23503)는 밖으로 내보내지 않는다. 값은 모두 $n 매개변수다.
  */
+import "server-only";
 import type { DatabaseError } from "pg";
 import type { Db } from "../db/pool";
 import { isUuid } from "../ids";

@@ -5,6 +5,7 @@
  * - 읽기는 같은 소유자 조건으로 조회한 뒤 manifestForRender 결과를 돌려준다(과거 행은 null 또는 항목 drop).
  * - userId는 신뢰된 서버 호출 인자로만 받는다. 값은 모두 $n 매개변수다.
  */
+import "server-only";
 import type { DatabaseError } from "pg";
 import type { Db } from "../db/pool";
 import { isUuid } from "../ids";

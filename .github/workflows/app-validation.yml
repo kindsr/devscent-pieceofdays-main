@@ -51,6 +51,9 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      # F4a: auth server-only build boundary harness (isolated temp app copies, sequential next build, no server listen)
+      - name: Auth build boundary (server positive, client direct/transitive rejected)
+        run: POD_FULL_CHECK_ISOLATED=1 node --test tests/auth-build-boundary.test.mjs
       - name: Fixed local user is refused in a production build
         run: |
           if POD_LOCAL_FIXTURE=1 npx next build > fixture-build.log 2>&1; then

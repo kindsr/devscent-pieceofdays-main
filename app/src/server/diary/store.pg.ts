@@ -6,6 +6,7 @@
  * - 값은 모두 $n 매개변수다. 기대 버전은 int4 밖 안전 정수도 22003 없이 비교하도록 bigint로 캐스트한다.
  * - UPDATE/DELETE가 0행이면 같은 소유자 조건으로만 다시 조회해 conflict와 not_found를 가른다.
  */
+import "server-only";
 import type { DatabaseError } from "pg";
 import type { Db } from "../db/pool";
 import { isUuid } from "../ids";

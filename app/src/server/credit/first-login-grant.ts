@@ -1,3 +1,4 @@
+import "server-only";
 import type { Tx } from "../db/pool";
 import { isUuid } from "../ids";
 

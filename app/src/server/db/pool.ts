@@ -4,6 +4,7 @@
  * - env는 POD_DATABASE_URL 하나만 읽는다. import 시에는 읽거나 접속하지 않고 getAppDb() 첫 호출에 만든다.
  * - app role 연결만 쓴다. 관리자·migrator URL·SET ROLE은 쓰지 않는다.
  */
+import "server-only";
 import pg from "pg";
 
 export type Db = pg.Pool;

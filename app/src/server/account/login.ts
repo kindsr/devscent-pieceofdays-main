@@ -4,6 +4,7 @@
  * identity는 F4에서 검증한 서버 인증 사건에서만 온다. 이 함수는 OAuth·HTTP·세션을 다루지 않는다.
  * user·identity·계정·원장·잔액·first_login_at은 한 트랜잭션에서 모두 커밋되거나 모두 남지 않는다.
  */
+import "server-only";
 import { withTransaction, type Db, type Tx } from "../db/pool";
 import { grantFirstLogin } from "../credit/first-login-grant";
 import type { Result } from "../result";

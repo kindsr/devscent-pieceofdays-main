@@ -1,3 +1,4 @@
+import "server-only";
 import type { DiaryDay, DiaryStore } from "./store";
 
 /** 메모리 구현: UI 골격과 단위 시험 전용. 읽기만 하며 아무것도 저장하지 않는다. */
