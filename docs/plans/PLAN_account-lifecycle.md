@@ -1,6 +1,6 @@
 # PLAN — 계정 탈퇴·30일 복구·삭제 (R6: 구현 계약)
 
-- **상태:** 계획이다. 정책·기술 결정은 §1~§8(R4, dev 통합됨)에 있고, RED 담당용 **구현 계약은 §9~§13(R5·R6)**이다. R6은 PR31 R5 독립 검토와 메인 기술 결정(2026-11-03, 사용자 제품 정책 아님)을 반영했다. **L1(0002 schema·role)은 PR33 코드 `0876c4b`에서 CI 검증을 마쳤고, 독립 SQL 검토와 dev 통합은 진행 중이다(§14).** L2 도메인·로그인, cron, 서비스 DB·계정 등록은 아직 없다.
+- **상태:** 정책·기술 결정은 §1~§8(R4, dev 통합됨)에 있고, RED 담당용 **구현 계약은 §9~§13(R5·R6)**이다. R6은 PR31 R5 독립 검토와 메인 기술 결정(2026-11-03, 사용자 제품 정책 아님)을 반영했다. **L1(0002 schema·role)은 PR33 코드 `0876c4b`에서 CI·독립 SQL 검토를 통과해 메인이 수락하고 dev에 통합했다(§14).** L2 도메인·로그인, cron, 서비스 DB·계정 등록은 아직 없다.
 - **R5 BASE:** `dev` `3832cca94164c2b9c81c21fa58c7ad8d38a23715`(F4a codec `96bcf8c` 포함). 3832cca 통합 CI 결과는 이 문서 작성 시 직접 확인하지 않았다.
 - **구현 전 기준 BASE(§1의 사실):** `dev` `76a39d1e65a889a03eb1e5bd64a7e0b3ef161800`. §1은 0002 이전 0001 상태의 기록이다. 현재 스키마는 [DATA_CONTRACT](../product/DATA_CONTRACT.md) §4~§6·§8을 본다.
   - 근거 코드: `app/migrations/0001_init.up.sql`, `app/src/server/account/login.ts`, `app/src/server/credit/first-login-grant.ts`, `app/src/server/db/migrate.ts`.
@@ -373,8 +373,8 @@ export function restoreAccount(db: Db, proof: SessionSubject):
   - PG18.6 + Node 26 DB 119(실패·skip 0)
   - Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·prod 6·E2E 12·lint·typecheck·build
   - root 42·Compose
-- **진행 중·후속:**
-  - 독립 SQL 검토와 dev 통합(메인)
+- **통합 수락:** 독립 GREEN 검토 PASS(P0·P1·P2 없음). 메인은 시험 변경 0·제품 SQL 2파일의 정본 gate, 문서 diff·링크·구현 사실을 확인해 코드와 문서를 dev에 통합했다. DB 실행 근거는 CI이며 공유 서버에서 SQL을 적용하지 않았다.
+- **후속:**
   - L2(§9)
   - F4b/c·F6
   - 이 기록 작성자는 로컬 DB·서버·FullCheck를 실행하지 않았다.

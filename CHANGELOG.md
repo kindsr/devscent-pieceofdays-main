@@ -15,7 +15,7 @@
 ## [Unreleased]
 
 ### Added
-- F4 L1 계정 수명주기 스키마 (2026-11-03): `0002_account_lifecycle`로 사용자 상태·탈퇴 시각·삭제 기한·세션 세대 열과 일관성 제약, app 열 UPDATE 권한, 원장 owner 전용 삭제 예외, PUBLIC을 회수한 전용 role 삭제 함수 2개, 빈 CI 전용 down을 추가했다. 권한·NULL·기한·down/rollback 시험을 포함해 PR33 CI에서 DB 119개와 Node 24·26 앱 회귀(단위 122)를 통과했다. 독립 SQL 검토와 dev 통합은 진행 중이고, 실제 서비스 DB에는 적용하지 않았다.
+- F4 L1 계정 수명주기 스키마 (2026-11-03): `0002_account_lifecycle`로 사용자 상태·탈퇴 시각·삭제 기한·세션 세대 열과 일관성 제약, app 열 UPDATE 권한, 원장 owner 전용 삭제 예외, PUBLIC을 회수한 전용 role 삭제 함수 2개, 빈 CI 전용 down을 추가했다. 권한·NULL·기한·down/rollback 시험을 포함해 DB 119개와 Node 24·26 앱 회귀(단위 122)·독립 SQL 검토를 통과해 dev에 통합했다. 실제 서비스 DB에는 적용하지 않았다.
 - 계정 수명주기 구현 계약 (2026-11-03): `docs/plans/PLAN_account-lifecycle.md` §9~§13에 lifecycle API·로그인 union·잠금 순서, migration 0002 파일 계약, purge role 경로(meta 열 확장 A 채택·목록 상한 1~1000), TEST_PATTERNS 기준 RED/GREEN 소유, L1·L2 slice를 정했다. R6에서 pending CHECK·로그인 0행 분기·NULL 인자 거부·GUC 비움·harness 목록을 보완했다. 구현·SQL·실행은 없다.
 - F4a 봉인 세션·서버 전용 경계 (2026-11-03): 설정 검증, 정확한 5키 payload·7일 만료·쿠키·Origin helper와 `server-only` 경계를 추가했다. Node 24·26 CI와 독립 검증에서 단위 122·빌드 경계 4·DB 99개 및 기존 앱 회귀를 통과했다. 실제 OAuth·요청별 상태 대조·탈퇴·복구·삭제는 후속이다.
 - F4a 세션 패키지 준비 (2026-11-03): `iron-session` 9.0.1을 고정하고 Node 24·26의 설치·기존 앱 회귀(단위 103·DB 99·운영 경계 6·E2E 12)를 검증했다. 실제 세션·로그인 구현은 후속이다. README·데이터 계약·기반 계획에 Google·카카오와 탈퇴 30일 정책의 확정 상태를 동기화했다.

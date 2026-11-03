@@ -189,5 +189,5 @@
 
 - F2 스키마·F3 저장 코어에 이어 F4a 세션 codec과 서버 전용 경계를 구현·독립 검증했다. [인증 계획 §13](PLAN_mvp-authentication.md)에 RED·GREEN과 실제 검증 범위를 기록한다.
 - GREEN `96bcf8c`: Node 24·26 단위 122·빌드 경계 4·운영 경계 6·E2E 12, DB 99·배포 계약 42 통과. 실제 OAuth·요청별 DB 상태 대조·탈퇴·복구·삭제는 후속 F4 범위다.
-- F4 L1(0002 계정 수명주기 schema·role): PR33 `0876c4b` CI에서 DB 119 통과, 독립 검토·dev 통합 대기([계정 수명주기 계획](PLAN_account-lifecycle.md) §14). 서비스 DB 적용·운영 purge는 F6다.
+- F4 L1(0002 계정 수명주기 schema·role): PR33 `0876c4b` CI에서 DB 119·독립 검토를 통과해 dev에 통합했다([계정 수명주기 계획](PLAN_account-lifecycle.md) §14). 서비스 DB 적용·운영 purge는 F6다.
 - 현재 dev는 정적 D 시안이며 Next 앱은 아직 배포되지 않았다. F6의 전용 DB·purge·백업·앱 배포 전환 조건을 유지한다.

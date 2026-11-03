@@ -2,7 +2,7 @@
 
 - 상태: **F2 설계·구현 계약 + F4 L1(`0002_account_lifecycle`) 반영.**
   - `0001_init`은 F2에서 일회용 PG18 CI로 검증한 초기 계약이며, 이후 회귀 기준이다.
-  - `0002`는 PR33 코드(`0876c4b`)에서 일회용 PG18 CI(DB 119개)로 검증했다. **독립 SQL 검토와 dev 통합은 아직 진행 중**이다.
+  - `0002`는 PR33 코드(`0876c4b`)에서 일회용 PG18 CI(DB 119개)와 독립 SQL 검토를 통과했다. **메인이 수락해 dev에 통합했다.**
   - 실서버 DB·계정·role은 만들지 않았다. 초기 설계 기준은 `dev` `e5ebd58`이며 [실행 계획·결과](../plans/PLAN_mvp-database.md)에 실제 구현 기준을 기록한다.
 - 정본 입력: [00_TECH_STACK_DECISION](00_TECH_STACK_DECISION.md) §3, [03_MVP](03_MVP.md), [PLAN_mvp-foundation](../plans/PLAN_mvp-foundation.md) §3·§5·F2·F3, [DECORATION_MARKET_ARCHITECTURE](DECORATION_MARKET_ARCHITECTURE.md) §3.4·§5·§6. F1 저장 port(작업 브랜치 `claude/nextjs-foundation-mvp-0p73cn` `e5dd64d`의 `app/src/server/diary/store.ts`)는 읽기만 했다.
 - 표기: **[계약]** F2 RED 시험이 그대로 검사할 값, **[가정]** 사용자 결정 전의 전제, **[미정]** 결정 필요.
@@ -179,7 +179,7 @@ RETURNING version;
     - UPDATE·TRUNCATE는 계속 항상 거부된다.
     - DELETE는 `current_user`가 owner role이고 트랜잭션 GUC `pod.purge_user_id`가 그 행의 `user_id`와 같을 때만 허용된다(중첩 IF).
     - 일반 app은 원장 DELETE 권한 자체가 없어 `42501`이다. 트리거 함수의 PUBLIC 회수도 유지된다.
-  - **신뢰 경계:** owner와 그 구성원(migrator)은 GUC를 직접 설정해 이 예외를 쓸 수 있는 신뢰 주체다. 그래서 "purge 함수 안에서만 가능하다"는 보장은 하지 않는다.
+  - **신뢰 경계:** owner는 GUC를 직접 설정해 이 예외를 쓸 수 있는 신뢰 주체다. migrator도 `SET ROLE owner` 후에는 가능하지만, 전환 전 `current_user=migrator`이면 `P0001`이다. 그래서 "purge 함수 안에서만 가능하다"는 보장은 하지 않는다.
 - 잔액의 권위는 `SUM(delta)`다. `credit_accounts.balance`는 같은 트랜잭션에서 갱신하는 사본이다. 일치 여부는 F3가 시험한다.
 - `ON DELETE RESTRICT`는 0002에서도 그대로다. 사용자 삭제가 `CASCADE`로 일기를 지우려 해도, 원장·계정 행이 남아 있으면 `RESTRICT`가 전체 삭제를 막는다. 그래서 purge 함수(§5.1)는 원장 → 계정 → users 순서로 직접 지운다([계정 수명주기 계획](../plans/PLAN_account-lifecycle.md) §5·§10).
 - PostgreSQL 18의 부모 `DELETE` RESTRICT 위반은 SQLSTATE `23001`이며, 참조 없는 FK 값의 삽입·갱신 위반 `23503`과 구분해 시험한다.
@@ -255,7 +255,7 @@ Google·카카오와 계정 탈퇴 후 30일 복구 뒤 삭제는 확정했다. 
   - PG18.6 + Node 26 DB 119(실패·skip 0)
   - Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·prod 6·E2E 12·lint·typecheck·build
   - root 42·Compose
-- **아직 진행 중:** 독립 SQL 검토와 dev 통합은 아직 끝나지 않았다.
+- **통합:** 독립 SQL 검토 PASS(P0·P1·P2 없음)를 수락해 dev에 통합했다.
 - 이 문서 작성자는 로컬 DB·서버·FullCheck를 실행하지 않았다.
 - **L2 미구현:** `requestWithdrawal`·`restoreAccount`·`verifyActiveAccount`, `LoginOutcome` union, 로그인 0행 분기.
 - **후속:** 실제 OAuth·DAL 연결·복구 쿠키·UI, 서비스 DB·운영 role provisioning·purge job·백업(F4b/c·F6).

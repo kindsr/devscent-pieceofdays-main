@@ -113,11 +113,13 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 - 시험 하네스: purge role과 meta `purge_role`을 준비한다
 
 [PR33 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41679894578)(코드 `0876c4b`):
+
 - DB 119개(PG18.6 + Node 26)
 - Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12
 - [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41679894597) 42
 
-**독립 SQL 검토와 dev 통합은 아직 진행 중이다.** 아직 없는 것:
+**독립 SQL 검토 PASS(P0·P1·P2 없음)를 수락해 dev에 통합했다.** 아직 없는 것:
+
 - 탈퇴·복구 요청과 요청별 상태·세대 대조 도메인(L2)
 - 실제 OAuth·복구 쿠키·화면
 - 서비스 DB·운영 role·삭제 실행 주기
