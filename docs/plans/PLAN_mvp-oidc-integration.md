@@ -1,6 +1,6 @@
 # PLAN — F4b/c Google·Kakao 실제 로그인·복구·탈퇴·요청별 DAL 연결 (R1)
 
-- **상태:** R1 계획이다. R0(`195ccba`)의 독립 검토는 CHANGES_REQUIRED(P0 없음, P1 2, P2 7)였고, 메인이 보완 방향과 기술 선택(§13)을 수락했다. R1은 그 반영본이며 **재검토·메인 수락 전**이다.
+- **상태:** R1 계획을 독립 재검토 후 **메인이 수락해 dev에 통합했다**. R0(`195ccba`)의 P1 2·P2 7건을 해소했고, exact R1 `5b305125a3e50b82fb1dc1882febb9788b72cc68`은 독립 PASS(P0·P1 없음)를 받았다. 비차단 P2 2건(discovery 캐시 키·Windows 파일 줄바꿈)은 메인이 아래 §6.1·부록 A에 반영했다. 기술 결정은 §13을 따른다.
   - 이 문서만으로는 다음 어느 것도 바꾸지 않았다: 제품 코드, 시험, SQL, 설정, 패키지, workflow, 서버, 실계정, DB, OAuth 콘솔.
   - 실제 로그인을 시도하지 않았고 패키지를 설치하지 않았다.
   - 이 문서는 실제 코드 실행이나 서버 활성화 권한을 늘리지 않는다.
@@ -261,7 +261,7 @@ export function parseReturnTo(raw: unknown): string | null;   // 허용값만 �
 - **discovery:** `discovery(cfg.issuer, clientId, clientSecret, ClientSecretPost(clientSecret), { execute })`.
   - `execute`는 **항상 `[enableNonRepudiationChecks]`**이고, `insecureMock`이면 `[allowInsecureRequests, enableNonRepudiationChecks]`다 [메인].
   - Issuer URL을 넘기면 vendor가 `issuer` 일치를 검사한다. well-known URL은 넘기지 않는다.
-  - 공급자별 Configuration Promise를 프로세스 메모리에 둔다(사용자 정보 없음). 실패한 Promise는 캐시하지 않는다.
+  - Configuration Promise는 `issuer.href`·`clientId`·`clientSecret`·`insecureMock` 조합별로 프로세스 메모리에 둔다. 공급자 id만으로 공유하지 않으며, 캐시 키·비밀값을 로그나 보고로 출력하지 않는다. 실패한 Promise는 캐시하지 않는다. U5는 사례마다 별도 mock issuer 포트를 사용해 성공·실패 설정이 섞이지 않게 한다.
 - **[사실] 서명:**
   - 기본값에서는 token endpoint ID Token의 JWS를 검증하지 않는다(TLS로 issuer를 대신 확인).
   - `enableNonRepudiationChecks`를 켜면 `jwks_uri`의 키로 JWS를 검증하고 HS* 알고리즘을 거부한다. 이것으로 R4 §4의 서명 검증과 위조 서명 음성 시험을 vendor의 실제 검증으로 충족한다.
@@ -638,6 +638,8 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 | P2-6 취소 응답 | §6.1 순서 유지, §10 5번 |
 | P2-7 R4 정합 | [PLAN_mvp-authentication](PLAN_mvp-authentication.md) §2 도식 POST·303과 진행 메모, §13 |
 
+- **R1 수락(메인):** `F4_OIDC_INTEGRATION_PLAN_R1_REVIEW_COMPLETE`의 PASS(P0·P1 없음)를 수락했다. 비차단 P2-A는 §6.1의 설정별 캐시 키로, P2-B는 부록 A의 저장소 루트·파일 끝 개행 처리로 보완했다. 문서 diff·상대 링크를 확인했으며 코드·DB·실로그인 시험은 이 계획 단계에서 실행하지 않았다.
+
 ---
 
 ## 부록 A — Windows 세션용 OAuth 콘솔 설정 프롬프트 (초안)
@@ -671,11 +673,15 @@ pieceofdays의 Google·Kakao OIDC 로그인용 개발 설정을 단계별로 안
   POD_AUTH_BASE_URL=http://localhost:3000
   POD_AUTH_SESSION_SECRETS는 JSON 번호 맵이다. 형식: POD_AUTH_SESSION_SECRETS='{"1":"[32자 이상 무작위 값]"}'
     (단순 무작위 문자열만 넣으면 설정 오류다. 작은따옴표로 감싸는 dotenv 표기는 계획상 추론이며 첫 실행 때 확인한다)
-    값을 화면에 출력하지 않고 파일에만 쓰는 PowerShell 예시(키가 이미 있으면 아무것도 쓰지 않음):
-      $p = "app\.env.local"
+    저장소 루트에서 실행하는 PowerShell 예시(값은 출력하지 않고 파일에만 쓰며 기존 키가 있으면 변경하지 않음):
+      $p = Join-Path (Get-Location).Path "app\.env.local"
       if ((Test-Path $p) -and (Select-String -Path $p -Pattern '^POD_AUTH_SESSION_SECRETS=' -Quiet)) { "이미 있음(변경 안 함)" }
       else { $b = New-Object byte[] 32; [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
              $s = [Convert]::ToBase64String($b).TrimEnd('=').Replace('+','-').Replace('/','_')
+             if (Test-Path $p) { $tail = [System.IO.File]::ReadAllBytes($p)
+               if (($tail.Length -gt 0) -and ($tail[-1] -ne 10) -and ($tail[-1] -ne 13)) {
+                 [System.IO.File]::AppendAllText($p, [Environment]::NewLine, [System.Text.Encoding]::ASCII) }
+               Remove-Variable tail }
              Add-Content -Path $p -Encoding ascii -Value ("POD_AUTH_SESSION_SECRETS='{`"1`":`"" + $s + "`"}'")
              Remove-Variable b, s; "추가함(값은 출력하지 않음)" }
   POD_AUTH_PROVIDERS: 이 PC의 격리 preflight에서는 google, kakao, google,kakao 중 검증할 대상을 넣는다

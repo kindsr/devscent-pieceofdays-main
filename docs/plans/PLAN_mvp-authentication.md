@@ -261,7 +261,7 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
   - 단위·DB: §3 표의 세 사례, 지급 1회와 `SUM(delta)=balance`.
   - **격리 CI Playwright + 127.0.0.1 모의 OIDC issuer:** 성공·취소·state·서명·iss·aud·nonce 위조·같은 code 중복·쿠키 삭제 뒤 재요청, 운영의 모의·http issuer 거부. backdoor는 없다.
 - 롤백: 인증 env를 제거하면 `unavailable`로 돌아간다. 정적 dev와 운영에는 영향이 없다. 지급 원장은 되돌리지 않는다.
-- **상세 계획:** [PLAN_mvp-oidc-integration](PLAN_mvp-oidc-integration.md). **진행(2026-11-03):** BASE `eaf9d4f` 기준 slice·쿠키·route·DAL·시험·실공급자 검증 절차를 작성했다. R0 독립 검토(CHANGES_REQUIRED, P1 2·P2 7)와 메인 구현 결정 6건(상세 계획 §13: 공급자 목록 설정, flow 쿠키·POST start, `enableNonRepudiationChecks` 필수, F5 전 안내 화면, B4-d 후속 배정, 브랜드 확인 시점)을 R1에 반영했고 재검토·메인 수락 전이다. 이 절의 R4 정책(공급자 둘 다·scope `openid`·서버 state 저장소 없음·세션 계약)은 바꾸지 않았다.
+- **상세 계획:** [PLAN_mvp-oidc-integration](PLAN_mvp-oidc-integration.md). **진행(2026-11-03):** BASE `eaf9d4f` 기준 slice·쿠키·route·DAL·시험·실공급자 검증 절차를 작성했다. R0 지적(P1 2·P2 7)과 메인 구현 결정 6건을 R1에 반영했고, 독립 재검토 PASS(P0·P1 없음)를 수락해 dev에 통합했다. 비차단 P2인 캐시 키·Windows 줄바꿈도 보완했다. 다음은 B0 패키지 준비다. 이 절의 R4 정책(공급자 둘 다·scope `openid`·서버 state 저장소 없음·세션 계약)은 바꾸지 않았다.
 
 ## 11. 라이브러리 비교와 근거 (채택 C)
 
