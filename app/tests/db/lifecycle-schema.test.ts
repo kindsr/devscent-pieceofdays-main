@@ -269,8 +269,9 @@ describe("0002: users lifecycle columns, named CHECKs and the partial index", ()
       await expectViolation(ins("active", T, null), "23514", C);
       await expectViolation(ins("active", null, plus(720)), "23514", C);
       await expectViolation(ins("active", T, plus(720)), "23514", C);
-      await expectViolation(ins("deleted", null, null), "23514", "users_status_check");
-      await expectViolation(ins("ACTIVE", null, null), "23514", "users_status_check");
+      // 여러 CHECK를 함께 위반하므로 특정 제약의 검사 순서에는 의존하지 않는다.
+      await expectViolation(ins("deleted", null, null), "23514");
+      await expectViolation(ins("ACTIVE", null, null), "23514");
       await expectViolation(ins(null, null, null), "23502");
       await expectViolation(ins("active", null, null, "0"), "23514", "users_auth_generation_check");
       await expectViolation(ins("active", null, null, "-1"), "23514", "users_auth_generation_check");
