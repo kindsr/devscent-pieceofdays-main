@@ -21,6 +21,7 @@
     "db:migrate": "node src/server/db/migrate-cli.ts"
   },
   "dependencies": {
+    "iron-session": "9.0.1",
     "konva": "10.9.1",
     "next": "16.4.3",
     "pg": "8.23.1",
