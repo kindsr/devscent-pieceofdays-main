@@ -81,8 +81,35 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
 
 ## 4. 이 결정이 확정하지 않는 것
 
-- 인증 공급자와 로그인 방식 [미정]. 첫 로그인 지급의 기준 사건이 이 결정에 달려 있다.
+- 로그인 공급자는 2026-11-03 사용자가 **Google·Kakao 둘 다**로 확정했다(PRD §0). 공급자 간 계정 연결 방식은 [미정]이다.
 - 외부 서비스로 개인정보나 일기 내용을 보내는 일(외부 인증 공급자에게 넘어가는 식별 정보, AI 제공자 등)은 확정하지 않았다. 각각 사용자 결정과 동의 설계가 먼저다.
 - 사진의 MVP 포함 여부(PRD Q1), AI 초안(PRD Q2), 공유(PRD Q3).
 - 앱 이미지의 배포 전환. 현행 배포 프로그램은 승인된 정적 nginx 이미지만 허용하므로, 전환에는 별도 계획과 메인 검토가 필요하다(PLAN_mvp-foundation F6).
 - 감정덩어리 현금화·환전·정산 방식, 창작자 +1 시점(권고만 있음).
+
+## 5. F4 인증 기술 기본값 (메인 결정, 2026-11-03)
+
+- **선택자:** 메인. 날짜: 2026-11-03.
+  - 사용자가 고른 전체 스택(§1~§2) 안에서 정한 구현 기술 기본값이다. 사용자 선택이 아니며, 새 외부 인증 서비스를 쓰거나 공급자를 승인한 것도 아니다.
+- **채택:**
+  - OIDC 프로토콜 검증: `openid-client` **6.8.9** (MIT, ESM, 의존 `jose ^6.2.15`·`oauth4webapi ^3.8.8`, `engines` 필드 없음, README상 Node 20 기준).
+  - 세션 봉인·검증(S1 무상태): `iron-session` **9.0.1** (MIT, ESM, `engines node >=22.13.0`, 의존 `cookie ^2.0.1`·`iron-webcrypto ^2.0.0`).
+  - 서버 전용 경계: Next 내장 `import 'server-only'` 처리.
+  - JWT와 암호 알고리즘은 직접 구현하지 않는다.
+  - 출처: npm 레지스트리, https://github.com/panva/openid-client , https://github.com/vvo/iron-session , https://nextjs.org/docs/app/guides/data-security (확인일 2026-11-03).
+- **세션:** 절대 만료 7일. 사용하더라도 연장하지 않는다. 재인증하면 새로 7일이다. 상세는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md).
+- **검증 상태(2026-11-03):**
+  - `iron-session` 9.0.1은 Cloud scratch 사본(Node 26.13.0·npm 11.20.0, Next 16.4.3·React 19.3.1)에서 확인했다(PR27 호환 spike, 원본 저장소 불변).
+    - 설치(peer 없음), `npm ls`, lint·typecheck·단위 103, `next build` 통과
+    - `server-only` 패키지 없이 Next 내장 처리와 client import 거부 확인
+  - **미검증:**
+    - Node 24.22.2, DB·E2E·실서비스에서의 동작
+    - `openid-client` 6.8.9 전체(F4b에서 설치·검증)
+  - 제품 저장소 설치는 F4a 호환 bootstrap에서 Node 24·26 CI로 검증한다.
+  - 세션 정책 세부(R2)는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5.
+- **설치 시점:** F4a에서는 `iron-session`만 설치하고, `openid-client`는 필요해지는 F4b에서 설치한다.
+- **공급자:** 2026-11-03 사용자 확정은 **Google·Kakao 둘 다**다(PRD §0). 이 절의 기술 기본값은 메인 결정으로 그대로 둔다. 계정 연결은 사용자 답변 대기다.
+- **세션 generation [메인 채택, 2026-11-03]:**
+  - payload `{ v, userId, gen, iat, exp }`(키 5개)와 `users.auth_generation`을 쓰고, DAL이 매 요청 `status`·`gen`을 검사한다(M안).
+  - 사용자 선택이 아니며 구현 전이다. 계약은 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5, 근거는 [PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) §4.
+  - package-only `iron-session` bootstrap은 독립적으로 진행할 수 있다.

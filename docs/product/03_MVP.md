@@ -10,6 +10,8 @@
 | 사용자 폰트 선택(기록 본문) | 전문 드로잉 도구, 본인 그림 업로드(포함 여부 [미정]) |
 | 개인용 하루 꾸미기 Lite | 감정덩어리의 다른 사용처 |
 | 실제 로그인을 도입할 때 첫 성공 로그인 10개 지급(계정당 1회) | AI 초안·공유·사진(PRD Q1~Q3 답 전) |
+| **Google·Kakao 로그인 둘 다**(2026-11-03 확정) | 공급자 간 계정 연결 방식([미정], 사용자 답변 대기) |
+| **계정 탈퇴: 30일 복구 기간 → 삭제**(2026-11-03 사용자 확정). 요청 즉시 접근 차단과 명시적 복구 확인은 메인 기술·UX 결정([PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md)) | 개별 조각 삭제의 보관 기간(현행 즉시 삭제 유지, 30일 정책은 계정 단위) |
 
 ## 2. 감정덩어리: 정책과 구현 시점
 
@@ -25,7 +27,7 @@
 
 | 지금 가능(사용자 승인 스택·D, §01의 가정을 드러낸 채) | 별도 의존성 |
 |---|---|
-| Next.js 앱 골격, 패키지 설치와 버전 고정(호환 확인 후) | 실제 로그인: 인증 공급자·방식 결정 |
+| Next.js 앱 골격, 패키지 설치와 버전 고정(호환 확인 후) | 실제 로그인: 공급자는 Google·Kakao 확정. 계정 연결 답변과 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md)·[PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) 검토 뒤 구현 |
 | D 화면 이식, 오늘·모아보기·작성·설정 UI | 외부 AI 전송: PRD Q2 B 선택과 동의 설계 |
 | 도메인 모듈과 저장 port(메모리 구현 + PostgreSQL 구현), TDD | 공유: PRD Q3 |
 | 로컬·CI 컨테이너 PostgreSQL 18로 migration·권한 테스트 | 서버 dev/prod DB·버킷 생성: 메인·비공개 런북 |
