@@ -140,7 +140,7 @@ describe("loadSessionConfig (§5.2, evaluated top to bottom)", () => {
       ["secrets blank", envOf("   ")],
       ["base empty", envOf({ "1": key(1) }, "")],
       ["base blank", envOf({ "1": key(1) }, " \t ")],
-      ["base undefined", envOf({ "1": key(1) }, undefined)],
+      ["base undefined", { ...envOf({ "1": key(1) }), POD_AUTH_BASE_URL: undefined }],
       ["missing beats malformed", { POD_AUTH_SESSION_SECRETS: "not json" }],
       ["blank beats bad url", envOf(" ", "not a url")],
     ];
