@@ -86,3 +86,18 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
 - 사진의 MVP 포함 여부(PRD Q1), AI 초안(PRD Q2), 공유(PRD Q3).
 - 앱 이미지의 배포 전환. 현행 배포 프로그램은 승인된 정적 nginx 이미지만 허용하므로, 전환에는 별도 계획과 메인 검토가 필요하다(PLAN_mvp-foundation F6).
 - 감정덩어리 현금화·환전·정산 방식, 창작자 +1 시점(권고만 있음).
+
+## 5. F4 인증 기술 기본값 (메인 결정, 2026-11-03)
+
+- **선택자:** 메인. 날짜: 2026-11-03.
+  - 사용자가 고른 전체 스택(§1~§2) 안에서 정한 구현 기술 기본값이다. 사용자 선택이 아니며, 새 외부 인증 서비스를 쓰거나 공급자를 승인한 것도 아니다.
+- **채택:**
+  - OIDC 프로토콜 검증: `openid-client` **6.8.9** (MIT, ESM, 의존 `jose ^6.2.15`·`oauth4webapi ^3.8.8`, `engines` 필드 없음, README상 Node 20 기준).
+  - 세션 봉인·검증(S1 무상태): `iron-session` **9.0.1** (MIT, ESM, `engines node >=22.13.0`, 의존 `cookie ^2.0.1`·`iron-webcrypto ^2.0.0`).
+  - 서버 전용 경계: Next 내장 `import 'server-only'` 처리.
+  - JWT와 암호 알고리즘은 직접 구현하지 않는다.
+  - 출처: npm 레지스트리, https://github.com/panva/openid-client , https://github.com/vvo/iron-session , https://nextjs.org/docs/app/guides/data-security (확인일 2026-11-03).
+- **세션:** 절대 만료 7일. 사용하더라도 연장하지 않는다. 재인증하면 새로 7일이다. 상세는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md).
+- **미검증:** Next 16.4.3·React 19.3.1·Node 24.22.2/26.13.0과 실제로 호환되는지. 격리된 bootstrap·CI에서 설치하고 build할 때까지 확정하지 않는다.
+- **설치 시점:** F4a에서는 `iron-session`만 설치하고, `openid-client`는 필요해지는 F4b에서 설치한다.
+- **공급자:** Google / Kakao / 둘 다는 **사용자 답변 대기**다. 고르지 않았다.
