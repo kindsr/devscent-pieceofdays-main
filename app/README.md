@@ -102,6 +102,26 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 격리 Cloud·CI·개발 PC에서만 경계를 따로 실행한다: `POD_FULL_CHECK_ISOLATED=1 node --test app/tests/auth-build-boundary.test.mjs`(저장소 루트). 이 `node:test` harness는 현재 FullCheck 스크립트와 별도로 CI에서 실행한다. 실제 OAuth·요청별 DB 상태/세대 대조·복구 쿠키·탈퇴·삭제는 아직 없다. 후속 계약은 [인증 계획](../docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](../docs/plans/PLAN_account-lifecycle.md)을 따른다.
 
+## 계정 수명주기 스키마 (F4 L1)
+
+`migrations/0002_account_lifecycle`이 다음을 추가한다. 실행기는 파일마다 트랜잭션을 나누므로 0002가 실패하면 0002만 롤백된다.
+
+- 스키마: `users`의 상태·탈퇴 시각·삭제 기한·세션 세대 열과 일관성 제약, app의 해당 열 UPDATE 권한
+- 원장 보호: UPDATE·TRUNCATE는 계속 거부한다. DELETE는 owner와 같은 사용자를 가리키는 트랜잭션 표시(GUC)가 있을 때만 허용한다
+- 삭제 함수 2개: PUBLIC 실행 권한 회수, 전용 purge role만 실행
+- 되돌리기: 빈 CI DB 전용 down
+- 시험 하네스: purge role과 meta `purge_role`을 준비한다
+
+[PR33 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41679894578)(코드 `0876c4b`):
+- DB 119개(PG18.6 + Node 26)
+- Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12
+- [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41679894597) 42
+
+**독립 SQL 검토와 dev 통합은 아직 진행 중이다.** 아직 없는 것:
+- 탈퇴·복구 요청과 요청별 상태·세대 대조 도메인(L2)
+- 실제 OAuth·복구 쿠키·화면
+- 서비스 DB·운영 role·삭제 실행 주기
+
 ## 한계 (제품 구현)
 
 - 실제 로그인·앱의 PG 저장 연결·버킷 없음. 지급·기록·개인 꾸미기·글꼴 저장은 도메인 함수로 검증했으며 실제 인증 연결은 F4다. 화면의 조각 삭제·하루 꾸미기 편집기는 아직 없다.

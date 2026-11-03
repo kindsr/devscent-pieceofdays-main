@@ -1,6 +1,9 @@
 # MVP 데이터 계약 (PostgreSQL 18)
 
-- 상태: **F2 설계·구현 계약.** `0001_init` SQL과 권한·제약을 일회용 PG18 CI에서 검증했다. 실서버 DB·계정은 만들지 않았다. 초기 설계 기준은 `dev` `e5ebd58`이며 [실행 계획·결과](../plans/PLAN_mvp-database.md)에 실제 구현 기준을 기록한다.
+- 상태: **F2 설계·구현 계약 + F4 L1(`0002_account_lifecycle`) 반영.**
+  - `0001_init`은 F2에서 일회용 PG18 CI로 검증한 초기 계약이며, 이후 회귀 기준이다.
+  - `0002`는 PR33 코드(`0876c4b`)에서 일회용 PG18 CI(DB 119개)로 검증했다. **독립 SQL 검토와 dev 통합은 아직 진행 중**이다.
+  - 실서버 DB·계정·role은 만들지 않았다. 초기 설계 기준은 `dev` `e5ebd58`이며 [실행 계획·결과](../plans/PLAN_mvp-database.md)에 실제 구현 기준을 기록한다.
 - 정본 입력: [00_TECH_STACK_DECISION](00_TECH_STACK_DECISION.md) §3, [03_MVP](03_MVP.md), [PLAN_mvp-foundation](../plans/PLAN_mvp-foundation.md) §3·§5·F2·F3, [DECORATION_MARKET_ARCHITECTURE](DECORATION_MARKET_ARCHITECTURE.md) §3.4·§5·§6. F1 저장 port(작업 브랜치 `claude/nextjs-foundation-mvp-0p73cn` `e5dd64d`의 `app/src/server/diary/store.ts`)는 읽기만 했다.
 - 표기: **[계약]** F2 RED 시험이 그대로 검사할 값, **[가정]** 사용자 결정 전의 전제, **[미정]** 결정 필요.
 - 인증 공급자는 **Google·카카오 둘 다**로 확정했다(2026-11-03 사용자 선택). 이 현행 스키마 계약은 공급자 중립이며, 이메일·이름·프로필 같은 공급자 개인정보 열을 두지 않는다. 공급자 간 계정 연결은 미정이다.
@@ -45,8 +48,18 @@
 | `id` | `uuid PRIMARY KEY DEFAULT uuidv7()` — canonical user_id |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` |
 | `first_login_at` | `timestamptz NULL` — 첫 성공 로그인 시각(F4에서 기록) |
+| `status` (0002) | `text NOT NULL DEFAULT 'active'`, `users_status_check`: `status IN ('active','pending_deletion')` |
+| `deletion_requested_at` (0002) | `timestamptz NULL` |
+| `purge_after` (0002) | `timestamptz NULL` |
+| `auth_generation` (0002) | `integer NOT NULL DEFAULT 1`, `users_auth_generation_check`: `>= 1` |
 
-삭제 정책은 **계정 탈퇴 후 30일 복구 기간 뒤 삭제**로 확정했다(2026-11-03). 현행 스키마에는 이 상태·기한이 없고, 앱 role에는 `DELETE` 권한이 없다. 원장의 `RESTRICT`(§4.8) 때문에 원장이 있는 사용자는 owner 권한으로도 삭제되지 않는다. [계정 수명주기 계획](../plans/PLAN_account-lifecycle.md)에 후속 migration·삭제 경로를 분리하며, 이 문서는 현재 `0001_init`의 실제 제약을 유지한다.
+- `users_lifecycle_consistency`(0002): active이면 두 시각이 NULL이다. pending이면 두 시각 모두 NOT NULL이고 `purge_after = deletion_requested_at + interval '720 hours'`다.
+- 기존 사용자는 0002 적용 시 active / gen 1 / 시각 NULL이 된다.
+- 부분 인덱스 `users_purge_due_idx ON (purge_after) WHERE status='pending_deletion'`(0002).
+- 삭제 정책은 **계정 탈퇴 후 30일 복구 기간 뒤 삭제**다(2026-11-03 사용자 확정).
+  - 앱 role에는 계속 `DELETE` 권한이 없다.
+  - 삭제는 §5.1 purge 함수로만 설계됐다(L1 SQL). 탈퇴·복구를 요청하는 도메인 코드(L2)는 아직 없다.
+  - 0001 초기 계약에서는 원장의 `RESTRICT` 때문에 owner로도 원장이 있는 사용자를 삭제할 수 없었다. 이 이력은 §4.8에 남긴다.
 
 ### 4.2 `pod.auth_identities` (공급자 중립)
 
@@ -160,9 +173,15 @@ RETURNING version;
 - 정책 CHECK: `CHECK (reason <> 'first_login_grant' OR (delta = 10 AND grant_key = 'first_login:' || user_id::text AND ref_type IS NULL AND ref_id IS NULL))`.
 - 부분 유일 인덱스: `CREATE UNIQUE INDEX … ON pod.emotion_ledger (user_id) WHERE reason = 'first_login_grant'`. `grant_key` 형식과 상관없이 사용자당 1회를 보장한다.
 - 인덱스: `(user_id, created_at)`.
-- 보호 트리거(심층 방어, owner 포함 모든 role에 적용): `BEFORE UPDATE OR DELETE … FOR EACH ROW`, `BEFORE TRUNCATE … FOR EACH STATEMENT`. 둘 다 `RAISE EXCEPTION 'emotion_ledger is append-only'`(SQLSTATE `P0001`)를 낸다.
+- 보호 트리거: `BEFORE UPDATE OR DELETE … FOR EACH ROW`, `BEFORE TRUNCATE … FOR EACH STATEMENT`. 거부할 때 `RAISE EXCEPTION 'emotion_ledger is append-only'`(SQLSTATE `P0001`)를 낸다.
+  - 0001 초기 계약에서는 owner를 포함한 모든 role의 UPDATE·DELETE·TRUNCATE를 거부했다.
+  - **0002 이후:**
+    - UPDATE·TRUNCATE는 계속 항상 거부된다.
+    - DELETE는 `current_user`가 owner role이고 트랜잭션 GUC `pod.purge_user_id`가 그 행의 `user_id`와 같을 때만 허용된다(중첩 IF).
+    - 일반 app은 원장 DELETE 권한 자체가 없어 `42501`이다. 트리거 함수의 PUBLIC 회수도 유지된다.
+  - **신뢰 경계:** owner와 그 구성원(migrator)은 GUC를 직접 설정해 이 예외를 쓸 수 있는 신뢰 주체다. 그래서 "purge 함수 안에서만 가능하다"는 보장은 하지 않는다.
 - 잔액의 권위는 `SUM(delta)`다. `credit_accounts.balance`는 같은 트랜잭션에서 갱신하는 사본이다. 일치 여부는 F3가 시험한다.
-- `ON DELETE RESTRICT`로 원장을 보존한다. 원장이 있는 사용자·계정은 지워지지 않는다. 사용자 삭제가 `CASCADE`로 일기를 지우려 해도 원장 쪽 `RESTRICT`가 전체 삭제를 막는다. 확정된 탈퇴 정책은 별도 migration과 운영 절차로 구현한다([계정 수명주기 계획](../plans/PLAN_account-lifecycle.md)).
+- `ON DELETE RESTRICT`는 0002에서도 그대로다. 사용자 삭제가 `CASCADE`로 일기를 지우려 해도, 원장·계정 행이 남아 있으면 `RESTRICT`가 전체 삭제를 막는다. 그래서 purge 함수(§5.1)는 원장 → 계정 → users 순서로 직접 지운다([계정 수명주기 계획](../plans/PLAN_account-lifecycle.md) §5·§10).
 - PostgreSQL 18의 부모 `DELETE` RESTRICT 위반은 SQLSTATE `23001`이며, 참조 없는 FK 값의 삽입·갱신 위반 `23503`과 구분해 시험한다.
 
 ### 4.9 책임 분리 (F2 / F3 / F4)
@@ -183,11 +202,12 @@ role 이름은 논리 이름이다. 실제 이름과 비밀번호는 환경별 �
 | owner | `pod_ci_owner` | 아니오 | `pod`·`pod_meta` 스키마와 모든 객체의 소유자 |
 | migrator | `pod_ci_migrator` | 예 | owner의 구성원(`SET ROLE owner`로 DDL 실행). 앱 실행에는 쓰지 않는다 |
 | app | `pod_ci_app` | 예 | 아래 표만 가진다. 슈퍼유저·`CREATEROLE`·`CREATEDB`·`BYPASSRLS`는 없다 |
+| purge (0002) | `pod_ci_purge` | 예 | `USAGE ON SCHEMA pod`와 §5.1 두 함수의 `EXECUTE`만 가진다. 테이블 권한이 없고, owner의 구성원도 구성원 보유자도 아니다 |
 
 | 객체 | app 권한 |
 |---|---|
 | DB / 스키마 | `CONNECT` / `USAGE ON SCHEMA pod`. `pod_meta`와 `CREATE` 권한 없음 |
-| `users` | `SELECT, INSERT, UPDATE (first_login_at)` |
+| `users` | `SELECT, INSERT, UPDATE (first_login_at)` + 0002 `UPDATE (status, deletion_requested_at, purge_after, auth_generation)`. `id`·`created_at` UPDATE와 DELETE는 없다 |
 | `auth_identities` | `SELECT, INSERT` |
 | `preferences` | `SELECT, INSERT, UPDATE (font_key, applied_design_version_id, updated_at)` |
 | `diary_moments`, `day_summaries` | `SELECT, INSERT, UPDATE, DELETE` |
@@ -199,12 +219,26 @@ role 이름은 논리 이름이다. 실제 이름과 비밀번호는 환경별 �
 - `TRIGGER`·`REFERENCES` 권한은 app에 주지 않는다.
 - 클러스터 단위 role 생성은 migration이 하지 않는다. CI에서는 부트스트랩 SQL이, dev/prod에서는 운영 프로비저닝이 만든다.
 - migration은 role 이름을 `pod_meta.db_environment`(§6)에서 읽어 `format('%I')`로 GRANT한다. 그래서 SQL 파일은 환경과 무관하게 같다.
+- app은 lifecycle 열을 직접 UPDATE할 수 있다. 시각은 신뢰된 도메인 코드가 DB에서 얻은 값으로만 쓴다(L2). CHECK는 일관성만 보장한다.
+
+### 5.1 purge 함수 (0002, L1)
+
+| 함수 | 계약 |
+|---|---|
+| `pod.list_purge_due(p_limit integer) RETURNS SETOF uuid` | `p_limit`이 NULL이거나 1~1000 밖이면 `P0001`. `clock_timestamp()`를 한 번 읽은 t로 `status='pending_deletion' AND purge_after <= t`를 `purge_after, id` 순으로 고른다. 잠금은 없다 |
+| `pod.purge_user_if_due(p_user uuid) RETURNS text` | NULL이면 `P0001`. users 행 `FOR UPDATE` → 0행이면 `absent` → `clock_timestamp()` t → pending이 아니거나 `purge_after > t`이면 `not_due`. 자격이 있으면 GUC 설정 → `emotion_ledger` → `credit_accounts` → `users` 삭제(나머지 5개 테이블은 CASCADE) → GUC를 `''`로 비움 → `purged`. 실패하면 전체 롤백 |
+
+- 둘 다 owner 소유 `SECURITY DEFINER`, `SET search_path = pg_catalog, pg_temp`이고 객체를 완전 수식한다.
+- 같은 migration 트랜잭션 안에서 `REVOKE ALL … FROM PUBLIC`을 실행한다. app은 실행할 수 없다(`42501`).
+- 0002는 meta의 `purge_role`이 없거나 NULL이거나 role이 존재하지 않거나 app·owner·migration `session_user`와 같으면 GRANT 없이 실패한다.
+- 실행기는 migration 파일마다 별도 트랜잭션이다. 그래서 0002만 롤백되고 0001은 남는다.
+- 운영 purge 실행 주기·SLA는 F6이며 아직 없다.
 
 ## 6. 메타 테이블 [계약]
 
 | 테이블 | 열 | 만드는 주체 |
 |---|---|---|
-| `pod_meta.db_environment` | `singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton)`, `name text NOT NULL CHECK (name IN ('ci','dev','prod'))`, `app_role name NOT NULL`, `owner_role name NOT NULL` | CI 부트스트랩 / 운영 프로비저닝(migration 아님) |
+| `pod_meta.db_environment` | `singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton)`, `name text NOT NULL CHECK (name IN ('ci','dev','prod'))`, `app_role name NOT NULL`, `owner_role name NOT NULL`, `purge_role name NOT NULL`(L1부터) | CI 부트스트랩(`app/tests/db/helpers.ts`가 현재 구현) / 운영 프로비저닝(migration 아님). 기존 운영 meta에 열을 추가하는 순서(nullable → 값 → NOT NULL)는 F6 미실행 절차다 |
 | `pod_meta.schema_migrations` | `version integer PRIMARY KEY`, `name text NOT NULL`, `checksum char(64) NOT NULL`(up 파일 SHA-256 hex), `applied_at timestamptz NOT NULL DEFAULT now()`, `applied_by name NOT NULL DEFAULT current_user` | 실행기(runner) |
 
 - 실행기는 `db_environment`가 없으면 시작하지 않는다.
@@ -212,17 +246,17 @@ role 이름은 논리 이름이다. 실제 이름과 비밀번호는 환경별 �
 
 ## 7. 미정
 
-Google·카카오와 계정 탈퇴 후 30일 복구 뒤 삭제는 확정했다. 미정·구현 전 항목은 다중 공급자 연결, 세션 철회·탈퇴 상태·삭제 경로의 후속 migration, 사용자별 시간대, 사진·예시 이미지 저장, 개인 버전 보관 개수, 백업 만료·복원 시 삭제 재적용, 잔액 표시, 감정덩어리의 다른 `reason`과 구매 원장이다.
+Google·카카오와 계정 탈퇴 후 30일 복구 뒤 삭제는 확정했다. 미정·구현 전 항목은 다중 공급자 연결, 탈퇴·복구·세션 대조 도메인(L2)과 운영 purge 주기, 사용자별 시간대, 사진·예시 이미지 저장, 개인 버전 보관 개수, 백업 만료·복원 시 삭제 재적용, 잔액 표시, 감정덩어리의 다른 `reason`과 구매 원장이다.
 
-## 8. 채택한 후속 계약 — 0002 (아직 미구현)
+## 8. 0002 구현 상태 (L1)
 
-[계정 수명주기 계획](../plans/PLAN_account-lifecycle.md) R6 §9~§13을 독립 검토 후 수락했다(2026-11-03). 위 표는 현재 `0001_init`의 실제 계약을 유지한다. 다음 항목은 아직 SQL·제품·시험에 반영하지 않았다.
-
-| 대상 | 후속 계약 |
-|---|---|
-| `pod.users` | `status`, `deletion_requested_at`, `purge_after`, `auth_generation` 추가. pending의 두 시각은 모두 필수이며 720시간 차이를 검사한다 |
-| `pod_meta.db_environment` | provisioning 소유 `purge_role name NOT NULL`. role 생성·접속·상속 검증은 CI harness와 F6 provisioning이 맡고, 0002는 메타값을 검증한 뒤 제한 GRANT한다(A안) |
-| purge 함수 | `list_purge_due(int)`·`purge_user_if_due(uuid)`: PUBLIC 실행권 회수, 전용 role만 실행, 일반 앱은 실행·원장 DELETE 불가 |
-| 구현 순서 | L1 schema·role 시험 → 0002 SQL, 이후 L2 도메인·로그인 결과 변경. 실제 OAuth·운영 role·purge 주기·백업 적용은 후속 |
-
-기존 운영 메타데이터의 열 전환과 실제 role 생성은 이 문서로 실행하지 않는다. 시험·권한·down·실패 복귀의 정확한 계약은 위 계획이 정본이다.
+- **L1 schema·role:** PR33 코드 `0876c4b`(RED `a7d8b1f`)에서 구현했다. §4.1·§4.8·§5·§5.1·§6이 반영 내용이다.
+- **CI 검증:** app-validation 41679894578, root 41679894597.
+  - PG18.6 + Node 26 DB 119(실패·skip 0)
+  - Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·prod 6·E2E 12·lint·typecheck·build
+  - root 42·Compose
+- **아직 진행 중:** 독립 SQL 검토와 dev 통합은 아직 끝나지 않았다.
+- 이 문서 작성자는 로컬 DB·서버·FullCheck를 실행하지 않았다.
+- **L2 미구현:** `requestWithdrawal`·`restoreAccount`·`verifyActiveAccount`, `LoginOutcome` union, 로그인 0행 분기.
+- **후속:** 실제 OAuth·DAL 연결·복구 쿠키·UI, 서비스 DB·운영 role provisioning·purge job·백업(F4b/c·F6).
+- 정확한 시험·권한·down 계약의 정본은 [계정 수명주기 계획](../plans/PLAN_account-lifecycle.md) §9~§13이다.

@@ -1,8 +1,8 @@
 # PLAN — 계정 탈퇴·30일 복구·삭제 (R6: 구현 계약)
 
-- **상태:** 계획이다. 정책·기술 결정은 §1~§8(R4, dev 통합됨)에 있고, RED 담당용 **구현 계약은 §9~§13(R5·R6)**이다. R6은 PR31 R5 독립 검토와 메인 기술 결정(2026-11-03, 사용자 제품 정책 아님)을 반영했다. 코드·SQL·migration·cron·DB·계정 등록은 하지 않았다. 이 문서는 구현 착수나 완료를 뜻하지 않는다.
+- **상태:** 계획이다. 정책·기술 결정은 §1~§8(R4, dev 통합됨)에 있고, RED 담당용 **구현 계약은 §9~§13(R5·R6)**이다. R6은 PR31 R5 독립 검토와 메인 기술 결정(2026-11-03, 사용자 제품 정책 아님)을 반영했다. **L1(0002 schema·role)은 PR33 코드 `0876c4b`에서 CI 검증을 마쳤고, 독립 SQL 검토와 dev 통합은 진행 중이다(§14).** L2 도메인·로그인, cron, 서비스 DB·계정 등록은 아직 없다.
 - **R5 BASE:** `dev` `3832cca94164c2b9c81c21fa58c7ad8d38a23715`(F4a codec `96bcf8c` 포함). 3832cca 통합 CI 결과는 이 문서 작성 시 직접 확인하지 않았다.
-- **BASE:** `dev` `76a39d1e65a889a03eb1e5bd64a7e0b3ef161800`.
+- **구현 전 기준 BASE(§1의 사실):** `dev` `76a39d1e65a889a03eb1e5bd64a7e0b3ef161800`. §1은 0002 이전 0001 상태의 기록이다. 현재 스키마는 [DATA_CONTRACT](../product/DATA_CONTRACT.md) §4~§6·§8을 본다.
   - 근거 코드: `app/migrations/0001_init.up.sql`, `app/src/server/account/login.ts`, `app/src/server/credit/first-login-grant.ts`, `app/src/server/db/migrate.ts`.
 - **[사용자 확정] 2026-11-03:** "로그인은 둘다 붙이고, 30일 복구 기간 후 삭제"([PRD](../PRD.md) §0).
   - 사용자가 확정한 것은 **Google·Kakao 로그인**과 **탈퇴 뒤 30일 복구 기간이 지나면 삭제**, 이 두 가지뿐이다.
@@ -19,7 +19,7 @@
 - 관련 문서: [PLAN_mvp-authentication](PLAN_mvp-authentication.md) §5(세션 계약), [DATA_CONTRACT](../product/DATA_CONTRACT.md)(구현 PR에서 갱신).
 - 표기: **[사실]** 코드로 확인 / **[메인]** 메인 기술 결정 / **[미정]** / **[미확인]**
 
-## 1. 현재 스키마 사실 (BASE `0001_init.up.sql`)
+## 1. 구현 전 기준 스키마 사실 (BASE `0001_init.up.sql`, 0002 이전)
 
 | 대상 | 사실 | 영향 |
 |---|---|---|
@@ -67,7 +67,7 @@ type LoginOutcome =
 - **TDD 경로:**
   - lifecycle RED에서 기존 `tests/db/f3-login-grant.test.ts`의 기대값(`toEqual({ userId, createdUser, granted, balance })`)을 `kind:"active"`·`gen`을 포함하는 형태로 **먼저** 고치고, 새 경계 시험을 함께 작성한다(TEST_PATTERNS 경로).
   - 그다음 GREEN에서 제품 코드를 고친다.
-  - 기준선 단위 122·DB 99 회귀를 유지한다.
+  - 기준선 단위 122·DB 119(L1 이후) 회귀를 유지한다.
 - 다른 공급자 로그인: 같은 user에 연결된 identity면 위와 같다. 연결되지 않은 공급자 identity는 현행 스키마에서 별도 canonical user다. 연결 정책은 [미정]이다.
 
 **복구 확인 쿠키 계약 (F4b/c 범위, F4a 세션 codec과 분리) [메인]:**
@@ -90,7 +90,7 @@ type LoginOutcome =
   - S2(DB 세션)는 미채택 대안이다.
 - 세션 codec 계약(키 5개, `sealSession(cfg, { userId, gen })` 등)은 [PLAN_mvp-authentication](PLAN_mvp-authentication.md) §5에 단일 계약으로 있다.
 
-## 5. 삭제(purge) [메인, 구현 전]
+## 5. 삭제(purge) [메인, SQL은 L1에서 구현·운영 주기는 F6]
 
 **사전 조건 (한 트랜잭션):** users 행 `FOR UPDATE` → t를 읽는다. `status='pending_deletion' AND purge_after <= t`가 아니면 `not_due`로 끝낸다. 행이 없으면 `absent`(성공·멱등).
 
@@ -123,7 +123,7 @@ type LoginOutcome =
 
 **백업:** 백업에서 즉시 물리 삭제된다고 약속하지 않는다. 백업 만료와 복원 시 삭제 재적용 절차는 F6 운영 선행 조건(미설정)이다.
 
-## 6. migration 초안 `0002_account_lifecycle` [메인]
+## 6. migration `0002_account_lifecycle` [메인, L1 구현 — 파일 계약은 §10]
 
 - `pod.users`에 추가할 열:
   - `status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','pending_deletion'))`
@@ -157,7 +157,7 @@ type LoginOutcome =
    - purge role은 두 함수를 정상 실행하고, `pod.users`·`pod.emotion_ledger` 직접 접근은 `42501`이다.
    - app의 원장 UPDATE·DELETE는 `42501`, owner가 GUC 없이 DELETE하면 `P0001`이다.
 9. **동시성:** 복구와 purge를 동시에 실행하면 하나만 효과가 있고 부분 삭제는 없다. purge를 2개 동시에 실행해도 한 번만 삭제된다.
-10. **F3 회귀:** 수정된 `f3-login-grant` 기대값으로 기존 지급 멱등·동시성 사례가 통과하고, 단위 122·DB 99 기준선을 유지한다.
+10. **F3 회귀:** 수정된 `f3-login-grant` 기대값으로 기존 지급 멱등·동시성 사례가 통과하고, 단위 122·DB 119(L1 이후) 기준선을 유지한다.
 11. **purge 뒤 재로그인:** 새 user가 만들어지고 새로 지급된다(현행 기술 결과, 정책은 미정).
 
 ## 8. 의존·순서·롤백
@@ -341,7 +341,7 @@ export function restoreAccount(db: Db, proof: SessionSubject):
     - **로그인 대 purge(결정적 잠금):** owner tx가 users 행을 잠그고 원장·계정·users를 삭제한 채 대기한다 → 로그인 시작(identity 조회 뒤 users 잠금 대기) → owner 커밋. 기대: outcome `purge_due`, 이 요청이 만든 user·identity·account·ledger 0행, raw `23503` 없음. 다음 호출에서는 새 canonical 계정과 첫 10개
     - `requestWithdrawal` 응답에 gen이 없고, DB에서 gen이 +1(첫 요청)·불변(중복)임을 직접 확인
     - purge 뒤 재로그인 → 새 user + 지급(현행 기술 결과)
-  - **회귀:** 기존 단위 122·빌드 경계 4·DB 99(기대값만 바뀐 사례 포함)·prod 6·E2E 12·root 42 유지. 신규 시험 수는 잠그지 않는다.
+  - **회귀:** L1 RED 기준선은 단위 122·빌드 경계 4·DB 99(기대값만 바뀐 사례 포함)·prod 6·E2E 12·root 42였다. L1 이후(L2 기준선)는 DB 119다. 신규 시험 수는 잠그지 않는다.
   - **검증 범위(현행 workflow):** 앱 job은 Node 24.22.2·26.13.0 matrix, DB job은 Node 26.13.0 + PostgreSQL 18.6 서비스 컨테이너다.
 - **명령**(일회용 PG18 컨테이너·격리 CI만): `npm --prefix app run test:db -- tests/db/lifecycle-schema.test.ts`, `… tests/db/lifecycle.test.ts`, 전체 `npm --prefix app run test:db`·`npm --prefix app test`.
 
@@ -350,7 +350,31 @@ export function restoreAccount(db: Db, proof: SessionSubject):
 | slice | 전제 | 범위 | 완료 조건 | 롤백 |
 |---|---|---|---|---|
 | **L1 schema·role** | 이 계획 수락(§11 A 채택), F4a 통합 | RED: harness role·meta, migrate·environment·privileges 기대값, `lifecycle-schema.test`. GREEN: 0002 up/down | L1 시험과 기존 회귀 통과(앱 Node 24·26 matrix, DB Node 26/PG18 job), down 대칭 | PR revert(앱 경로 미연결이라 영향 없음). 적용된 DB는 빈 CI에서만 down |
-| **L2 도메인·로그인** | L1 통합 | RED: `f3-login-grant` 기대값, `lifecycle.test`. GREEN: `lifecycle.ts`, `login.ts` | §9 모든 분기, 동시성, 지급 회귀 | PR revert. 열은 expand 상태로 남는다 |
+| **L2 도메인·로그인** | L1 독립 검토 수락과 dev 통합, 기준선 단위 122·DB 119 | RED: `f3-login-grant` 기대값, `lifecycle.test`. GREEN: `lifecycle.ts`, `login.ts` | §9 모든 분기, 동시성, 지급 회귀 | PR revert. 열은 expand 상태로 남는다 |
 
 - **범위 밖(F4b/c·F6):** OAuth·HTTP route·DAL 연결·복구 쿠키 codec·화면, 실제 purge 실행 주기·SLA·백업 삭제 재적용, 운영 role provisioning.
 - 새 개인정보·법정 보관 정책이나 SLA 값은 만들지 않는다. 계정 연결 답변은 이 canonical user 단위 backend의 선행 조건이 아니다.
+
+## 14. 실행 결과 — L1 (2026-11-03)
+
+- **코드:**
+  - 이전 dev `94b005e` → RED `6d20fe0`·`a7d8b1f` → GREEN `0876c4b`(PR33)
+  - RED가 바꾼 것: `tests/db/helpers.ts`·`environment`·`migrate`·`privileges` 시험, 신규 `lifecycle-schema.test.ts`
+  - GREEN이 바꾼 것: `migrations/0002_account_lifecycle.{up,down}.sql` 2파일. 메인 GREEN gate 결과 시험 변경 0
+- **구현이 §10·§11과 일치하는 점:**
+  - 열·이름 있는 CHECK·부분 인덱스·app 4열 UPDATE
+  - 원장 트리거 중첩 IF(DELETE만 owner + 같은 uid GUC 예외, UPDATE·TRUNCATE 거부)
+  - 두 SECURITY DEFINER 함수(NULL·범위 밖 P0001, `clock_timestamp()` t, GUC 비움)
+  - 같은 파일의 PUBLIC 회수
+  - meta `purge_role` 검증 후 제한 GRANT
+  - 빈 CI 전용 down(트리거 0001 본문 원복)
+  - CI 하네스: role 4개(owner·migrator·app·purge), meta `purge_role NOT NULL`, `urls.purge`, CONNECT
+- **CI 검증:** app-validation 41679894578, root 41679894597.
+  - PG18.6 + Node 26 DB 119(실패·skip 0)
+  - Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·prod 6·E2E 12·lint·typecheck·build
+  - root 42·Compose
+- **진행 중·후속:**
+  - 독립 SQL 검토와 dev 통합(메인)
+  - L2(§9)
+  - F4b/c·F6
+  - 이 기록 작성자는 로컬 DB·서버·FullCheck를 실행하지 않았다.
