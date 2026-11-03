@@ -3,7 +3,7 @@
 - 상태: **F2 설계·구현 계약 + F4 L1(`0002_account_lifecycle`) 반영.**
   - `0001_init`은 F2에서 일회용 PG18 CI로 검증한 초기 계약이며, 이후 회귀 기준이다.
   - `0002`는 PR33 코드(`0876c4b`)에서 일회용 PG18 CI(DB 119개)와 독립 SQL 검토를 통과했다. **메인이 수락해 dev에 통합했다.**
-  - L2 도메인(탈퇴·복구·활성 확인·상태별 로그인)은 PR35 GREEN `ba2b167`에서 CI(DB 138)를 통과했다. **독립 GREEN 검토와 dev 통합은 아직 진행 중**이다(§8). 스키마·권한(L1)은 바뀌지 않았다.
+  - L2 도메인(탈퇴·복구·활성 확인·상태별 로그인)은 PR35 GREEN `ba2b167`에서 CI(DB 138)와 독립 GREEN 검토를 통과해 **메인이 수락하고 dev에 통합했다**(§8). 스키마·권한(L1)은 바뀌지 않았다.
   - 실서버 DB·계정·role은 만들지 않았다. 초기 설계 기준은 `dev` `e5ebd58`이며 [실행 계획·결과](../plans/PLAN_mvp-database.md)에 실제 구현 기준을 기록한다.
 - 정본 입력: [00_TECH_STACK_DECISION](00_TECH_STACK_DECISION.md) §3, [03_MVP](03_MVP.md), [PLAN_mvp-foundation](../plans/PLAN_mvp-foundation.md) §3·§5·F2·F3, [DECORATION_MARKET_ARCHITECTURE](DECORATION_MARKET_ARCHITECTURE.md) §3.4·§5·§6. F1 저장 port(작업 브랜치 `claude/nextjs-foundation-mvp-0p73cn` `e5dd64d`의 `app/src/server/diary/store.ts`)는 읽기만 했다.
 - 표기: **[계약]** F2 RED 시험이 그대로 검사할 값, **[가정]** 사용자 결정 전의 전제, **[미정]** 결정 필요.
@@ -60,7 +60,7 @@
 - 삭제 정책은 **계정 탈퇴 후 30일 복구 기간 뒤 삭제**다(2026-11-03 사용자 확정).
   - 앱 role에는 계속 `DELETE` 권한이 없다.
   - 삭제는 §5.1 purge 함수로만 설계됐다(L1 SQL).
-  - 탈퇴·복구 도메인 함수(L2, `app/src/server/account/lifecycle.ts`)는 PR35 GREEN `ba2b167`(CI DB 138)에 구현됐고 검토·통합 대기다. 실제 HTTP·DAL 호출 경로는 아직 없다.
+  - 탈퇴·복구 도메인 함수(L2, `app/src/server/account/lifecycle.ts`)는 PR35 GREEN `ba2b167`(CI DB 138)에서 구현·독립 검토를 통과해 dev에 통합했다. 실제 HTTP·DAL 호출 경로는 아직 없다.
   - 0001 초기 계약에서는 원장의 `RESTRICT` 때문에 owner로도 원장이 있는 사용자를 삭제할 수 없었다. 이 이력은 §4.8에 남긴다.
 
 ### 4.2 `pod.auth_identities` (공급자 중립)
@@ -194,7 +194,7 @@ RETURNING version;
 | append-only | 앱 role 권한(§5), 보호 트리거 | UPDATE/DELETE 경로 없음 | — |
 | 잔액 ≥ 0 | `CHECK (balance >= 0)` | 원장 `SUM`과 사본 일치 | — |
 | 다중 로그인 동시성 | 유일 제약(Read Committed에서 `ON CONFLICT DO NOTHING`은 다른 트랜잭션의 삽입 결과에 따라 건너뛴다, 공식 문서) | 병렬 연결로 N회 → 원장 1행·잔액 10 | 콜백 중복·두 기기 E2E |
-| 탈퇴 중 지급 차단 (F4 L2) | 0002 상태 열·CHECK | `completeSuccessfulLogin`이 users 행을 먼저 잠그고 상태로 분기: active만 지급, pending·due·행 없음은 쓰기 0(L2 구현, 검토 대기) | 실제 로그인 연결은 F4b/c |
+| 탈퇴 중 지급 차단 (F4 L2) | 0002 상태 열·CHECK | `completeSuccessfulLogin`이 users 행을 먼저 잠그고 상태로 분기: active만 지급, pending·due·행 없음은 쓰기 0(L2 구현·독립 검토 수락) | 실제 로그인 연결은 F4b/c |
 
 ## 5. role과 권한 [계약]
 
@@ -249,7 +249,7 @@ role 이름은 논리 이름이다. 실제 이름과 비밀번호는 환경별 �
 
 ## 7. 미정
 
-Google·카카오와 계정 탈퇴 후 30일 복구 뒤 삭제는 확정했다. 미정·구현 전 항목은 다중 공급자 연결, 탈퇴·복구·세션 대조 도메인(L2)과 운영 purge 주기, 사용자별 시간대, 사진·예시 이미지 저장, 개인 버전 보관 개수, 백업 만료·복원 시 삭제 재적용, 잔액 표시, 감정덩어리의 다른 `reason`과 구매 원장이다.
+Google·카카오와 계정 탈퇴 후 30일 복구 뒤 삭제는 확정했다. 미정·구현 전 항목은 다중 공급자 연결, 실제 OAuth·요청별 DAL 검사·복구 쿠키·화면과 운영 purge 주기, 사용자별 시간대, 사진·예시 이미지 저장, 개인 버전 보관 개수, 백업 만료·복원 시 삭제 재적용, 잔액 표시, 감정덩어리의 다른 `reason`과 구매 원장이다. 탈퇴·복구·활성 확인 도메인(L2)은 아래 §8에서 구현 상태를 구분한다.
 
 ## 8. 0002 구현 상태 (L1)
 
@@ -260,10 +260,10 @@ Google·카카오와 계정 탈퇴 후 30일 복구 뒤 삭제는 확정했다. 
   - root 42·Compose
 - **통합:** 독립 SQL 검토 PASS(P0·P1·P2 없음)를 수락해 dev에 통합했다.
 - 이 문서 작성자는 로컬 DB·서버·FullCheck를 실행하지 않았다.
-- **L2 도메인·로그인(구현, 검토·통합 대기):** PR35 RED `e25708f`→`891e497`→`d534628`, GREEN `ba2b167`(제품 2파일, 시험 변경 0).
+- **L2 도메인·로그인(구현·독립 검토 수락·dev 통합):** PR35 RED `e25708f`→`891e497`→`d534628`, GREEN `ba2b167`(제품 2파일, 시험 변경 0).
   - 구현: `verifyActiveAccount`·`requestWithdrawal`·`restoreAccount`(`app/src/server/account/lifecycle.ts`), `LoginOutcome` union과 로그인 0행 분기(`login.ts`)
   - CI: app 41691842663·root 41691842754, DB 138
-  - **독립 GREEN 검토와 dev 통합은 아직 진행 중이다.** 계약 정본은 [계정 수명주기 계획](../plans/PLAN_account-lifecycle.md) §9, 실행 결과는 §15다.
+  - **독립 GREEN 검토 PASS(P0·P1·P2 없음)를 수락해 dev에 통합했다.** 계약 정본은 [계정 수명주기 계획](../plans/PLAN_account-lifecycle.md) §9, 실행 결과는 §15다.
   - **서버 호출 경계:** userId·gen은 검증된 세션 또는 복구 증명에서만 받는다. HTTP 입력의 userId는 쓰지 않는다. 이 함수들을 호출하는 HTTP route·DAL은 아직 없다.
 - **후속:** 실제 OAuth·DAL 연결·복구 쿠키·UI, 서비스 DB·운영 role provisioning·purge job·백업(F4b/c·F6).
 - 정확한 시험·권한·down 계약의 정본은 [계정 수명주기 계획](../plans/PLAN_account-lifecycle.md) §9~§13이다.

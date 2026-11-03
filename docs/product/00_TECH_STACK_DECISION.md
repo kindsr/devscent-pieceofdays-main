@@ -113,5 +113,5 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
 - **공급자:** 2026-11-03 사용자 확정은 **Google·Kakao 둘 다**다(PRD §0). 이 절의 기술 기본값은 메인 결정으로 그대로 둔다. 계정 연결은 사용자 답변 대기다.
 - **세션 generation [메인 채택, 2026-11-03]:**
   - payload `{ v, userId, gen, iat, exp }`(키 5개)와 `users.auth_generation`을 쓰고, DAL이 매 요청 `status`·`gen`을 검사한다(M안).
-  - 사용자 선택이 아니다. codec의 `gen` 형식 검증은 구현했다. `users.auth_generation` 열은 L1(0002, PR33 CI·독립 검토 수락·dev 통합)에서 추가했고, DB 대조·탈퇴 시 세대 변경 도메인(L2)은 PR35 `ba2b167`에서 CI를 통과해 독립 검토·dev 통합을 기다린다. 요청별 DAL 연결은 F4b/c다. 계약은 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5, 근거는 [PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) §4.
+  - 사용자 선택이 아니다. codec의 `gen` 형식 검증은 구현했다. `users.auth_generation` 열은 L1(0002, PR33 CI·독립 검토 수락·dev 통합)에서 추가했고, DB 대조·탈퇴 시 세대 변경 도메인(L2)은 PR35 `ba2b167`에서 CI·독립 검토를 통과해 dev에 통합했다. 요청별 DAL 연결은 F4b/c다. 계약은 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5, 근거는 [PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) §4.
   - package-only `iron-session` bootstrap은 독립적으로 진행할 수 있다.

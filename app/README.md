@@ -118,9 +118,8 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 - Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12
 - [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41679894597) 42
 
-**독립 SQL 검토 PASS(P0·P1·P2 없음)를 수락해 dev에 통합했다.** 아직 없는 것:
+**독립 SQL 검토 PASS(P0·P1·P2 없음)를 수락해 dev에 통합했다.** 탈퇴·복구 도메인은 아래 L2에서 검증했다. 아직 없는 것:
 
-- 탈퇴·복구 요청과 요청별 상태·세대 대조 도메인(L2)
 - 실제 OAuth·복구 쿠키·화면
 - 서비스 DB·운영 role·삭제 실행 주기
 
@@ -134,11 +133,12 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 - `completeSuccessfulLogin`: `active`·`pending_deletion`·`purge_due` 결과. 탈퇴 대기·기한 지남은 쓰기 0. identity를 읽은 뒤 purge가 커밋되면 같은 트랜잭션에서 `purge_due`(자동 재시도 없음)
 
 [PR35 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41691842663):
+
 - DB 138개(PG18.6 + Node 26, 9개 파일, skip 0)
 - Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12
 - [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41691842754) 42
 
-**독립 GREEN 검토와 dev 통합은 아직 진행 중이다.** 이 함수를 부르는 실제 OAuth·HTTP route·요청별 DAL 검사·복구 쿠키·화면·삭제 실행 주기·서비스 DB는 아직 없다. "즉시 차단"은 DAL이 연결된 뒤 탈퇴 커밋 이후의 새 요청에 적용된다. 아직 사용자 기능으로 켜진 것은 아니다.
+**독립 GREEN 검토 PASS(P0·P1·P2 없음)를 수락해 dev에 통합했다.** 이 함수를 부르는 실제 OAuth·HTTP route·요청별 DAL 검사·복구 쿠키·화면·삭제 실행 주기·서비스 DB는 아직 없다. "즉시 차단"은 DAL이 연결된 뒤 탈퇴 커밋 이후의 새 요청에 적용된다. 아직 사용자 기능으로 켜진 것은 아니다.
 
 ## 한계 (제품 구현)
 
