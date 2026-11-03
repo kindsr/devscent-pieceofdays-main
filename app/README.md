@@ -100,7 +100,7 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 [F4a CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41663957968): Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12개, DB 99개 통과. 빌드 경계는 기준 사본과 실제 auth 서버 import의 빌드 성공, 클라이언트 직접·전이 import 거부를 임시 사본에서 확인한다. 독립 Cloud runner도 같은 GREEN 커밋 `96bcf8c`의 단위 122·경계 4개를 통과했다.
 
-격리 Cloud·CI·개발 PC에서만 경계를 따로 실행한다: `POD_FULL_CHECK_ISOLATED=1 node --test app/tests/auth-build-boundary.test.mjs`(저장소 루트). 이 `node:test` harness는 현재 FullCheck 스크립트와 별도로 CI에서 실행한다. 실제 OAuth·요청별 DB 상태/세대 대조·복구 쿠키·탈퇴·삭제는 아직 없다. 후속 계약은 [인증 계획](../docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](../docs/plans/PLAN_account-lifecycle.md)을 따른다.
+격리 Cloud·CI·개발 PC에서만 경계를 따로 실행한다: `POD_FULL_CHECK_ISOLATED=1 node --test app/tests/auth-build-boundary.test.mjs`(저장소 루트). 이 `node:test` harness는 현재 FullCheck 스크립트와 별도로 CI에서 실행한다. F4a 시점에는 실제 OAuth·요청별 DB 상태/세대 대조·복구 쿠키·탈퇴·삭제가 없었다(당시 기준). 현재 상태는 아래 L1·L2 절을 본다. 후속 계약은 [인증 계획](../docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](../docs/plans/PLAN_account-lifecycle.md)을 따른다.
 
 ## 계정 수명주기 스키마 (F4 L1)
 
@@ -123,6 +123,22 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 - 탈퇴·복구 요청과 요청별 상태·세대 대조 도메인(L2)
 - 실제 OAuth·복구 쿠키·화면
 - 서비스 DB·운영 role·삭제 실행 주기
+
+## 계정 탈퇴·복구 도메인 (F4 L2)
+
+`src/server/account/lifecycle.ts`(신규)와 `login.ts` 변경(PR35 GREEN `ba2b167`):
+
+- `verifyActiveAccount`: 잠금 없는 SELECT 한 번으로 active + 현재 세대(`::bigint` 비교)일 때만 true
+- `requestWithdrawal`: users 행을 잠근 뒤 DB `clock_timestamp()`로 정확히 720시간 기한을 기록하고 세대를 올린다. 중복 요청은 기한·세대가 그대로이고, 응답에 세대를 담지 않는다
+- `restoreAccount`: 기한은 DB 안에서 비교한다. 같은 canonical user·잔액·원장·`first_login_at`을 유지하고 다시 지급하지 않는다
+- `completeSuccessfulLogin`: `active`·`pending_deletion`·`purge_due` 결과. 탈퇴 대기·기한 지남은 쓰기 0. identity를 읽은 뒤 purge가 커밋되면 같은 트랜잭션에서 `purge_due`(자동 재시도 없음)
+
+[PR35 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41691842663):
+- DB 138개(PG18.6 + Node 26, 9개 파일, skip 0)
+- Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12
+- [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41691842754) 42
+
+**독립 GREEN 검토와 dev 통합은 아직 진행 중이다.** 이 함수를 부르는 실제 OAuth·HTTP route·요청별 DAL 검사·복구 쿠키·화면·삭제 실행 주기·서비스 DB는 아직 없다. "즉시 차단"은 DAL이 연결된 뒤 탈퇴 커밋 이후의 새 요청에 적용된다. 아직 사용자 기능으로 켜진 것은 아니다.
 
 ## 한계 (제품 구현)
 

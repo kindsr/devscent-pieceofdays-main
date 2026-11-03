@@ -1,6 +1,6 @@
 # PLAN — 계정 탈퇴·30일 복구·삭제 (R6: 구현 계약)
 
-- **상태:** 정책·기술 결정은 §1~§8(R4, dev 통합됨)에 있고, RED 담당용 **구현 계약은 §9~§13(R5·R6)**이다. R6은 PR31 R5 독립 검토와 메인 기술 결정(2026-11-03, 사용자 제품 정책 아님)을 반영했다. **L1(0002 schema·role)은 PR33 코드 `0876c4b`에서 CI·독립 SQL 검토를 통과해 메인이 수락하고 dev에 통합했다(§14).** L2 도메인·로그인, cron, 서비스 DB·계정 등록은 아직 없다.
+- **상태:** 정책·기술 결정은 §1~§8(R4, dev 통합됨)에 있고, RED 담당용 **구현 계약은 §9~§13(R5·R6)**이다. R6은 PR31 R5 독립 검토와 메인 기술 결정(2026-11-03, 사용자 제품 정책 아님)을 반영했다. **L1(0002 schema·role)은 PR33 코드 `0876c4b`에서 CI·독립 SQL 검토를 통과해 메인이 수락하고 dev에 통합했다(§14).** **L2 도메인·로그인은 PR35 GREEN `ba2b167`에서 CI(DB 138)를 통과했다. 독립 GREEN 검토와 dev 통합은 진행 중이다(§15).** 실제 OAuth·HTTP·DAL 연결, 복구 쿠키, cron, 서비스 DB·계정 등록은 아직 없다.
 - **R5 BASE:** `dev` `3832cca94164c2b9c81c21fa58c7ad8d38a23715`(F4a codec `96bcf8c` 포함). 3832cca 통합 CI 결과는 이 문서 작성 시 직접 확인하지 않았다.
 - **구현 전 기준 BASE(§1의 사실):** `dev` `76a39d1e65a889a03eb1e5bd64a7e0b3ef161800`. §1은 0002 이전 0001 상태의 기록이다. 현재 스키마는 [DATA_CONTRACT](../product/DATA_CONTRACT.md) §4~§6·§8을 본다.
   - 근거 코드: `app/migrations/0001_init.up.sql`, `app/src/server/account/login.ts`, `app/src/server/credit/first-login-grant.ts`, `app/src/server/db/migrate.ts`.
@@ -375,6 +375,39 @@ export function restoreAccount(db: Db, proof: SessionSubject):
   - root 42·Compose
 - **통합 수락:** 독립 GREEN 검토 PASS(P0·P1·P2 없음). 메인은 시험 변경 0·제품 SQL 2파일의 정본 gate, 문서 diff·링크·구현 사실을 확인해 코드와 문서를 dev에 통합했다. DB 실행 근거는 CI이며 공유 서버에서 SQL을 적용하지 않았다.
 - **후속:**
-  - L2(§9)
+  - L2(§9): PR35에서 구현, 검토·통합 대기(§15)
   - F4b/c·F6
   - 이 기록 작성자는 로컬 DB·서버·FullCheck를 실행하지 않았다.
+
+## 15. 실행 결과 — L2 (2026-11-03, 독립 검토·dev 통합 대기)
+
+- **커밋 순서:**
+  - L1 dev `cecc753`
+  - RED `6c2c81a`(F3 기대값 `kind:"active"`+`gen`) → `e25708f`(`lifecycle.test.ts`·`f4-lifecycle-support.ts`)
+  - `891e497`: 잠금 사슬 하네스 대조. 직접 blocker만 보는 helper로는 시간 초과하는 것이 의도된 실패다
+  - `d534628`(R1): `waitBlocked`가 blocker 사슬을 재귀로 따라가도록 고쳐 이 대조가 통과한다. 경합 시험 두 건도 강화했다
+  - GREEN `ba2b167`(PR35)
+- **GREEN 범위:** 제품 2파일(`account/lifecycle.ts` 신규 101줄, `account/login.ts`)뿐이고 시험 변경은 0이다. 메인 gate를 통과했다.
+- **구현이 §9와 일치하는 점:**
+  - **시각:** users 행을 잠근 뒤 별도 문장에서 DB `clock_timestamp()`를 읽는다. 탈퇴는 한 번 읽은 시각으로 `t`와 `t + 720h`를 기록한다. 복구·로그인의 기한 비교는 SQL 안에서 마이크로초 정밀도로 한다(`clock_timestamp() >= purge_after`).
+  - **입력·세대:** 입력 검사는 SQL 전에 한다. 세대는 `::bigint`로 비교한다.
+  - **탈퇴:** 중복 요청은 `changed:false`이고 기한·세대가 그대로다. 응답에 세대가 없다.
+  - **복구:** 판정 순서는 없음 → active → 기한 → 세대다. 같은 canonical user·잔액·원장·`first_login_at`을 유지하고 다시 지급하지 않는다.
+  - **로그인:**
+    - `LoginOutcome` union. pending·기한 지남은 쓰기 0이다.
+    - identity를 읽은 뒤 users 잠금이 0행이면 같은 트랜잭션에서 `purge_due`를 반환하고 자동 재시도하지 않는다. 다음 새 로그인만 새 canonical user + 10개를 만든다.
+    - 신규 identity 경합의 1회 재시도는 유지한다.
+    - 잠금 순서는 users → credit_accounts다.
+- **시험이 확인한 경계와 코드상 경계의 구분:**
+  - 시험은 기한 30초 전 복구 성공과 기한을 1ms 넘긴 `expired`를 확인한다.
+  - 정확히 `t = purge_after`인 경우는 코드의 `>=` 비교로 `expired`가 되지만, 이 시각을 직접 재현한 시험은 아니다.
+  - 잠금 대기 경계(기한 10초 전 시작 → 기한 뒤 잠금 획득 → 거부)는 실제 PG 잠금 사슬로 확인했다.
+- **CI(GitHub 메타데이터로 `head_sha=ba2b167`·success 확인, 세부 수치는 메인 전달):** app 41691842663, root 41691842754.
+  - PG18.6 + Node 26 DB 138/138, 9개 파일, skip 0: lifecycle 19(기능 18 + 잠금 사슬 하네스 1), f3-login 12, L1 schema 18, migrate 20, env 10, privileges 12, constraints 17, f3-diary 19, f3-decor 11
+  - Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·prod 6·E2E 12·lint·typecheck·build
+  - root 42·Compose(PR deploy는 skip)
+- **진행 중:** 독립 GREEN 검토, dev 통합(메인).
+- **미연결(후속):** 실제 OAuth·HTTP route·요청별 DAL 검사·복구 쿠키·UI(F4b/c), purge job·서비스 DB·F6 배포.
+  - "즉시 차단"은 DAL이 연결된 뒤 탈퇴 커밋 이후의 새 요청에 적용된다. 아직 사용자 기능이 아니다. dev 도메인은 정적 D 시안이다.
+- 공급자 간 계정 연결은 미정이지만, 이 단독 canonical 계정 흐름의 선행 조건은 아니다.
+- 이 기록 작성자는 로컬 DB·서버·FullCheck·시험을 실행하지 않았다.

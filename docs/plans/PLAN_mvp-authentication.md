@@ -36,7 +36,7 @@
 
 ## 1. 현재 코드 사실 (BASE)
 
-- **로그인 함수:** `server/account/login.ts`의 `completeSuccessfulLogin(db, { provider, subject })` → `Result<{ userId, createdUser, granted, balance }, "invalid_identity">`.
+- **로그인 함수(BASE `76a39d1` 당시 F3 기준):** `server/account/login.ts`의 `completeSuccessfulLogin(db, { provider, subject })` → `Result<{ userId, createdUser, granted, balance }, "invalid_identity">`. 현재 결과는 `kind` union이다(L2, [PLAN_account-lifecycle](PLAN_account-lifecycle.md) §3·§15).
   - 한 트랜잭션에서 처리하고, 생성 경합 시 한 번 재시도한다.
   - `provider` 형식 `^[a-z][a-z0-9_-]{0,31}$`.
 - **스키마:** users에 email이 없고 세션 테이블도 없다. app role은 `auth_identities`에 `SELECT, INSERT`만 갖는다. down 보호 목록은 `server/db/migrate.ts`의 `USER_DATA_TABLES`다.
@@ -250,7 +250,7 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 8. auth 모듈을 client에서 직접 또는 전이로 import하면 `next build`가 실패한다.
 9. 탈퇴 즉시 차단·30일 복구·삭제 기준은 [PLAN_account-lifecycle](PLAN_account-lifecycle.md) §7을 따른다.
 
-## 10. F4b/c (공급자 확정: Google·Kakao. 계정 연결 답변과 lifecycle 계획 수락 뒤)
+## 10. F4b/c (공급자 확정: Google·Kakao. 계정 연결 정책은 미정이지만 단독 canonical 계정 흐름의 선행 조건은 아니다)
 
 - OIDC callback + F3 지급 + 세션 문맥·route·UI를 같은 기능 범위에서 연결해, 실제 로그인과 첫 지급이 동시에 켜지게 한다.
 - `openid-client`는 이 시점에 설치한다. 허용 목록은 Google·Kakao 두 개다.
@@ -319,4 +319,4 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 - 독립 Cloud runner가 GREEN의 새 단위 19·전체 122·빌드 경계 4개, lint·타입 검사를 직접 통과했다(skip 0). 코드 검토 P0·P1·P2 없음. vendor 9.0.1의 실패 반환 경로도 확인했다. 미래 vendor 교체 시 다시 검토한다.
 - 공유 서버에서는 gate·diff·문서 검증만 했고 Next/DB 시험을 실행하지 않았다. FullCheck 스크립트의 통합 실행은 이번에도 미실행이며, 빌드 harness는 별도 CI step과 독립 runner에서 검증했다.
 - 실제 공급자·요청 세션 문맥·DB 상태/세대 대조·복구 쿠키·탈퇴·purge·서비스 DB·F6 앱 배포는 구현하지 않았다. 계정 수명주기 R6의 세부 계약을 독립 검토 후 수락했다([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §9~§13). 다음은 L1 schema·role의 RED·GREEN, 이후 L2 도메인·로그인 순서다.
-- **진행(2026-11-03):** L1(0002 schema·role)은 PR33 `0876c4b` CI에서 DB 119와 독립 SQL 검토를 통과해 dev에 통합했다. 다음은 L2 도메인·로그인이며 실제 DAL 연결은 후속이다([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §14).
+- **진행(2026-11-03):** L1(0002 schema·role)은 PR33 `0876c4b` CI에서 DB 119와 독립 SQL 검토를 통과해 dev에 통합했다. L2 도메인·로그인은 PR35 GREEN `ba2b167`에서 CI(DB 138)를 통과했고 독립 검토·dev 통합을 기다린다. 실제 OAuth·DAL 매 요청 검사·복구 쿠키는 후속이다([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §14·§15).
