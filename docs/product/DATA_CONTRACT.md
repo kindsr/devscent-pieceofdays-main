@@ -213,3 +213,16 @@ role 이름은 논리 이름이다. 실제 이름과 비밀번호는 환경별 �
 ## 7. 미정
 
 Google·카카오와 계정 탈퇴 후 30일 복구 뒤 삭제는 확정했다. 미정·구현 전 항목은 다중 공급자 연결, 세션 철회·탈퇴 상태·삭제 경로의 후속 migration, 사용자별 시간대, 사진·예시 이미지 저장, 개인 버전 보관 개수, 백업 만료·복원 시 삭제 재적용, 잔액 표시, 감정덩어리의 다른 `reason`과 구매 원장이다.
+
+## 8. 채택한 후속 계약 — 0002 (아직 미구현)
+
+[계정 수명주기 계획](../plans/PLAN_account-lifecycle.md) R6 §9~§13을 독립 검토 후 수락했다(2026-11-03). 위 표는 현재 `0001_init`의 실제 계약을 유지한다. 다음 항목은 아직 SQL·제품·시험에 반영하지 않았다.
+
+| 대상 | 후속 계약 |
+|---|---|
+| `pod.users` | `status`, `deletion_requested_at`, `purge_after`, `auth_generation` 추가. pending의 두 시각은 모두 필수이며 720시간 차이를 검사한다 |
+| `pod_meta.db_environment` | provisioning 소유 `purge_role name NOT NULL`. role 생성·접속·상속 검증은 CI harness와 F6 provisioning이 맡고, 0002는 메타값을 검증한 뒤 제한 GRANT한다(A안) |
+| purge 함수 | `list_purge_due(int)`·`purge_user_if_due(uuid)`: PUBLIC 실행권 회수, 전용 role만 실행, 일반 앱은 실행·원장 DELETE 불가 |
+| 구현 순서 | L1 schema·role 시험 → 0002 SQL, 이후 L2 도메인·로그인 결과 변경. 실제 OAuth·운영 role·purge 주기·백업 적용은 후속 |
+
+기존 운영 메타데이터의 열 전환과 실제 role 생성은 이 문서로 실행하지 않는다. 시험·권한·down·실패 복귀의 정확한 계약은 위 계획이 정본이다.

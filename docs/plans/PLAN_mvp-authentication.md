@@ -318,4 +318,4 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 - [PR30 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41663957968): Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12, DB 99개 통과. 배포 계약 CI `41663958109`의 root 42·Compose도 통과했다.
 - 독립 Cloud runner가 GREEN의 새 단위 19·전체 122·빌드 경계 4개, lint·타입 검사를 직접 통과했다(skip 0). 코드 검토 P0·P1·P2 없음. vendor 9.0.1의 실패 반환 경로도 확인했다. 미래 vendor 교체 시 다시 검토한다.
 - 공유 서버에서는 gate·diff·문서 검증만 했고 Next/DB 시험을 실행하지 않았다. FullCheck 스크립트의 통합 실행은 이번에도 미실행이며, 빌드 harness는 별도 CI step과 독립 runner에서 검증했다.
-- 실제 공급자·요청 세션 문맥·DB 상태/세대 대조·복구 쿠키·탈퇴·purge·서비스 DB·F6 앱 배포는 구현하지 않았다. 다음은 계정 수명주기 migration·도메인 계약을 구체화한 뒤 RED부터 진행한다.
+- 실제 공급자·요청 세션 문맥·DB 상태/세대 대조·복구 쿠키·탈퇴·purge·서비스 DB·F6 앱 배포는 구현하지 않았다. 계정 수명주기 R6의 세부 계약을 독립 검토 후 수락했다([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §9~§13). 다음은 L1 schema·role의 RED·GREEN, 이후 L2 도메인·로그인 순서다.
