@@ -9,7 +9,7 @@
 // - 전역 시계·pg_catalog·제품 시간 플래그는 바꾸지 않는다. 시각 판정은 DB clock 전후 범위와 행 잠금 관찰로 안정화한다.
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { cleanupAll, readDisposableEnv, type DisposableDatabase, type HarnessEnv } from "./helpers";
+import { closeClient, cleanupAll, openClient, readDisposableEnv, type DisposableDatabase, type HarnessEnv } from "./helpers";
 import {
   UUID_RE,
   appBackend,
@@ -427,6 +427,50 @@ describe("completeSuccessfulLogin: kind/gen and lifecycle branches", () => {
 // ================================================================ 결정적 경합(서로 다른 실제 연결)
 
 describe("concurrency over distinct real connections", () => {
+  // 하네스 양성 대조(PR34 독립 검토 P1): lifecycle 제품 없이 순수 SQL만 쓴다.
+  // 같은 users 행에 대기자가 둘이면 두 번째의 직접 blocker는 owner가 아니라 첫 대기자일 수 있다(tuple lock).
+  // waitBlocked(B, owner)는 직접 blocker가 아니라 owner로 이어지는 잠금 사슬을 관찰해야 한다.
+  it(
+    "harness control: with two app waiters queued behind an owner lock on one users row, waitBlocked(second, owner) observes the lock chain",
+    async () => {
+      const db = await sharedDb();
+      const uid = await seedUser(env, db, [ident()], { granted: true });
+      const owner = await openOwner(env, db);
+      const openApp = async () => {
+        const client = await openClient(db.urls.app, env.adminUrl);
+        const r = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        return { client, pid: Number(r.rows[0]!.pid) };
+      };
+      const a = await openApp();
+      const b = await openApp();
+      expect(new Set([owner.pid, a.pid, b.pid]).size, "three distinct backends").toBe(3);
+      let aP: Promise<unknown> | undefined;
+      let bP: Promise<unknown> | undefined;
+      try {
+        await owner.client.query("BEGIN");
+        await owner.client.query("SELECT 1 FROM pod.users WHERE id = $1 FOR UPDATE", [uid]);
+        await a.client.query("BEGIN");
+        aP = settle(a.client.query("SELECT 1 FROM pod.users WHERE id = $1 FOR UPDATE", [uid]));
+        await waitBlocked(env, db, a.pid, owner.pid); // 첫 대기자: owner가 직접 blocker
+        await b.client.query("BEGIN");
+        bP = settle(b.client.query("SELECT 1 FROM pod.users WHERE id = $1 FOR UPDATE", [uid]));
+        await waitBlocked(env, db, b.pid); // 두 번째 대기자도 막혀 있다
+        await waitBlocked(env, db, b.pid, owner.pid); // owner로 이어지는 사슬을 관찰해야 한다
+      } finally {
+        // owner → A → B 순서로 잠금을 풀어 대기 중인 쿼리를 끝내고 연결을 닫는다(hang 방지)
+        await owner.client.query("ROLLBACK").catch(() => undefined);
+        if (aP) await aP;
+        await a.client.query("ROLLBACK").catch(() => undefined);
+        if (bP) await bP;
+        await b.client.query("ROLLBACK").catch(() => undefined);
+        await owner.close();
+        await closeClient(a.client);
+        await closeClient(b.client);
+      }
+    },
+    CASE_TIMEOUT,
+  );
+
   async function twoPools(db: DisposableDatabase) {
     const a = await appPool(db);
     const b = await appPool(db);
