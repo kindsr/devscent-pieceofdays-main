@@ -15,7 +15,7 @@
 ## [Unreleased]
 
 ### Added
-- 사용자 확정 반영과 계정 수명주기 계획 (2026-11-03): Google·Kakao 로그인 둘 다, 계정 탈퇴 30일 복구 뒤 삭제를 PRD·MVP·기술 결정·AGENTS 상태에 반영했다. `docs/plans/PLAN_account-lifecycle.md`(탈퇴 즉시 차단·30일 경계·복구·purge·원장 삭제 경로·세션 generation 권고)를 추가했다. 공급자 간 계정 연결은 미정이며, 구현·SQL·설치는 없다.
+- 사용자 확정 반영과 계정 수명주기 계획 (2026-11-03): Google·Kakao 로그인 둘 다, 계정 탈퇴 30일 복구 뒤 삭제를 PRD·MVP·기술 결정·AGENTS 상태에 반영했다. `docs/plans/PLAN_account-lifecycle.md`(탈퇴·30일 경계·복구·purge·원장 삭제 경로)를 추가했다. 메인 기술 결정 R4로 세션 `gen` 키 5개·DAL 매 요청 검사, 잠금 뒤 `clock_timestamp()` 경계, purge 함수 PUBLIC 회수·전용 role, 복구 쿠키 계약을 채택했다(사용자 확정과 구분). 공급자 간 계정 연결은 미정이며, 구현·SQL·설치는 없다.
 - F4 인증·세션·첫 로그인 지급 연결 계획 (2026-11-03): `docs/plans/PLAN_mvp-authentication.md`. 메인 기술 기본값(openid-client 6.8.9·iron-session 9.0.1 S1·절대 7일·`server-only`)과 R2 세션·설정·Origin 계약, F4a 단계별 파일 소유를 문서로 기록했다. 공급자는 사용자 선택 대기이며, 구현·설치·스키마·환경 변경은 없다.
 - F3 slice ③ 개인 꾸미기·설정 코어 (2026-11-02): D manifest의 형식·크기·획·점 검증과 렌더용 필터, 본인 소유 private 버전 저장·적용, 기록 글꼴 저장을 추가했다. 단위 103·DB 99개와 앱 회귀를 CI에서 검증하고 비정상 배열 예외를 회귀 시험으로 수정했다. 편집기·실제 화면 저장·로그인 연결은 후속이다.
 - F3 slice ② 기록 저장 코어 (2026-11-02): 조각·하루 정리의 PG CRUD, 소유권·버전 충돌 처리와 월별 읽기, IANA 서울 날짜 계산을 추가했다. 단위 83·DB 88개와 앱 회귀를 CI에서 검증했으며 실제 화면 저장 연결은 후속이다.

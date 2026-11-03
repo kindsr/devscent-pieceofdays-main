@@ -109,4 +109,7 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
   - 세션 정책 세부(R2)는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5.
 - **설치 시점:** F4a에서는 `iron-session`만 설치하고, `openid-client`는 필요해지는 F4b에서 설치한다.
 - **공급자:** 2026-11-03 사용자 확정은 **Google·Kakao 둘 다**다(PRD §0). 이 절의 기술 기본값은 메인 결정으로 그대로 둔다. 계정 연결은 사용자 답변 대기다.
-- **세션 payload의 generation 필드 [검토 대기]:** 30일 복구형 탈퇴(PRD §0)에서 이전 쿠키를 무효화하려고 제안했다. [PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) §4 참조. F4a RED 전에 메인 검토가 필요하다. package-only `iron-session` bootstrap은 이와 무관하게 진행할 수 있다.
+- **세션 generation [메인 채택, 2026-11-03]:**
+  - payload `{ v, userId, gen, iat, exp }`(키 5개)와 `users.auth_generation`을 쓰고, DAL이 매 요청 `status`·`gen`을 검사한다(M안).
+  - 사용자 선택이 아니며 구현 전이다. 계약은 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5, 근거는 [PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) §4.
+  - package-only `iron-session` bootstrap은 독립적으로 진행할 수 있다.

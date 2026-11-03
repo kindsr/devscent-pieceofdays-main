@@ -1,10 +1,10 @@
-# PLAN — F4 인증·세션·첫 로그인 지급 연결 (R3)
+# PLAN — F4 인증·세션·첫 로그인 지급 연결 (R4)
 
 - 상태:
   - **2026-11-03 사용자 확정:** 로그인 공급자는 **Google·Kakao 둘 다**, 계정 탈퇴는 **30일 복구 기간 뒤 삭제**다([PRD](../PRD.md) §0, 탈퇴 설계는 [PLAN_account-lifecycle](PLAN_account-lifecycle.md)).
   - 공급자 간 계정 연결은 **사용자 답변 대기**다.
-  - 세션 payload의 `gen` 추가(§5.4)는 **F4a RED 전 메인 검토 대기**다.
-  - 기술 기본값은 **메인이 수락**했다(R1·R2, 2026-11-03).
+  - 세션 `gen`(키 5개)과 DAL 매 요청 검사는 **메인이 채택**했다(R4, 2026-11-03, 사용자 선택 아님).
+  - 기술 기본값은 **메인이 수락**했다(R1·R2·R4, 2026-11-03).
   - 이 문서는 **검토 중**이다.
   - F4 착수 승인이나 인증 완료 문서가 아니다. 코드·의존성·SQL·환경은 바꾸지 않았다.
 - BASE: `dev` `76a39d1e65a889a03eb1e5bd64a7e0b3ef161800`.
@@ -29,7 +29,7 @@
 | [메인] | OIDC 검증 `openid-client` 6.8.9, 세션 S1 `iron-session` 9.0.1 봉인, 절대 7일, Next 내장 `server-only`, POST 요청의 명시 Origin 검사, 첫 성공 로그인 = 공급자 검증 + F3 COMMIT, scope `openid`만, 토큰·email 저장 안 함 |
 | [메인] R2 | §5 설정 계약, 쿠키 이름 분기, `readSession` 분류, payload 시간 규칙, Origin 정확 대조, F4a 파일·단계 소유 |
 | [미정] 사용자 | **공급자 간 계정 연결**(권고 후보: 로그인 뒤 다른 수단 연결 / 대안: 공급자별 별도 계정, email 자동 연결·기록·잔액 병합은 미승인), 사진·공유·AI |
-| [검토 대기] | 세션 `gen`과 DAL의 사용자 상태 대조(§5.4), F3 `completeSuccessfulLogin`의 탈퇴 상태 분기([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §3) |
+| [메인] R4 | 세션 `gen` 키 5개 계약(§5.1·§5.3), DAL 매 요청 `status`·`gen` 검사(§5.4), F3 `LoginOutcome` kind union 확장과 복구 쿠키 계약([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §3). 구현 착수·완료를 뜻하지 않는다 |
 | [미정] 메인(조건부) | 서버 측 state 소비 저장소(§3), S2 DB 세션(§6) |
 | [미확인] | Node 24.22.2에서의 iron 설치·빌드, DB·E2E에서의 동작, Kakao가 실제로 `code_challenge`를 받는지, Playwright Chromium이 `http://127.0.0.1`에서 Secure 쿠키를 받는지(R2는 http에 Secure를 쓰지 않으므로 의존하지 않음) |
 
@@ -120,13 +120,13 @@ type SessionConfig = Readonly<{
   secureCookies: boolean;                       // baseUrl.protocol에서 파생
   now: () => Date;                              // 기본 () => new Date()
 }>;
-type SessionPayload = { v: 1; userId: string; iat: number; exp: number }; // R2 초안. §5.4 결정 전에는 잠그지 않는다
+type SessionPayload = { v: 1; userId: string; gen: number; iat: number; exp: number }; // 키 정확히 5개. gen: Number.isSafeInteger && > 0. iat·exp: epoch ms
 
 loadSessionConfig(env: Record<string, string | undefined>, nodeEnv: string | undefined):
   Result<SessionConfig, "auth_not_configured" | "invalid_config">;
-sealSession(cfg: SessionConfig, userId: string): Promise<{ value: string; expiresAt: Date }>;
+sealSession(cfg: SessionConfig, subject: { userId: string; gen: number }): Promise<{ value: string; expiresAt: Date }>;
 readSession(cfg: SessionConfig, sealed: string | undefined):
-  Promise<Result<{ userId: string; expiresAt: Date }, "missing" | "invalid" | "expired">>;
+  Promise<Result<{ userId: string; gen: number; expiresAt: Date }, "missing" | "invalid" | "expired">>;
 sessionCookieOptions(cfg: SessionConfig, expiresAt: Date): {
   name: "__Host-pod_session" | "pod_session"; httpOnly: true; secure: boolean;
   sameSite: "lax"; path: "/"; expires: Date };          // Domain 속성 없음
@@ -159,8 +159,8 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 
 | 함수 | 계약 |
 |---|---|
-| `sealSession` | `userId`가 UUID가 아니면 throw(메시지는 계약이 아님). `now = cfg.now()`, `iat = now.getTime()`, `exp = iat + 604_800_000`(정확히 7일), iron `sealData(payload, { password: cfg.secrets, ttl: 604_800 })`, `expiresAt = new Date(exp)`. **`ttl: 0`으로 봉인하지 않는다.** 발급 수명은 항상 정확히 7일이다 |
-| `readSession` 순서 | ① `sealed === undefined` 또는 `""` → `missing`(unseal 호출 전). 공백 문자열이나 깨진 값은 ②로 간다. ② `unsealData(sealed, { password: cfg.secrets })`. 반환이 `{}`이거나 실패 → `invalid`. ③ payload 검사: 객체, 정확히 키 4개, `v === 1`, `userId` UUID, `iat`·`exp`가 안전한 비음수 정수, `exp > iat`, `exp − iat ≤ 604_800_000`, `iat ≤ cfg.now().getTime()`. 하나라도 어긋나면 `invalid`. ④ `exp ≤ cfg.now().getTime()` → `expired`, 아니면 `ok { userId, expiresAt: new Date(exp) }` |
+| `sealSession` | `userId`가 UUID가 아니거나 `gen`이 `Number.isSafeInteger(gen) && gen > 0`이 아니면 throw(메시지는 계약이 아님). payload `{ v: 1, userId, gen, iat, exp }`. `now = cfg.now()`, `iat = now.getTime()`, `exp = iat + 604_800_000`(정확히 7일), iron `sealData(payload, { password: cfg.secrets, ttl: 604_800 })`, `expiresAt = new Date(exp)`. **`ttl: 0`으로 봉인하지 않는다.** 발급 수명은 항상 정확히 7일이다 |
+| `readSession` 순서 | ① `sealed === undefined` 또는 `""` → `missing`(unseal 호출 전). 공백 문자열이나 깨진 값은 ②로 간다. ② `unsealData(sealed, { password: cfg.secrets })`. 반환이 `{}`이거나 실패 → `invalid`. ③ payload 검사: 객체, 정확히 키 5개(`v`·`userId`·`gen`·`iat`·`exp`), `v === 1`, `userId` UUID, `gen`이 안전한 양의 정수, `iat`·`exp`가 안전한 비음수 정수, `exp > iat`, `exp − iat ≤ 604_800_000`, `iat ≤ cfg.now().getTime()`. 하나라도 어긋나면 `invalid`. ④ `exp ≤ cfg.now().getTime()` → `expired`, 아니면 `ok { userId, gen, expiresAt: new Date(exp) }` |
 | `readSession` 원칙 | iron unseal을 통과해 기대한 payload가 나왔을 때만 인증된 값이다. `onUnsealError`의 `expired`·`unknown-password`는 HMAC 검증 **전**에도 나오므로 인증 판정이나 만료 증거로 쓰지 않는다(필요하면 민감하지 않은 reason만 관찰하고 판정과 분리한다. hook은 throw하지 않는다). raw iron TTL이 지났거나 위조된 만료 필드 때문에 `{}`가 나온 경우는 `invalid`이며 "인증된 만료"가 아니다. 더 짧은 유효 수명의 봉인은 읽을 때 허용하지만 7일 상한은 넘지 않는다 |
 | 시간 기준 | 앱의 정확한 7일 기준은 payload `exp`와 `cfg.now()`다. iron의 실제 `Date.now()`와 60초 skew는 보조 만료 장치이며, 그 grace를 로그인 유효 시간에 더하지 않는다. unseal의 `ttl` 옵션으로 봉인 때 정한 TTL을 바꾼다고 가정하지 않는다 |
 | `sessionCookieOptions` | `secureCookies`가 true면 `__Host-pod_session`, false면 `pod_session`. 공통: `httpOnly`, `path:"/"`, `sameSite:"lax"`, `expires`, Domain 없음. `__Host-`에 Secure가 없으면 UA가 쿠키를 버린다(RFC 6265bis)는 점이 이름을 나눈 이유다 |
@@ -173,13 +173,14 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
   - (3) 요청에서 세션을 읽을 때도 `sessionCookieOptions(cfg)`의 **같은 이름 하나만** 읽는다. 다른 이름으로의 fallback은 없다(형제 도메인의 cookie tossing 방지).
   - (4) URL 범위: 개발 http 예외는 §5.2 7행뿐이다. 개발에서 `https://localhost` 같은 https loopback은 8행에 따라 거부한다. WHATWG에서 빈 `?`·`#`는 빈 search·hash라 통과하고, 결과는 origin으로 정규화된다. 그 밖의 loopback 변형(`*.localhost`·`0.0.0.0`·IPv4-mapped)은 따로 목록화하지 않는다(운영은 https와 8행 목록만으로 판정).
 
-### 5.4 계정 상태·generation [검토 대기, F4a RED 전]
+### 5.4 계정 상태·generation [메인 채택 R4]
 
-- 30일 복구형 탈퇴(사용자 확정) 때문에, 복사된 쿠키를 철회할 수 없는 S1의 한계를 보완해야 한다. 비교와 권고는 [PLAN_account-lifecycle](PLAN_account-lifecycle.md) §4다.
-- **권고 최소안:** payload `{ v: 1, userId, gen, iat, exp }`(키 정확히 5개, `gen`은 안전한 양의 정수)로 하고, `sealSession(cfg, { userId, gen })`, `readSession` → `ok { userId, gen, expiresAt }`.
-  - 상태·`gen` 대조는 F4b/c DAL이 매 요청 DB에서 한다. 불일치나 비활성 상태는 "로그인 필요"다.
-  - 대안 S2(DB 세션)는 §6.
-- 메인이 결정하기 전까지 §5.1·§5.3의 "키 4개"는 확정하지 않는다. **package-only `iron-session` bootstrap(§8 ①)은 이 결정과 무관하게 진행할 수 있다.**
+- 30일 복구형 탈퇴(사용자 확정) 때문에 S1의 철회 불가 한계를 **M안**으로 보완한다(비교는 [PLAN_account-lifecycle](PLAN_account-lifecycle.md) §4).
+- §5.1·§5.3의 키 5개 계약이 F4a의 단일 계약이다. F4a codec은 `gen`의 형식만 검사하고, DB 대조는 하지 않는다.
+- 상태·`gen` 대조는 F4b/c DAL이 **매 요청** DB에서 한다(`status='active' AND auth_generation = gen`). 불일치·비활성·행 없음은 "로그인 필요"다.
+- 대안 S2(DB 세션)는 §6(미채택).
+- 복구 확인 쿠키(`purpose:"account_recovery"`, 키 6개, 10분)는 F4b/c 계약이다. F4a codec에는 구현하지 않는다(lifecycle §3).
+- package-only `iron-session` bootstrap(§8 ①)은 계속 독립적으로 진행할 수 있다.
 - 로그아웃은 쿠키 삭제다. 복사된 쿠키를 서버에서 따로 폐기하는 것은 보장하지 않는다. 키 회전은 번호 붙은 키 맵으로 이전 키를 함께 허용하고 가장 큰 번호로 봉인한다(spike 실증).
 
 ## 6. 세션 대안·서버 경계
@@ -227,7 +228,8 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 - §5.2 표의 각 행: 미설정·공백, JSON 유형, key 형식(`0`·`01`·`-1`·`1.5`·`1e3`·`a`·안전 정수 초과), 31/32자·공백만, URL userinfo·path·query·hash, 개발 http 3호스트 허용, `127.1`·`0x7f.0.0.1` 정규화, 개발이라도 그 외 http 거부, 운영의 loopback·http 거부, nodeEnv 빈 값 = 운영 규칙.
 - `sealSession`·`readSession`:
   - 왕복, 정확 7일(`exp−1ms` ok / `exp` expired, 주입한 시계)
-  - 미래 `iat`·수명 7일 초과·키 누락·추가 키·`v`·비UUID → `invalid`
+  - 미래 `iat`·수명 7일 초과·키 누락(`gen` 포함)·추가 키·`v`·비UUID·`gen`이 0·음수·소수·문자열·안전 정수 초과 → `invalid`
+  - `sealSession`에 비UUID나 잘못된 `gen` → throw
   - 다른 키·변조·`"abc"`·공백 → `invalid`
   - `undefined`·`""` → `missing`
   - 이전 키로 봉인 → 키 맵으로 읽기 ok
@@ -241,12 +243,12 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 3. §3 표대로 동작한다. 서버 state 재사용 거부는 보장하지 않는다.
 4. PKCE S256·state·nonce·issuer·redirect를 검증한다. 공급자가 PKCE를 받지 않는 것으로 확인되면 착수 전에 메인이 결정한다.
 5. 상태 변경 POST는 `assertSameOrigin`을 통과해야 한다. 세션은 절대 7일이다(§5).
-6. 공급자 토큰·email을 저장하지 않는다. 세션 payload는 §5.4 결정에 따른 키만 담는다.
+6. 공급자 토큰·email을 저장하지 않는다. 세션 payload는 키 5개(`v`·`userId`·`gen`·`iat`·`exp`)만 담는다.
 7. 운영은 모의 issuer·fixture·http·미설정 fallback을 거부한다.
 8. auth 모듈을 client에서 직접 또는 전이로 import하면 `next build`가 실패한다.
 9. 탈퇴 즉시 차단·30일 복구·삭제 기준은 [PLAN_account-lifecycle](PLAN_account-lifecycle.md) §7을 따른다.
 
-## 10. F4b/c (공급자 확정: Google·Kakao. 계정 연결 답변과 §5.4·lifecycle 검토 뒤)
+## 10. F4b/c (공급자 확정: Google·Kakao. 계정 연결 답변과 lifecycle 계획 수락 뒤)
 
 - OIDC callback + F3 지급 + 세션 문맥·route·UI를 같은 기능 범위에서 연결해, 실제 로그인과 첫 지급이 동시에 켜지게 한다.
 - `openid-client`는 이 시점에 설치한다. 허용 목록은 Google·Kakao 두 개다.
@@ -305,3 +307,4 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 | R1 P2-5 빌드 경계 단계 | §8: bootstrap / RED / GREEN의 파일 소유와 isolated 조건 |
 | R2 P2-1~5 | §5.3 끝 (1)~(4), §8 positive control 단계 구분 |
 | 2026-11-03 사용자 확정(공급자 둘 다·30일 탈퇴) | §0, §5.4, §7, §10, [PLAN_account-lifecycle](PLAN_account-lifecycle.md) |
+| R3 리뷰 + 메인 R4 결정 | §0, §5.1·§5.3·§5.4(키 5개 단일 계약), lifecycle §2·§3·§5·§6·§7 |
