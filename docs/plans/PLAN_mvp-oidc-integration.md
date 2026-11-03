@@ -573,7 +573,7 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 |---|---|---|
 | npm `openid-client` 6.8.9 | https://registry.npmjs.org/openid-client/6.8.9 | 게시 2026-11-02, latest 6.8.9, deps `jose ^6.2.15`·`oauth4webapi ^3.8.8`, engines 없음, ESM |
 | openid-client 6.8.9 tarball | https://registry.npmjs.org/openid-client/-/openid-client-6.8.9.tgz | `discovery`(issuer 일치)·`ClientSecretPost`·`buildAuthorizationUrl`·`authorizationCodeGrant`·PKCE·random*·`allowInsecureRequests`·`enableNonRepudiationChecks`(기본 서명 미검증), `redirect_uri = currentUrl` − query |
-| oauth4webapi 3.8.8 | https://registry.npmjs.org/oauth4webapi/-/oauth4webapi-3.8.8.tgz | `validateAuthResponse` 순서 iss → state → error, 중복 매개변수 throw, ID Token claim 검사. B0 lock의 실제 버전은 [미확인] |
+| oauth4webapi 3.8.8 | https://registry.npmjs.org/oauth4webapi/-/oauth4webapi-3.8.8.tgz | `validateAuthResponse` 순서 iss → state → error, 중복 매개변수 throw, ID Token claim 검사. B0 lock의 실제 버전은 3.8.8(§15) |
 | Google discovery | https://accounts.google.com/.well-known/openid-configuration | issuer, S256·plain, `authorization_response_iss_parameter_supported:true`, post·basic, public, RS256 (Last-Modified 2026-03-17) |
 | Google OIDC | https://developers.google.com/identity/openid-connect/openid-connect | redirect_uri 정확 일치, state·nonce, `iss` 두 형식, `sub` 불변·최대 255 (Last updated 2026-10-29 UTC) |
 | Kakao discovery | https://kauth.kakao.com/.well-known/openid-configuration | issuer, S256, post만, pairwise, RS256, query만, iss 매개변수 항목 없음 |
@@ -621,7 +621,6 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 - 공급자 code 재교환 거부
 - 공급자 버튼 브랜드 규정
 - Next 16.4.3과 문서의 차이
-- B0 lock의 oauth4webapi 버전
 - 동적 응답 Cache-Control
 
 ## 14. R0 검토 대응표
@@ -639,6 +638,24 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 | P2-7 R4 정합 | [PLAN_mvp-authentication](PLAN_mvp-authentication.md) §2 도식 POST·303과 진행 메모, §13 |
 
 - **R1 수락(메인):** `F4_OIDC_INTEGRATION_PLAN_R1_REVIEW_COMPLETE`의 PASS(P0·P1 없음)를 수락했다. 비차단 P2-A는 §6.1의 설정별 캐시 키로, P2-B는 부록 A의 저장소 루트·파일 끝 개행 처리로 보완했다. 문서 diff·상대 링크를 확인했으며 코드·DB·실로그인 시험은 이 계획 단계에서 실행하지 않았다.
+
+## 15. B0 패키지 준비 실행 결과 (2026-11-03)
+
+이 계획 수립 단계(§12 "미실행")와 별개로, B0에서 실제로 설치하고 검사한 결과다. 공개 API·쿠키·모드·오류·표·정책 계약은 바꾸지 않았다. 독립 검토와 메인 통합은 아직 진행 전이다.
+
+- **변경:** `app/package.json`의 dependencies에 `openid-client: "6.8.9"`(exact) 1줄을 추가했다. `app/package-lock.json`에는 아래 3개 항목과 루트 의존성 1줄만 추가됐다. 기존 직접 의존성 업그레이드·범위 변경·overrides는 없다.
+
+  | 패키지 | lock 버전 | integrity(registry `dist.integrity`와 일치) |
+  |---|---|---|
+  | `openid-client` | 6.8.9 (deps `jose ^6.2.15`, `oauth4webapi ^3.8.8`) | `sha512-6mXMRNJxDOf6BflEWLXul1UwzLFz++9Ofz1PYwPwwsJsyXBsbfkO+Jo255SW1qnFNLYz4EJWHz42X4OJJrya/g==` |
+  | `jose` | 6.2.15 | `sha512-qdF6ewcZARtef63fJ9AKKZPgxw+t7USH6HLXYcD4CrdmSvDp79rpJSPFEKc90QBeGS63u1KQtN2MZQHC0yDIzA==` |
+  | `oauth4webapi` | 3.8.8 | `sha512-8N28E+a/oxfXWBgOMt+ZP/JUf/XR+IFbvkAEPP3gznXOMv9BpAAwiIj0TFNz3tGTPc0ZQ8zmWBNgN1nAys0gng==` |
+
+  `resolved`는 모두 `https://registry.npmjs.org/…` tarball이며 계획(§11)의 범위와 같다.
+- **Cloud 실행(Node 26.13.0·npm 11.20.0):** `npm install --save-exact openid-client@6.8.9`(`--force`·`--legacy-peer-deps` 없음, 3개 추가), `npm --prefix app ci`, `npm --prefix app ls --all`(invalid·extraneous·필수 UNMET 0), lint, typecheck, `npm --prefix app test`(단위 122, skip 0)가 모두 exit 0이었다.
+- **실제 import(Node 26.13.0·24.22.2 각 1회, 시험·CI 변경 없음):** `discovery`·`ClientSecretPost`·`authorizationCodeGrant`·`buildAuthorizationUrl`·`enableNonRepudiationChecks`·`randomPKCECodeVerifier`·`calculatePKCECodeChallenge`·`randomState`·`randomNonce`·`allowInsecureRequests` 10개가 모두 `function`이었다. `typeof`만 읽었고 code·token·secret 생성이나 공급자 HTTP 호출은 하지 않았다.
+- **CI([41702163333](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41702163333), 패키지 커밋 `7a4c373`):** Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12, DB 138(PG 18.6 + Node 26)이 skip 0으로 통과했다. [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41702163653) 42·Compose도 통과했다.
+- **미실행:** 제품 호출부는 0개다. 실제 OAuth discovery·토큰 교환·콘솔 작업·자격 증명, `.env*`, 로컬 DB(PG18 없음), Next 서버·브라우저·FullCheck는 실행하지 않았다. B1 이후 구현·시험은 아직 없다.
 
 ---
 

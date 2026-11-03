@@ -140,6 +140,10 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 **독립 GREEN 검토 PASS(P0·P1·P2 없음)를 수락해 dev에 통합했다.** 이 함수를 부르는 실제 OAuth·HTTP route·요청별 DAL 검사·복구 쿠키·화면·삭제 실행 주기·서비스 DB는 아직 없다. "즉시 차단"은 DAL이 연결된 뒤 탈퇴 커밋 이후의 새 요청에 적용된다. 아직 사용자 기능으로 켜진 것은 아니다.
 
+## OIDC 패키지 준비 (F4 B0)
+
+`openid-client` 6.8.9(전이 `jose` 6.2.15·`oauth4webapi` 3.8.8)를 고정했다. 제품 호출부는 아직 없고 실제 로그인은 구현 전이다. 설치·import·CI 결과는 [OIDC 연결 계획](../docs/plans/PLAN_mvp-oidc-integration.md) §15에 있다.
+
 ## 한계 (제품 구현)
 
 - 실제 로그인·앱의 PG 저장 연결·버킷 없음. 지급·기록·개인 꾸미기·글꼴 저장은 도메인 함수로 검증했으며 실제 인증 연결은 F4다. 화면의 조각 삭제·하루 꾸미기 편집기는 아직 없다.
