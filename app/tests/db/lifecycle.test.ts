@@ -621,8 +621,8 @@ describe("concurrency over distinct real connections", () => {
       try {
         const api = await loadLifecycle();
         const uid = await seedUser(env, db, [ident()], { granted: true });
-        // purge_after = 지금 + 2초
-        await setPending(env, db, uid, "clock_timestamp() - interval '720 hours' + interval '2 seconds'", 2);
+        // purge_after = 지금 + 10초(느린 runner에서도 '기한 전에 이미 대기' 사전조건이 성립하도록, PR34 검토 P2-2)
+        await setPending(env, db, uid, "clock_timestamp() - interval '720 hours' + interval '10 seconds'", 2);
         const p0 = await stateOf(db, uid);
         await owner.client.query("BEGIN");
         await owner.client.query("SELECT 1 FROM pod.users WHERE id = $1 FOR UPDATE", [uid]);
@@ -655,17 +655,26 @@ describe("concurrency over distinct real connections", () => {
         const id = ident("kakao");
         const uid = await seedUser(env, db, [id], { granted: true });
         await setPending(env, db, uid, "clock_timestamp() - interval '721 hours'", 2);
+        // 기준선은 owner BEGIN/purge 이전에 고정한다(PR34 검토 P2-1). 대상 사용자는 user·identity·account·ledger 각 1행이다.
+        const t0 = await totals(env, db);
+        const expectedAfterPurge = {
+          users: t0.users - 1,
+          identities: t0.identities - 1,
+          accounts: t0.accounts - 1,
+          ledger: t0.ledger - 1,
+        };
         await owner.client.query("BEGIN");
         const purged = await owner.client.query<{ r: string }>("SELECT pod.purge_user_if_due($1::uuid) AS r", [uid]);
         expect(purged.rows[0]?.r).toBe("purged");
         const loginP = settle(login(pool, id));
         await waitBlocked(env, db, pid, owner.pid);
         await owner.client.query("COMMIT");
-        const t = await totals(env, db); // purge 커밋 직후
         const r = await loginP;
         expect(r.error, "no raw error (e.g. 23503) escapes").toBeUndefined();
         expect(r.value).toEqual({ ok: true, value: { kind: "purge_due" } });
-        expect(await totals(env, db), "this request created no user/identity/account/ledger").toEqual(t);
+        expect(await totals(env, db), "only the purge removed rows; this request created no user/identity/account/ledger").toEqual(
+          expectedAfterPurge,
+        );
         expect(await lifeState(env, db, uid)).toBeNull();
 
         const next = await loginValue(login, pool, id);

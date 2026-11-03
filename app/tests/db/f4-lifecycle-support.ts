@@ -189,7 +189,14 @@ export async function openPurge(env: HarnessEnv, db: DisposableDatabase): Promis
   return { client, pid: Number(r.rows[0]!.pid), close: () => closeClient(client) };
 }
 
-/** backend pid가 blocker pid(주면 그것) 때문에 잠금 대기 중이 될 때까지 기다린다(polling, 제한 시간 안). */
+/**
+ * backend pid가 잠금 대기 중이 될 때까지 기다린다(polling, 제한 시간 안).
+ * - blocker를 주지 않으면: 직접 blocker가 하나라도 있으면(막혀 있음) 끝난다.
+ * - blocker를 주면: 직접 blocker가 아니라 **blocker 사슬**에 그 pid가 있는지 본다.
+ *   pg_blocking_pids는 직접(hard/soft) blocker만 준다(PG18 functions-info). 같은 행의 두 번째 대기자는 owner의
+ *   transactionid가 아니라 첫 대기자의 tuple lock을 기다릴 수 있으므로(PG18 view-pg-locks) 사슬을 재귀로 따라간다.
+ *   UNION으로 중복을 없애 순환이 있어도 끝난다.
+ */
 export async function waitBlocked(
   env: HarnessEnv,
   db: DisposableDatabase,
@@ -202,9 +209,20 @@ export async function waitBlocked(
     env,
     async (a) => {
       for (;;) {
-        const r = await a.query<{ b: number[] }>("SELECT pg_blocking_pids($1) AS b", [pid]);
-        const b = (r.rows[0]?.b ?? []).map(Number);
-        if (b.length > 0 && (blocker === undefined || b.includes(blocker))) return;
+        if (blocker === undefined) {
+          const r = await a.query<{ b: number[] }>("SELECT pg_blocking_pids($1::int) AS b", [pid]);
+          if ((r.rows[0]?.b ?? []).length > 0) return;
+        } else {
+          const r = await a.query<{ hit: boolean }>(
+            `WITH RECURSIVE chain(p) AS (
+               SELECT unnest(pg_blocking_pids($1::int))
+               UNION
+               SELECT unnest(pg_blocking_pids(c.p)) FROM chain c
+             ) SELECT coalesce(bool_or(p = $2::int), false) AS hit FROM chain`,
+            [pid, blocker],
+          );
+          if (r.rows[0]?.hit) return;
+        }
         if (Date.now() > until) throw new Error(`backend ${pid} did not wait on a lock${blocker ? ` held by ${blocker}` : ""}`);
         await new Promise((res) => setTimeout(res, 25));
       }
