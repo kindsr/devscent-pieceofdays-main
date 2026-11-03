@@ -56,8 +56,8 @@ sequenceDiagram
   participant A as Next 서버
   participant P as 공급자(OIDC)
   participant D as PostgreSQL(app role)
-  B->>A: GET 로그인 시작
-  A->>B: 302 authorize(state, nonce, PKCE S256) + 짧은 수명 봉인 쿠키
+  B->>A: POST 로그인 시작(명시 Origin 검사)
+  A->>B: 303 authorize(state, nonce, PKCE S256) + 짧은 수명 봉인 쿠키
   B->>P: 동의
   P->>B: 302 callback?code&state(&iss)
   B->>A: GET callback(+봉인 쿠키)
@@ -65,9 +65,10 @@ sequenceDiagram
   A->>P: openid-client: code 교환 + 서명·iss·aud·exp·nonce·PKCE 검증
   A->>D: completeSuccessfulLogin(계정 + 첫 10개, 한 트랜잭션)
   D-->>A: COMMIT → userId
-  A->>B: 세션 쿠키(§5) + 302 앱
+  A->>B: 세션 쿠키(§5) + 303 앱
 ```
 
+- **[메인 구현 결정 2026-11-03]** 로그인 시작은 POST + 명시 Origin 검사이고 응답은 303이다(R0 도식의 GET·302를 정합화, 상세 [PLAN_mvp-oidc-integration](PLAN_mvp-oidc-integration.md) R1 §6.3). ID Token 서명 검증은 `enableNonRepudiationChecks`를 필수로 켜서 vendor가 한다(§4 문구 충족). scope·서버 state 저장소 없음·세션 계약은 그대로다.
 - **신뢰 경계:** userId는 서버가 봉인을 검증한 세션에서만 얻는다. 클라이언트의 form·URL·헤더 값과 identity는 신뢰하지 않는다.
 - **subject:** ID 토큰의 `sub`다. Google은 public, Kakao는 회원번호이며 pairwise다. email·닉네임은 식별이나 연결에 쓰지 않는다.
 - **[메인] 첫 성공 로그인 = 공급자 검증 + F3 COMMIT.**
@@ -260,7 +261,7 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
   - 단위·DB: §3 표의 세 사례, 지급 1회와 `SUM(delta)=balance`.
   - **격리 CI Playwright + 127.0.0.1 모의 OIDC issuer:** 성공·취소·state·서명·iss·aud·nonce 위조·같은 code 중복·쿠키 삭제 뒤 재요청, 운영의 모의·http issuer 거부. backdoor는 없다.
 - 롤백: 인증 env를 제거하면 `unavailable`로 돌아간다. 정적 dev와 운영에는 영향이 없다. 지급 원장은 되돌리지 않는다.
-- **상세 계획:** [PLAN_mvp-oidc-integration](PLAN_mvp-oidc-integration.md). **진행(2026-11-03):** BASE `eaf9d4f` 기준 slice·쿠키·route·DAL·시험·실공급자 검증 절차 초안을 작성했고 독립 검토·메인 수락 전이다. 이 절의 R4 정책은 바꾸지 않았다.
+- **상세 계획:** [PLAN_mvp-oidc-integration](PLAN_mvp-oidc-integration.md). **진행(2026-11-03):** BASE `eaf9d4f` 기준 slice·쿠키·route·DAL·시험·실공급자 검증 절차를 작성했다. R0 독립 검토(CHANGES_REQUIRED, P1 2·P2 7)와 메인 구현 결정 6건(상세 계획 §13: 공급자 목록 설정, flow 쿠키·POST start, `enableNonRepudiationChecks` 필수, F5 전 안내 화면, B4-d 후속 배정, 브랜드 확인 시점)을 R1에 반영했고 재검토·메인 수락 전이다. 이 절의 R4 정책(공급자 둘 다·scope `openid`·서버 state 저장소 없음·세션 계약)은 바꾸지 않았다.
 
 ## 11. 라이브러리 비교와 근거 (채택 C)
 
