@@ -38,6 +38,8 @@
 
 ## 1. 현재 코드 사실 (BASE `eaf9d4f`)과 갭
 
+> 이 절은 계획 수립 BASE `eaf9d4f` 시점의 사실이다. 이후 실행 결과는 §15(B0)·§16(B1)을 본다.
+
 **[사실] 이미 있는 모듈:**
 
 | 파일 | 공개 API |
@@ -656,7 +658,34 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 - **실제 import(Node 26.13.0·24.22.2 각 1회, 시험·CI 변경 없음):** `discovery`·`ClientSecretPost`·`authorizationCodeGrant`·`buildAuthorizationUrl`·`enableNonRepudiationChecks`·`randomPKCECodeVerifier`·`calculatePKCECodeChallenge`·`randomState`·`randomNonce`·`allowInsecureRequests` 10개가 모두 `function`이었다. `typeof`만 읽었고 code·token·secret 생성이나 공급자 HTTP 호출은 하지 않았다.
 - **CI([41702163333](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41702163333), 패키지 커밋 `7a4c373`):** Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12, DB 138(PG 18.6 + Node 26)이 skip 0으로 통과했다. [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41702163653) 42·Compose도 통과했다.
 - **최종 HEAD 검증:** `52f25a81419522e933bfc53b5b6ac129f78d5cc6`의 [CI 41703229158](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41703229158)·[root 41703229141](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41703229141)도 같은 기준선을 모두 통과했다. exact HEAD의 독립 검토 PASS(P0·P1·P2 없음, `F4_OIDC_PACKAGE_RUNNER_COMPLETE`)를 메인이 수락했다. 독립 runner는 Node 26의 `npm ci`·`npm ls`·10개 export import를 직접 재현했고, Node 24의 import는 작성자 실행 근거와 구분했다. 메인은 문서·lock 구조를 대조해 기존 항목 변경 0·신규 3패키지만 추가됨을 확인했다.
-- **미실행:** 제품 호출부는 0개다. 실제 OAuth discovery·토큰 교환·콘솔 작업·자격 증명, `.env*`, 로컬 DB(PG18 없음), Next 서버·브라우저·FullCheck는 실행하지 않았다. B1 이후 구현·시험은 아직 없다.
+- **미실행(B0 실행 당시):** 제품 호출부는 0개였다. 실제 OAuth discovery·토큰 교환·콘솔 작업·자격 증명, `.env*`, 로컬 DB(PG18 없음), Next 서버·브라우저·FullCheck는 실행하지 않았다. B0 실행 당시 B1 이후 구현·시험은 없었다(B1 결과는 §16).
+
+## 16. B1 모드·설정·codec 실행 결과 (2026-11-03)
+
+이 절은 실행 기록이다. 원래 BASE·설계·공개 API·쿠키·모드·HTTP 계약·정책(§0~§13)은 바꾸지 않았다.
+
+- **커밋:** 이전 dev(B0 통합) `39ecae750ed4a350d14e68d50a2ee860aab1a063` → RED PR38 `1a8c4a227e5193034bba67be3da9eb0703a2065a` → GREEN PR39 `25365e7738a8afd96e869fc3727f339e34b91d41`(브랜치 `claude/f4-auth-b1-green-g0sym2`).
+- **RED:** 시험 6파일만(`tests/unit/runtime-mode.test.ts` 사례 추가, 신규 `auth-config`·`auth-flow-cookie`·`auth-recovery-cookie`·`return-to` 시험과 `auth-b1-support.ts`). 메인 RED gate 통과.
+  - 신규 40 사례 중 39는 기능 부재로 실패했다. 기존 122 + 순수 import 양성 1 = 123 통과, skip 0.
+  - RED 단계에서 단위 실패 뒤의 빌드 경계·운영 경계·E2E는 실행되지 않았다. 통과로 기록하지 않는다. DB 138·root 42는 통과.
+- **GREEN:** 제품 7파일만(+350/−1), RED 시험 변경 0. 메인 GREEN gate(시험 0·제품 7)와 `diff --check` 통과.
+  - `runtime-mode.ts`: `authModeProblem`·`assertAuthModeAllowed`(§4.2, 순수 Node, 기존 export 2개 불변). `app/next.config.ts`가 `assertFixtureModeAllowed` 다음에 호출한다.
+  - `auth/config.ts`(§4.3 0a → 8), `auth/cookie-util.ts`, `auth/flow-cookie.ts`(10키), `auth/recovery-cookie.ts`(6키), `auth/return-to.ts`(§5 허용 목록).
+  - 쿠키는 앱 기준 `exp = iat + 600_000`과 iron `ttl: 600`을 함께 쓴다. codec은 형식만 검사하고, 공급자 경로·현재 설정 issuer 대조는 넣지 않았다(B2 callback ④ 몫, §6.3).
+  - 기존 `session.ts`·SQL·package·CI·실서비스는 바뀌지 않았다.
+- **CI(exact GREEN):** [app 41709783372](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41709783372)
+  - Node 24.22.2·26.13.0 각각 단위 162(14파일, skip 0)·빌드 경계 4·운영 경계 6·E2E 12·lint·typecheck·build
+  - DB 138(9파일, skip 0, PG 18.6 + Node 26)
+  - [root 41709783621](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41709783621) validate 42·Compose 통과, PR deploy는 정상 skip
+- **독립 검토:** exact GREEN에서 PASS(P0·P1·P2 없음, `F4_AUTH_B1_GREEN_RUNNER_COMPLETE`)를 메인이 수락했다.
+  - 독립 runner는 Node 26에서 단위 162·lint·typecheck를 직접 재현했다. Node 24는 CI 근거다.
+  - flow·복구 쿠키의 iron 자체 TTL 경과 child 시험이 GREEN에서 처음 실제로 실행되어, 앱 시계 만료(`expired`)와 iron TTL 경과(`invalid`)를 구분해 확인했다.
+- **통합 상태:** 독립 검토는 수락됐고 **dev 통합 전**이다. 통합 상태는 메인이 통합 단계에서 갱신한다.
+- **미실행·미연결:**
+  - 제품에서 `openid-client`를 import하지 않는다. OAuth discovery·토큰 교환·처리 함수(B2), 요청별 DAL(B3), 발급 HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)은 없다.
+  - 서비스의 실제 로그인은 꺼져 있다. 화면 PG 저장(F5), 서비스 DB·Next 배포(F6)도 없다. dev는 정적 D, 운영은 준비중 페이지다.
+  - 정책(공급자 둘 다·첫 성공 로그인 10개·30일 복구) 변경은 없다.
+  - 이 기록 작성자는 코드·DB·E2E 시험, 설치, 서버, FullCheck를 실행하지 않았다. 실행 근거는 위 CI와 독립 runner다.
 
 ---
 

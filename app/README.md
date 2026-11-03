@@ -14,7 +14,8 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 | `src/app/` | 경로: `/` 오늘, `/days` 모아보기, `/days/[date]` 특정 날, `/settings` 기록 글꼴, `/dev/konva-smoke` 시험 fixture |
 | `src/ui/d/` | D 화면 컴포넌트(상단, 조각 보드·하루 한 줄·작성/수정 팝업, 달력, 글꼴 설정). 스타일은 `src/app/globals.css`(D `style.css`에서 옮김) |
 | `src/ui/decorate/` | Konva 클라이언트 전용 모듈. 지금은 호환 스모크만 있고 꾸미기 편집기 UI는 없다(별도 아트보드 필요) |
-| `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부 |
+| `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부, 고정 사용자+실제 인증 동시 사용·운영 단계 mock issuer 거부(순수 Node, `next.config.ts`가 호출) |
+| `src/server/auth/` | 세션 codec(F4a), 인증 설정·공급자 목록(`config.ts`), 로그인 진행·복구 쿠키 codec, returnTo 허용 목록(F4 B1). 아직 route·화면에서 호출하지 않는다 |
 | `src/server/context.ts` | 요청의 기록 문맥. 고정 사용자 모드가 아니면 "연결 안 됨" |
 | `src/server/diary/` | 읽기·쓰기 port(`store.ts`)와 PG CRUD 구현, 메모리 구현·예시 기록(로컬·시험 전용) |
 | `src/server/account/`, `src/server/credit/` | identity별 계정 해석·첫 성공 로그인 10개 1회 지급·잔액 조회, 글꼴·디자인 적용 설정(실제 인증 연결 전) |
@@ -142,7 +143,27 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 ## OIDC 패키지 준비 (F4 B0)
 
-`openid-client` 6.8.9(전이 `jose` 6.2.15·`oauth4webapi` 3.8.8)를 고정하고 독립 검토를 수락해 dev에 통합했다. 제품 호출부는 아직 없고 실제 로그인은 구현 전이다. 설치·import·CI 결과는 [OIDC 연결 계획](../docs/plans/PLAN_mvp-oidc-integration.md) §15에 있다.
+`openid-client` 6.8.9(전이 `jose` 6.2.15·`oauth4webapi` 3.8.8)를 고정하고 독립 검토를 수락해 dev에 통합했다. B0 실행 당시 제품 호출부는 0개였다. 현재도 `openid-client`를 import하는 제품 코드는 없고(B2 범위) 실제 로그인은 구현 전이다. 설치·import·CI 결과는 [OIDC 연결 계획](../docs/plans/PLAN_mvp-oidc-integration.md) §15에 있다.
+
+## 인증 모드·설정·쿠키 codec (F4 B1)
+
+[OIDC 연결 계획](../docs/plans/PLAN_mvp-oidc-integration.md) §4·§5의 계약을 제품 7파일로 구현했다(PR39 GREEN `25365e7`, +350/−1). 기존 `session.ts`·SQL·package·CI는 바꾸지 않았다.
+
+- `runtime-mode.ts`: `authModeProblem`·`assertAuthModeAllowed`(순수 Node, 기존 export 2개 그대로). `next.config.ts`가 모든 phase에서 호출해 고정 사용자와 실제 인증의 동시 설정, 운영 build·server·export 단계의 mock issuer를 거부한다.
+- `auth/config.ts`: `loadAuthConfig`. 계획 판정 순서(0a → 8)대로 공급자 목록·자격·세션 설정·mock 형식을 검사하고, issuer는 고정 상수, redirect는 `/auth/<공급자>/callback`이다.
+- `auth/flow-cookie.ts`·`auth/recovery-cookie.ts`·`auth/cookie-util.ts`: 로그인 진행 쿠키(정확히 10키)·복구 쿠키(정확히 6키)의 형식 전용 검사, 앱 기준 10분과 iron `ttl` 600, 쿠키 이름·속성 분기. 공급자·issuer와 현재 설정의 대조는 B2 처리 함수 몫이라 codec에 넣지 않았다.
+- `auth/return-to.ts`: 로그인 뒤 이동 경로 정확 허용 목록(`/`, `/days`, `/days/YYYY-MM-DD`, `/settings`).
+
+검증:
+
+- RED(PR38 `1a8c4a2`, 시험 6파일만): 신규 40 사례 중 39는 기능 부재로 실패, 기존 122 + 순수 import 양성 1 = 123 통과(skip 0). 메인 RED gate 통과. RED 단계에서 build 이후 단계(빌드 경계·운영 경계·E2E)는 실행되지 않았다(통과로 세지 않음). DB 138·root 42는 통과.
+- GREEN: 시험 변경 0·제품 7파일만, 메인 GREEN gate·`diff --check` 통과.
+- [GREEN CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41709783372): Node 24.22.2·26.13.0 각각 단위 162(14파일, skip 0)·빌드 경계 4·운영 경계 6·E2E 12·lint·typecheck·build, DB 138(9파일, skip 0, PG 18.6 + Node 26). [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41709783621) 42·Compose 통과.
+- exact GREEN의 독립 검토 PASS(P0·P1·P2 없음)를 메인이 수락했다. 독립 runner가 Node 26에서 단위 162·lint·typecheck를 직접 재현했고(Node 24는 CI 근거), iron 자체 TTL 경과 child 시험이 처음 실제로 실행되어 앱 시계 만료와 iron TTL 경과(`invalid`)가 구분됨을 확인했다.
+
+명령(격리 Cloud·CI·개발 PC): `npm --prefix app test -- tests/unit/runtime-mode.test.ts tests/unit/auth-config.test.ts tests/unit/auth-flow-cookie.test.ts tests/unit/auth-recovery-cookie.test.ts tests/unit/return-to.test.ts`(저장소 루트).
+
+**dev 통합 전이다.** 이 모듈을 쓰는 OAuth discovery·토큰 교환·처리 함수(B2), 요청별 DAL(B3), HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)은 없다. 실제 로그인은 꺼져 있고 화면 PG 저장(F5)·서비스 DB·앱 배포(F6)도 없다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구)은 바뀌지 않았다.
 
 ## 한계 (제품 구현)
 
