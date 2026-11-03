@@ -15,6 +15,7 @@
 ## [Unreleased]
 
 ### Added
+- F4b/c 실제 로그인 연결 계획 수립 (2026-11-03): `docs/plans/PLAN_mvp-oidc-integration.md`에 Google·Kakao OIDC callback·flow/복구 쿠키·요청별 DAL·탈퇴/복구 route·D 상태 화면·mock issuer 시험·Kakao PKCE 실제 검증 절차·콘솔 설정 프롬프트 초안을 정리했다. 독립 검토·메인 수락 전 계획이며 코드·패키지·설정·서비스 연결과 실제 로그인은 아직 없다.
 - F4 L2 계정 탈퇴·복구 도메인 (2026-11-03): `account/lifecycle.ts`(활성 확인·탈퇴 요청·복구)와 `completeSuccessfulLogin`의 `active`·`pending_deletion`·`purge_due` 결과를 추가했다. users 잠금 뒤 DB 시각으로 720시간 기한을 판정하고, 중복 탈퇴 불변·복구 재지급 없음·purge 경합 시 쓰기 0을 PG18 실제 시험으로 확인했다(DB 138, Node 24·26 앱 회귀). 독립 GREEN 검토를 수락해 dev에 통합했다. 실제 OAuth·HTTP·요청별 DAL·복구 쿠키·화면·삭제 실행 주기·서비스 DB는 후속이다.
 - F4 L1 계정 수명주기 스키마 (2026-11-03): `0002_account_lifecycle`로 사용자 상태·탈퇴 시각·삭제 기한·세션 세대 열과 일관성 제약, app 열 UPDATE 권한, 원장 owner 전용 삭제 예외, PUBLIC을 회수한 전용 role 삭제 함수 2개, 빈 CI 전용 down을 추가했다. 권한·NULL·기한·down/rollback 시험을 포함해 DB 119개와 Node 24·26 앱 회귀(단위 122)·독립 SQL 검토를 통과해 dev에 통합했다. 실제 서비스 DB에는 적용하지 않았다.
 - 계정 수명주기 구현 계약 (2026-11-03): `docs/plans/PLAN_account-lifecycle.md` §9~§13에 lifecycle API·로그인 union·잠금 순서, migration 0002 파일 계약, purge role 경로(meta 열 확장 A 채택·목록 상한 1~1000), TEST_PATTERNS 기준 RED/GREEN 소유, L1·L2 slice를 정했다. R6에서 pending CHECK·로그인 0행 분기·NULL 인자 거부·GUC 비움·harness 목록을 보완했다. 구현·SQL·실행은 없다.

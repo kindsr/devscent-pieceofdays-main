@@ -260,6 +260,7 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
   - 단위·DB: §3 표의 세 사례, 지급 1회와 `SUM(delta)=balance`.
   - **격리 CI Playwright + 127.0.0.1 모의 OIDC issuer:** 성공·취소·state·서명·iss·aud·nonce 위조·같은 code 중복·쿠키 삭제 뒤 재요청, 운영의 모의·http issuer 거부. backdoor는 없다.
 - 롤백: 인증 env를 제거하면 `unavailable`로 돌아간다. 정적 dev와 운영에는 영향이 없다. 지급 원장은 되돌리지 않는다.
+- **상세 계획:** [PLAN_mvp-oidc-integration](PLAN_mvp-oidc-integration.md). **진행(2026-11-03):** BASE `eaf9d4f` 기준 slice·쿠키·route·DAL·시험·실공급자 검증 절차 초안을 작성했고 독립 검토·메인 수락 전이다. 이 절의 R4 정책은 바꾸지 않았다.
 
 ## 11. 라이브러리 비교와 근거 (채택 C)
 
