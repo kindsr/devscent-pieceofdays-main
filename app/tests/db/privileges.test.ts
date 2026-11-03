@@ -57,11 +57,30 @@ describe("app role: statements outside its grants fail with 42501", () => {
     });
   });
 
-  it("cannot UPDATE users columns other than first_login_at", async () => {
+  it("can UPDATE users first_login_at and the 4 lifecycle columns, but not id or created_at (42501)", async () => {
     const d = await migrated();
     await withApp(env, d, async (c) => {
       const uid = await insertUser(c);
       await expectSqlError(c.query("UPDATE pod.users SET created_at = now() WHERE id = $1", [uid]), "42501");
+      await expectSqlError(c.query("UPDATE pod.users SET id = id WHERE id = $1", [uid]), "42501");
+      await c.query("UPDATE pod.users SET first_login_at = now() WHERE id = $1", [uid]);
+      // F4 L1(PLAN_account-lifecycle §10 3번): 일관성 CHECK를 지키는 값으로 4열 모두 UPDATE할 수 있다
+      await c.query(
+        `UPDATE pod.users
+            SET status = 'pending_deletion', deletion_requested_at = TIMESTAMPTZ '2026-11-03 00:00:00+00',
+                purge_after = TIMESTAMPTZ '2026-11-03 00:00:00+00' + interval '720 hours', auth_generation = auth_generation + 1
+          WHERE id = $1`,
+        [uid],
+      );
+      await c.query(
+        "UPDATE pod.users SET status = 'active', deletion_requested_at = NULL, purge_after = NULL, auth_generation = 3 WHERE id = $1",
+        [uid],
+      );
+      const row = await c.query<{ status: string; gen: number; r: unknown; p: unknown }>(
+        "SELECT status, auth_generation AS gen, deletion_requested_at AS r, purge_after AS p FROM pod.users WHERE id = $1",
+        [uid],
+      );
+      expect(row.rows).toEqual([{ status: "active", gen: 3, r: null, p: null }]);
     });
   });
 

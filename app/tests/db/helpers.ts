@@ -7,6 +7,7 @@
 // - DB는 이번 프로세스가 만든 무작위 pod_ci_ 이름만 추적·삭제한다. 삭제 직전 이름·owner를 다시 확인한다.
 // - 관리자 URL·비밀번호를 로그·오류 메시지에 넣지 않는다.
 // - pod 스키마·제품 테이블·제품 트리거·schema_migrations는 만들지 않는다(제품 migration 책임).
+// - F4 L1: meta에 purge_role(NOT NULL)을 넣는다. purge role에 권한을 주는 것은 제품 0002 migration이다.
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 
@@ -14,12 +15,15 @@ export const CI_ROLES = {
   owner: "pod_ci_owner",
   migrator: "pod_ci_migrator",
   app: "pod_ci_app",
+  // F4 L1(PLAN_account-lifecycle §11 A): purge 함수 2개만 실행하는 전용 role. 테이블 권한·owner 구성원 관계가 없다.
+  purge: "pod_ci_purge",
 } as const;
 
 // CI·로컬 일회용 컨테이너 전용 가짜 값. 실제 환경의 비밀값이 아니다.
 const CI_PASSWORDS = {
   migrator: "ci-only-migrator-not-a-secret",
   app: "ci-only-app-not-a-secret",
+  purge: "ci-only-purge-not-a-secret",
 } as const;
 
 export const DB_NAME_PREFIX = "pod_ci_";
@@ -85,7 +89,7 @@ function sanitize(err: unknown, secrets: string[]): Error {
 
 function secretsOf(adminUrl: string): string[] {
   const u = new URL(adminUrl);
-  return [adminUrl, decodeURIComponent(u.password), u.password, CI_PASSWORDS.app, CI_PASSWORDS.migrator];
+  return [adminUrl, decodeURIComponent(u.password), u.password, CI_PASSWORDS.app, CI_PASSWORDS.migrator, CI_PASSWORDS.purge];
 }
 
 /** 열린 연결을 추적해 실패 경로에서도 닫는다. */
@@ -160,6 +164,7 @@ export const ROLE_SPECS: Record<keyof typeof CI_ROLES, RoleSpec> = {
   owner: { login: false, memberOf: [] },
   migrator: { login: true, memberOf: [CI_ROLES.owner] },
   app: { login: true, memberOf: [] },
+  purge: { login: true, memberOf: [] },
 };
 
 /** 기존 role 속성이 기대와 같은지 확인한다(순수 함수). 다른 점 목록을 돌려준다. */
@@ -206,12 +211,12 @@ async function membershipProblems(client: pg.Client): Promise<string[]> {
     if (!row.set_option) problems.push("migrator cannot SET ROLE owner");
     if (!row.inherit_option) problems.push("migrator does not INHERIT owner");
   }
-  // owner의 구성원은 migrator 하나뿐이어야 한다. app은 누구의 구성원도, 누구를 구성원으로도 갖지 않는다.
+  // owner의 구성원은 migrator 하나뿐이어야 한다. app·purge는 누구의 구성원도, 누구를 구성원으로도 갖지 않는다.
   const members = await client.query<{ g: string; u: string }>(
     `SELECT g.rolname AS g, u.rolname AS u
        FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid JOIN pg_roles u ON u.oid = m.member
       WHERE g.rolname = ANY($1::text[])`,
-    [[CI_ROLES.owner, CI_ROLES.app, CI_ROLES.migrator]],
+    [[CI_ROLES.owner, CI_ROLES.app, CI_ROLES.migrator, CI_ROLES.purge]],
   );
   for (const row of members.rows) {
     if (!(row.g === CI_ROLES.owner && row.u === CI_ROLES.migrator)) problems.push(`unexpected member ${row.u} of ${row.g}`);
@@ -228,6 +233,7 @@ const CREATE_ROLE_SQL: Record<keyof typeof CI_ROLES, string> = {
   owner: `CREATE ROLE ${CI_ROLES.owner} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
   migrator: `CREATE ROLE ${CI_ROLES.migrator} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${CI_PASSWORDS.migrator}'`,
   app: `CREATE ROLE ${CI_ROLES.app} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${CI_PASSWORDS.app}'`,
+  purge: `CREATE ROLE ${CI_ROLES.purge} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${CI_PASSWORDS.purge}'`,
 };
 
 /**
@@ -241,7 +247,7 @@ export async function bootstrapRoles(client: pg.Client): Promise<{ created: stri
   await client.query("BEGIN");
   try {
     await client.query("SELECT pg_advisory_xact_lock($1)", [BOOTSTRAP_LOCK_KEY]);
-    for (const key of ["owner", "migrator", "app"] as const) {
+    for (const key of ["owner", "migrator", "app", "purge"] as const) {
       const name = CI_ROLES[key];
       const existing = await readRole(client, name);
       if (existing) {
@@ -258,7 +264,7 @@ export async function bootstrapRoles(client: pg.Client): Promise<{ created: stri
       created.push(name);
     }
     const problems = await membershipProblems(client);
-    for (const key of ["owner", "migrator", "app"] as const) {
+    for (const key of ["owner", "migrator", "app", "purge"] as const) {
       const row = await readRole(client, CI_ROLES[key]);
       if (!row) problems.push(`${CI_ROLES[key]} missing`);
       else problems.push(...roleProblems(row, ROLE_SPECS[key]).map((p) => `${CI_ROLES[key]}: ${p}`));
@@ -283,7 +289,7 @@ export function trackedDatabases(): readonly string[] {
 
 export type DisposableDatabase = {
   name: string;
-  urls: { admin: string; migrator: string; app: string };
+  urls: { admin: string; migrator: string; app: string; purge: string };
 };
 
 /**
@@ -304,7 +310,9 @@ export async function createDisposableDatabase(env: HarnessEnv, label: string): 
       await admin.query(`CREATE DATABASE ${quoteIdent(name)} OWNER ${CI_ROLES.owner} TEMPLATE template0 ENCODING 'UTF8'`);
       createdDatabases.add(name);
       await admin.query(`REVOKE ALL ON DATABASE ${quoteIdent(name)} FROM PUBLIC`);
-      await admin.query(`GRANT CONNECT ON DATABASE ${quoteIdent(name)} TO ${CI_ROLES.migrator}, ${CI_ROLES.app}`);
+      await admin.query(
+        `GRANT CONNECT ON DATABASE ${quoteIdent(name)} TO ${CI_ROLES.migrator}, ${CI_ROLES.app}, ${CI_ROLES.purge}`,
+      );
     });
 
     await withAdmin(
@@ -320,13 +328,14 @@ export async function createDisposableDatabase(env: HarnessEnv, label: string): 
               singleton  boolean PRIMARY KEY DEFAULT true CHECK (singleton),
               name       text NOT NULL CHECK (name IN ('ci','dev','prod')),
               app_role   name NOT NULL,
-              owner_role name NOT NULL
+              owner_role name NOT NULL,
+              purge_role name NOT NULL
             )`);
           await admin.query("REVOKE ALL ON pod_meta.db_environment FROM PUBLIC");
-          await admin.query("INSERT INTO pod_meta.db_environment (name, app_role, owner_role) VALUES ('ci', $1, $2)", [
-            CI_ROLES.app,
-            CI_ROLES.owner,
-          ]);
+          await admin.query(
+            "INSERT INTO pod_meta.db_environment (name, app_role, owner_role, purge_role) VALUES ('ci', $1, $2, $3)",
+            [CI_ROLES.app, CI_ROLES.owner, CI_ROLES.purge],
+          );
           await admin.query("COMMIT");
         } catch (err) {
           await admin.query("ROLLBACK").catch(() => undefined);
@@ -346,6 +355,7 @@ export async function createDisposableDatabase(env: HarnessEnv, label: string): 
       admin: urlFor(env.adminUrl, new URL(env.adminUrl).username, null, name),
       migrator: urlFor(env.adminUrl, CI_ROLES.migrator, CI_PASSWORDS.migrator, name),
       app: urlFor(env.adminUrl, CI_ROLES.app, CI_PASSWORDS.app, name),
+      purge: urlFor(env.adminUrl, CI_ROLES.purge, CI_PASSWORDS.purge, name),
     },
   };
 }

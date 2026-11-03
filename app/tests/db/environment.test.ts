@@ -65,9 +65,9 @@ describe("F2 DB 시험 환경 bootstrap", () => {
     expect(Number(v)).toBeLessThan(190000);
   });
 
-  it("role 속성이 계약과 같다(owner NOLOGIN, migrator는 owner 구성원, app 비특권)", async () => {
+  it("role 속성이 계약과 같다(owner NOLOGIN, migrator는 owner 구성원, app·purge 비특권)", async () => {
     await withAdmin(env, async (a) => {
-      for (const key of ["owner", "migrator", "app"] as const) {
+      for (const key of ["owner", "migrator", "app", "purge"] as const) {
         const row = await readRole(a, CI_ROLES[key]);
         expect(row, CI_ROLES[key]).not.toBeNull();
         expect(roleProblems(row as RoleRow, ROLE_SPECS[key])).toEqual([]);
@@ -114,6 +114,60 @@ describe("F2 DB 시험 환경 bootstrap", () => {
                 (SELECT count(*)::int FROM pg_tables WHERE schemaname = 'public') AS public_tables`,
       );
       expect(product.rows[0]).toEqual({ pod_schema: 0, other_meta: 0, public_tables: 0 });
+    });
+  });
+
+  // F4 L1(PLAN_account-lifecycle §11 A·§12): 전용 purge role과 meta purge_role. 0002 없이도 하네스만으로 성립한다.
+  it("purge role은 app·owner·migrator와 다른 LOGIN 비특권 role이고, 누구의 구성원도·구성원 보유자도 아니다", async () => {
+    await withAdmin(env, async (a) => {
+      const row = await readRole(a, CI_ROLES.purge);
+      expect(row).not.toBeNull();
+      expect(row).toMatchObject({
+        rolname: CI_ROLES.purge,
+        rolsuper: false,
+        rolcreaterole: false,
+        rolcreatedb: false,
+        rolbypassrls: false,
+        rolreplication: false,
+        rolcanlogin: true,
+        member_of: [],
+      });
+      expect(new Set([CI_ROLES.purge, CI_ROLES.app, CI_ROLES.owner, CI_ROLES.migrator]).size).toBe(4);
+      const members = await a.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid WHERE g.rolname = $1`,
+        [CI_ROLES.purge],
+      );
+      expect(members.rows[0]?.n, "purge role has no members").toBe(0);
+      const inherits = await a.query<{ owner: boolean }>(
+        "SELECT pg_has_role($1, $2, 'USAGE') AS owner",
+        [CI_ROLES.purge, CI_ROLES.owner],
+      );
+      expect(inherits.rows[0]?.owner, "purge role does not inherit owner").toBe(false);
+    });
+  });
+
+  it("meta purge_role은 NOT NULL이고 이번 DB에 pod_ci_purge로 들어 있으며, urls.purge로 접속할 수 있다(비특권)", async () => {
+    await asRole(current().urls.migrator, async (c) => {
+      await c.query(`SET ROLE ${CI_ROLES.owner}`);
+      const meta = await c.query<{ name: string; app_role: string; owner_role: string; purge_role: string }>(
+        "SELECT name, app_role, owner_role, purge_role FROM pod_meta.db_environment",
+      );
+      expect(meta.rows).toEqual([
+        { name: "ci", app_role: CI_ROLES.app, owner_role: CI_ROLES.owner, purge_role: CI_ROLES.purge },
+      ]);
+      const col = await c.query<{ is_nullable: string; udt_name: string }>(
+        `SELECT is_nullable, udt_name FROM information_schema.columns
+          WHERE table_schema = 'pod_meta' AND table_name = 'db_environment' AND column_name = 'purge_role'`,
+      );
+      expect(col.rows).toEqual([{ is_nullable: "NO", udt_name: "name" }]);
+    });
+    await asRole(current().urls.purge, async (c) => {
+      const me = await c.query<{ u: string; s: string }>("SELECT current_user AS u, session_user AS s");
+      expect(me.rows[0]).toEqual({ u: CI_ROLES.purge, s: CI_ROLES.purge });
+      await expectSqlState(c.query("SELECT * FROM pod_meta.db_environment"), "42501");
+      await expectSqlState(c.query("CREATE SCHEMA pod_probe"), "42501");
+      await expectSqlState(c.query(`SET ROLE ${CI_ROLES.owner}`), "42501");
+      await expectSqlState(c.query(`SET ROLE ${CI_ROLES.app}`), "42501");
     });
   });
 
@@ -207,5 +261,9 @@ describe("F2 DB 시험 환경 bootstrap", () => {
     expect(roleProblems({ ...ok, member_of: [CI_ROLES.owner] }, ROLE_SPECS.app).length).toBe(1);
     expect(roleProblems({ ...ok, rolcanlogin: true }, ROLE_SPECS.owner).length).toBe(1);
     expect(roleProblems({ ...ok, member_of: [] }, ROLE_SPECS.migrator).length).toBe(1);
+    // purge: LOGIN·무구성원만 허용. owner 구성원이면 문제로 보고한다
+    expect(roleProblems({ ...ok, rolname: CI_ROLES.purge }, ROLE_SPECS.purge)).toEqual([]);
+    expect(roleProblems({ ...ok, rolname: CI_ROLES.purge, member_of: [CI_ROLES.owner] }, ROLE_SPECS.purge).length).toBe(1);
+    expect(roleProblems({ ...ok, rolname: CI_ROLES.purge, rolcanlogin: false }, ROLE_SPECS.purge).length).toBe(1);
   });
 });
