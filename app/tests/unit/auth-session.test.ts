@@ -346,9 +346,10 @@ describe("sealSession / readSession (§5.3)", () => {
     expect(await m.readSession(cfg, "")).toEqual(MISSING);
     expect(unsealSpy, "missing is decided before unsealData").not.toHaveBeenCalled();
     const { value } = await m.sealSession(cfg, { userId: USER, gen: 1 });
+    // iron이 무시하는 끝 버전 메타데이터 대신 인증 영역을 변조한다.
     const mid = Math.floor(value.length / 2);
     const tampered = value.slice(0, mid) + (value[mid] === "a" ? "b" : "a") + value.slice(mid + 1);
-    for (const sealed of [" ", "   ", "abc", "Fe26.2*1*abc", tampered, `${value}x`, value.slice(0, -1)]) {
+    for (const sealed of [" ", "   ", "abc", "Fe26.2*1*abc", tampered]) {
       expect(await m.readSession(cfg, sealed), JSON.stringify(sealed.slice(0, 24))).toEqual(INVALID);
     }
   });
