@@ -163,7 +163,7 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 명령(격리 Cloud·CI·개발 PC): `npm --prefix app test -- tests/unit/runtime-mode.test.ts tests/unit/auth-config.test.ts tests/unit/auth-flow-cookie.test.ts tests/unit/auth-recovery-cookie.test.ts tests/unit/return-to.test.ts`(저장소 루트).
 
-**dev 통합 전이다.** 이 모듈을 쓰는 OAuth discovery·토큰 교환·처리 함수(B2), 요청별 DAL(B3), HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)은 없다. 실제 로그인은 꺼져 있고 화면 PG 저장(F5)·서비스 DB·앱 배포(F6)도 없다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구)은 바뀌지 않았다.
+**독립 검토를 수락해 dev에 통합했다.** 이 모듈을 쓰는 OAuth discovery·토큰 교환·처리 함수(B2), 요청별 DAL(B3), HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)은 없다. 실제 로그인은 꺼져 있고 화면 PG 저장(F5)·서비스 DB·앱 배포(F6)도 없다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구)은 바뀌지 않았다.
 
 ## 한계 (제품 구현)
 

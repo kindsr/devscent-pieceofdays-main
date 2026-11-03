@@ -680,7 +680,7 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 - **독립 검토:** exact GREEN에서 PASS(P0·P1·P2 없음, `F4_AUTH_B1_GREEN_RUNNER_COMPLETE`)를 메인이 수락했다.
   - 독립 runner는 Node 26에서 단위 162·lint·typecheck를 직접 재현했다. Node 24는 CI 근거다.
   - flow·복구 쿠키의 iron 자체 TTL 경과 child 시험이 GREEN에서 처음 실제로 실행되어, 앱 시계 만료(`expired`)와 iron TTL 경과(`invalid`)를 구분해 확인했다.
-- **통합 상태:** 독립 검토는 수락됐고 **dev 통합 전**이다. 통합 상태는 메인이 통합 단계에서 갱신한다.
+- **통합 상태:** exact GREEN의 독립 검토를 수락하고 문서 5파일을 대조해 dev에 통합했다. 메인은 코드·시험·공개 계약을 바꾸지 않았으며 현재 상태와 후속 범위만 문서에 갱신했다.
 - **미실행·미연결:**
   - 제품에서 `openid-client`를 import하지 않는다. OAuth discovery·토큰 교환·처리 함수(B2), 요청별 DAL(B3), 발급 HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)은 없다.
   - 서비스의 실제 로그인은 꺼져 있다. 화면 PG 저장(F5), 서비스 DB·Next 배포(F6)도 없다. dev는 정적 D, 운영은 준비중 페이지다.
