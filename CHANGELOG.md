@@ -15,7 +15,7 @@
 ## [Unreleased]
 
 ### Added
-- F4 B0 OIDC 패키지 준비 (2026-11-03): `openid-client` 6.8.9를 고정했다(lock 추가는 `jose` 6.2.15·`oauth4webapi` 3.8.8뿐). Node 24.22.2·26.13.0에서 실제 import와 계획에서 쓸 10개 export를 확인하고, CI에서 단위 122·빌드 경계 4·운영 경계 6·E2E 12·DB 138·root 42를 통과했다. 독립 검토·dev 통합은 아직이며, 실제 OAuth·route·요청별 DAL·복구 쿠키·화면은 후속(B1~B5)이다.
+- F4 B0 OIDC 패키지 준비 (2026-11-03): `openid-client` 6.8.9를 고정했다(lock 추가는 `jose` 6.2.15·`oauth4webapi` 3.8.8뿐). Node 24.22.2·26.13.0에서 실제 import와 계획에서 쓸 10개 export를 확인하고, CI에서 단위 122·빌드 경계 4·운영 경계 6·E2E 12·DB 138·root 42를 통과했다. 독립 검토를 수락해 dev에 통합했다. 실제 OAuth·route·요청별 DAL·복구 쿠키·화면은 후속(B1~B5)이다.
 - F4b/c 실제 로그인 연결 계획 수립 (2026-11-03): `docs/plans/PLAN_mvp-oidc-integration.md`에 Google·Kakao OIDC callback·flow/복구 쿠키·요청별 DAL·탈퇴/복구 route·D 상태 화면·mock issuer 시험·Kakao PKCE 실제 검증 절차·콘솔 설정 프롬프트 초안을 정리했다. R1에서 독립 검토(P1 2·P2 7)와 메인 구현 결정을 반영해 flow codec 형식 검사·설정 바인딩 분리, 설정 오류 503 고정 응답, 실패별 쿠키·DB 효과표, 모드 판정 순서, 중복 query 보존, 서명 검증 옵션 필수, B5 로컬 preflight 범위, 세션 비밀 JSON 형식을 보완했다. 독립 재검토 PASS(P0·P1 없음)를 수락하고 캐시 키·Windows 줄바꿈도 보완해 dev에 통합했다. 코드·패키지·설정·서비스 연결과 실제 로그인은 후속이다.
 - F4 L2 계정 탈퇴·복구 도메인 (2026-11-03): `account/lifecycle.ts`(활성 확인·탈퇴 요청·복구)와 `completeSuccessfulLogin`의 `active`·`pending_deletion`·`purge_due` 결과를 추가했다. users 잠금 뒤 DB 시각으로 720시간 기한을 판정하고, 중복 탈퇴 불변·복구 재지급 없음·purge 경합 시 쓰기 0을 PG18 실제 시험으로 확인했다(DB 138, Node 24·26 앱 회귀). 독립 GREEN 검토를 수락해 dev에 통합했다. 실제 OAuth·HTTP·요청별 DAL·복구 쿠키·화면·삭제 실행 주기·서비스 DB는 후속이다.
 - F4 L1 계정 수명주기 스키마 (2026-11-03): `0002_account_lifecycle`로 사용자 상태·탈퇴 시각·삭제 기한·세션 세대 열과 일관성 제약, app 열 UPDATE 권한, 원장 owner 전용 삭제 예외, PUBLIC을 회수한 전용 role 삭제 함수 2개, 빈 CI 전용 down을 추가했다. 권한·NULL·기한·down/rollback 시험을 포함해 DB 119개와 Node 24·26 앱 회귀(단위 122)·독립 SQL 검토를 통과해 dev에 통합했다. 실제 서비스 DB에는 적용하지 않았다.

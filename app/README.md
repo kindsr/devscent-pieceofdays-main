@@ -142,7 +142,7 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 ## OIDC 패키지 준비 (F4 B0)
 
-`openid-client` 6.8.9(전이 `jose` 6.2.15·`oauth4webapi` 3.8.8)를 고정했다. 제품 호출부는 아직 없고 실제 로그인은 구현 전이다. 설치·import·CI 결과는 [OIDC 연결 계획](../docs/plans/PLAN_mvp-oidc-integration.md) §15에 있다.
+`openid-client` 6.8.9(전이 `jose` 6.2.15·`oauth4webapi` 3.8.8)를 고정하고 독립 검토를 수락해 dev에 통합했다. 제품 호출부는 아직 없고 실제 로그인은 구현 전이다. 설치·import·CI 결과는 [OIDC 연결 계획](../docs/plans/PLAN_mvp-oidc-integration.md) §15에 있다.
 
 ## 한계 (제품 구현)
 

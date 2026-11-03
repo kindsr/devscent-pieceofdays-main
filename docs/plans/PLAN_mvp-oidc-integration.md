@@ -641,7 +641,7 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 
 ## 15. B0 패키지 준비 실행 결과 (2026-11-03)
 
-이 계획 수립 단계(§12 "미실행")와 별개로, B0에서 실제로 설치하고 검사한 결과다. 공개 API·쿠키·모드·오류·표·정책 계약은 바꾸지 않았다. 독립 검토와 메인 통합은 아직 진행 전이다.
+이 계획 수립 단계(§12 "미실행")와 별개로, B0에서 실제로 설치하고 검사한 결과다. 공개 API·쿠키·모드·오류·표·정책 계약은 바꾸지 않았다. 독립 검토를 수락해 dev에 통합했다.
 
 - **변경:** `app/package.json`의 dependencies에 `openid-client: "6.8.9"`(exact) 1줄을 추가했다. `app/package-lock.json`에는 아래 3개 항목과 루트 의존성 1줄만 추가됐다. 기존 직접 의존성 업그레이드·범위 변경·overrides는 없다.
 
@@ -655,6 +655,7 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 - **Cloud 실행(Node 26.13.0·npm 11.20.0):** `npm install --save-exact openid-client@6.8.9`(`--force`·`--legacy-peer-deps` 없음, 3개 추가), `npm --prefix app ci`, `npm --prefix app ls --all`(invalid·extraneous·필수 UNMET 0), lint, typecheck, `npm --prefix app test`(단위 122, skip 0)가 모두 exit 0이었다.
 - **실제 import(Node 26.13.0·24.22.2 각 1회, 시험·CI 변경 없음):** `discovery`·`ClientSecretPost`·`authorizationCodeGrant`·`buildAuthorizationUrl`·`enableNonRepudiationChecks`·`randomPKCECodeVerifier`·`calculatePKCECodeChallenge`·`randomState`·`randomNonce`·`allowInsecureRequests` 10개가 모두 `function`이었다. `typeof`만 읽었고 code·token·secret 생성이나 공급자 HTTP 호출은 하지 않았다.
 - **CI([41702163333](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41702163333), 패키지 커밋 `7a4c373`):** Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12, DB 138(PG 18.6 + Node 26)이 skip 0으로 통과했다. [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41702163653) 42·Compose도 통과했다.
+- **최종 HEAD 검증:** `52f25a81419522e933bfc53b5b6ac129f78d5cc6`의 [CI 41703229158](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41703229158)·[root 41703229141](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41703229141)도 같은 기준선을 모두 통과했다. exact HEAD의 독립 검토 PASS(P0·P1·P2 없음, `F4_OIDC_PACKAGE_RUNNER_COMPLETE`)를 메인이 수락했다. 독립 runner는 Node 26의 `npm ci`·`npm ls`·10개 export import를 직접 재현했고, Node 24의 import는 작성자 실행 근거와 구분했다. 메인은 문서·lock 구조를 대조해 기존 항목 변경 0·신규 3패키지만 추가됨을 확인했다.
 - **미실행:** 제품 호출부는 0개다. 실제 OAuth discovery·토큰 교환·콘솔 작업·자격 증명, `.env*`, 로컬 DB(PG18 없음), Next 서버·브라우저·FullCheck는 실행하지 않았다. B1 이후 구현·시험은 아직 없다.
 
 ---
