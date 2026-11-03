@@ -1,6 +1,7 @@
-# PLAN — 계정 탈퇴·30일 복구·삭제 (구현 전 계획, R4)
+# PLAN — 계정 탈퇴·30일 복구·삭제 (R5: 구현 계약)
 
-- **상태:** 계획이다. 메인 기술 결정(2026-11-03)을 반영했다. 코드·SQL·migration·cron·DB·계정 등록은 하지 않았다. 이 문서는 구현 착수나 완료를 뜻하지 않는다.
+- **상태:** 계획이다. 정책·기술 결정은 §1~§8(R4, dev 통합됨)에 있고, RED 담당용 **구현 계약은 §9~§13(R5)**이다. 코드·SQL·migration·cron·DB·계정 등록은 하지 않았다. 이 문서는 구현 착수나 완료를 뜻하지 않는다.
+- **R5 BASE:** `dev` `3832cca94164c2b9c81c21fa58c7ad8d38a23715`(F4a codec `96bcf8c` 포함). 3832cca 통합 CI 결과는 이 문서 작성 시 직접 확인하지 않았다.
 - **BASE:** `dev` `76a39d1e65a889a03eb1e5bd64a7e0b3ef161800`.
   - 근거 코드: `app/migrations/0001_init.up.sql`, `app/src/server/account/login.ts`, `app/src/server/credit/first-login-grant.ts`, `app/src/server/db/migrate.ts`.
 - **[사용자 확정] 2026-11-03:** "로그인은 둘다 붙이고, 30일 복구 기간 후 삭제"([PRD](../PRD.md) §0).
@@ -164,11 +165,151 @@ type LoginOutcome =
 - 순서:
   1. 이 계획과 auth §5의 수락
   2. F4a codec(키 5개)
-  3. migration 0002 + lifecycle 도메인(RED에서 F3 기대값과 새 시험 → GREEN)
-  4. F4b/c 로그인·복구·탈퇴 화면
-  5. F6 purge 주기·SLA·백업 규칙
+  3. L1 schema·role slice → L2 도메인·로그인 slice(§13)
+  4. F4b/c OAuth·HTTP·복구 쿠키·화면
+  5. F6 purge 주기·SLA·백업 규칙, 운영 provisioning(§11)
 - 롤백:
   - 앱을 되돌리면 경로가 꺼진다. 열은 expand 상태로 둔다.
   - `pending_deletion` 행이 있으면 down하지 않는다(F2 가드).
   - 이미 purge된 데이터는 백업 절차 없이는 복원할 수 없다.
 - 미확인: 구현·시험(미실행), 운영 시계·시간대, 백업 도구·보존 기간.
+
+## 9. 구현 계약 — 도메인 API (R5, L2 slice)
+
+**파일:** `app/src/server/account/lifecycle.ts`(신규, `import "server-only"`), `app/src/server/account/login.ts`(변경). 기존 `Db`·`withTransaction`·`Result`·`isUuid`만 쓰고, 새 프레임워크나 저장 추상화는 만들지 않는다.
+
+```ts
+export type SessionSubject = { userId: string; gen: number };   // 검증된 세션 또는 복구 증명에서만 온다
+
+// 매 요청 DAL 진입 검사(잠금 없음, 한 SELECT)
+export function verifyActiveAccount(db: Db, s: SessionSubject): Promise<boolean>;
+// 탈퇴 요청: 검증된 일반 세션의 subject로만 호출
+export function requestWithdrawal(db: Db, s: SessionSubject):
+  Promise<Result<{ purgeAfter: Date; gen: number; changed: boolean }, "not_found" | "stale_session">>;
+// 복구: 검증된 복구 쿠키(F4b/c)의 subject로만 호출
+export function restoreAccount(db: Db, proof: SessionSubject):
+  Promise<Result<{ gen: number }, "not_found" | "not_pending" | "stale_proof" | "expired">>;
+```
+
+- **호출 경계:** userId·gen은 F4a `readSession`이나 F4b/c 복구 쿠키 검증 결과에서만 받는다. HTTP 입력의 userId를 신뢰하는 경로는 없다. 일반 F3 저장 함수(diary·decoration·preferences·balance)의 시그니처는 바꾸지 않는다. 활성 검사는 F4b/c DAL이 `verifyActiveAccount`를 한 번 호출하는 것으로 한다.
+- **공통 입력 검사(SQL 전):** `isUuid(userId)`가 아니거나 `!(Number.isSafeInteger(gen) && gen > 0)`이면 → `verifyActiveAccount`는 `false`, 나머지 둘은 `not_found`.
+- **gen 비교:** SQL에서는 항상 `auth_generation::bigint = $2::bigint`. int4 범위를 넘는 안전 정수는 오류(22003) 없이 불일치가 된다.
+
+| 함수 | 처리(한 트랜잭션, Read Committed) | 결과 |
+|---|---|---|
+| `verifyActiveAccount` | `SELECT 1 FROM pod.users WHERE id=$1::uuid AND status='active' AND auth_generation::bigint=$2::bigint` | 행이 있으면 `true`. 그 밖(없음·pending·gen 불일치)은 `false` |
+| `requestWithdrawal` | ① `SELECT status, auth_generation, purge_after … FOR UPDATE` ② `t := clock_timestamp()` 한 번 | 행 없음 → `not_found`. `active`이고 gen이 다름 → `stale_session`(변화 없음). `active`이고 gen이 같음 → `status='pending_deletion'`, `deletion_requested_at=t`, `purge_after=t+'720 hours'`, `gen+1` → `ok{changed:true}`. 이미 `pending_deletion` → **변화 없이** `ok{purgeAfter(기존), gen(현재), changed:false}`(기한 연장·gen 중복 증가 없음) |
+| `restoreAccount` | ① 행 잠금 ② `t := clock_timestamp()` | 행 없음 → `not_found`. `active` → `not_pending`(변화 없음). `pending_deletion`이고 `t ≥ purge_after` → `expired`. `pending_deletion`이고 gen이 다름 → `stale_proof`. 그 밖 → `status='active'`, 두 시각 NULL, `gen+1` → `ok{gen}` |
+
+- 판정 순서는 표의 순서로 고정한다. 복구는 기한 검사가 gen 검사보다 먼저다.
+- **복구는 `grantFirstLogin`을 호출하지 않는다.** 잔액·원장·`first_login_at`은 그대로다.
+
+**`completeSuccessfulLogin` 변경**(F3 공개 계약과 대조):
+
+| 항목 | 현재(F3) | 변경 |
+|---|---|---|
+| 서명 | `(db, identity) → Result<LoginOutcome, "invalid_identity">` | 같다 |
+| 성공 값 | `{ userId, createdUser, granted, balance }` | §3의 union. `active`는 잠금 안에서 읽은 `gen`을 포함한다 |
+| 신규 identity | users INSERT → identity INSERT(경합에서 지면 ROLLBACK 후 1회 재시도) → grant | 같다. `INSERT … RETURNING id, auth_generation`(=1) → `kind:"active"` |
+| 기존 identity | grant → `first_login_at` | **users `FOR UPDATE` → t** → `active`면 grant → `first_login_at` / `pending_deletion`이고 `t < purge_after`면 `pending_deletion`(grant·`first_login_at` 변경 없음) / `t ≥ purge_after`면 `purge_due` |
+
+- **잠금 순서(고정):** users 행 → credit_accounts 행(`grantFirstLogin` 내부). 탈퇴·복구·purge도 users 행을 먼저 잠근다. 그래서 교착 순서가 생기지 않는다.
+  - [사실] app은 `UPDATE(first_login_at)`을 가지므로 users `FOR UPDATE`가 가능하다.
+- **동시성 결과:**
+  - 로그인 대 탈퇴: 행 잠금으로 직렬화된다. 로그인이 먼저 커밋되면 `active` 세션(옛 gen)이 발급되지만, 다음 요청의 DAL에서 거부된다.
+  - 복구 대 purge: 하나만 효과가 있다(각자 잠금 뒤의 t).
+  - 탈퇴 2건 동시: 하나만 `changed:true`다.
+- **"즉시 차단"의 범위:** 탈퇴가 커밋된 **뒤 시작하는 요청**의 DAL 검사가 거부한다. 이미 검사를 통과해 진행 중인 요청을 자동으로 취소하지는 않는다. 그 이상의 직렬화(쓰기마다 users 잠금 등)는 도입하지 않는다(메인 결정이 있으면 별도로 한다).
+
+## 10. migration `0002_account_lifecycle` 파일 계약 (L1 slice)
+
+**`app/migrations/0002_account_lifecycle.up.sql`** (실행기가 BEGIN·advisory lock·`SET LOCAL ROLE owner` 안에서 실행)
+1. `ALTER TABLE pod.users ADD COLUMN`: `status`, `deletion_requested_at`, `purge_after`, `auth_generation`(§6 정의).
+   - CHECK 이름: `users_status_check`, `users_auth_generation_check`, `users_lifecycle_consistency`
+   - 일관성 CHECK 식: `(status='active' AND deletion_requested_at IS NULL AND purge_after IS NULL) OR (status='pending_deletion' AND deletion_requested_at IS NOT NULL AND purge_after = deletion_requested_at + interval '720 hours')`
+2. `CREATE INDEX users_purge_due_idx ON pod.users (purge_after) WHERE status = 'pending_deletion'`.
+3. app GRANT: `UPDATE (status, deletion_requested_at, purge_after, auth_generation) ON pod.users`(기존 DO 블록 방식, `format('%I')`). DELETE는 주지 않는다.
+4. `CREATE OR REPLACE FUNCTION pod.emotion_ledger_append_only()`: `TG_OP='DELETE' AND current_setting('pod.purge_user_id', true) = OLD.user_id::text AND current_user = (SELECT owner_role FROM pod_meta.db_environment)`일 때만 `RETURN OLD`. 그 밖은 기존과 같은 `RAISE EXCEPTION 'emotion_ledger is append-only'`. 기존 두 트리거(행 UPDATE/DELETE, 문장 TRUNCATE)는 그대로 두고, TRUNCATE·UPDATE는 항상 거부된다.
+5. `CREATE FUNCTION pod.list_purge_due(p_limit int) RETURNS SETOF uuid`
+   - `LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp`
+   - `p_limit`이 1~1000 밖이면 RAISE(상한은 [추천] 기술값)
+   - 본문: `SELECT id FROM pod.users WHERE status='pending_deletion' AND purge_after <= clock_timestamp() ORDER BY purge_after, id LIMIT p_limit`
+6. `CREATE FUNCTION pod.purge_user_if_due(p_user uuid) RETURNS text`(같은 속성)
+   - 반환 `'absent' | 'not_due' | 'purged'`. 본문은 §5 순서(행 잠금 → t → 조건 → GUC → 원장 → 계정 → users)다. 모든 객체를 `pod.`로 완전 수식한다.
+7. **같은 파일(같은 트랜잭션)에서** 두 함수 모두 `REVOKE ALL ON FUNCTION … FROM PUBLIC`.
+8. purge role GRANT(§11 추천안 A): `GRANT USAGE ON SCHEMA pod`, 두 함수 `GRANT EXECUTE`. 테이블 권한은 주지 않는다.
+
+**`0002_account_lifecycle.down.sql`** (빈 CI DB 전용)
+- 첫 문장: 0001 down과 같은 `DO $guard$`(`name='ci'` + 8개 테이블 무데이터)
+- 이후 순서: purge role의 `REVOKE EXECUTE`·`USAGE` → `DROP FUNCTION` 두 개 → 트리거 함수를 0001 본문으로 `CREATE OR REPLACE`(이후 `REVOKE ALL … FROM PUBLIC` 유지) → app 열 UPDATE 권한 `REVOKE` → `DROP INDEX` → CHECK·열 `DROP`
+- meta 열(`purge_role`)은 provisioning 소유이므로 지우지 않는다.
+
+**sql-policy:**
+- [사실] 현재 validator는 최상위 트랜잭션 제어·VACUUM·`CREATE DATABASE`·`CONCURRENTLY`·`ALTER SYSTEM`·`BEGIN ATOMIC`만 막는다. 달러 인용 PL/pgSQL `CREATE FUNCTION … SECURITY DEFINER`·`DO` 블록은 허용된다.
+- 그래서 **validator 변경은 필요 없다.** `SECURITY DEFINER`의 `search_path` 고정은 정책 규칙이 아니라 DB 시험(카탈로그 `prosecdef`·`proconfig` 확인)으로 보장한다.
+
+## 11. purge role 이름·GRANT 경로 — 비교와 추천
+
+[사실] `pod_meta.db_environment`에는 `name, app_role, owner_role`만 있다.
+- CI에서는 `tests/db/helpers.ts`가 role(`pod_ci_owner/migrator/app`)을 만들고 DB마다 meta 행을 넣는다. 운영에서는 provisioning이 넣는다.
+- migrator에는 `CREATEROLE`이 없으므로 **migration이 role을 만들 수 없다.**
+- `readEnvironment`와 `environment.test`는 열 이름을 명시해 SELECT하므로, meta 열이 늘어도 기존 코드·시험이 깨지지 않는다.
+
+| 안 | 내용 | 변경 파일 | 장점 | 단점 |
+|---|---|---|---|---|
+| **A [추천]** meta 열 확장 + migration GRANT | provisioning이 `db_environment.purge_role name NOT NULL`과 role을 준비한다. 0002가 DO 블록에서 읽어 `format('%I')`로 GRANT하고, 열이 없거나 NULL이면 RAISE(fail closed) | `tests/db/helpers.ts`(role `pod_ci_purge` LOGIN·무구성원, `ROLE_SPECS`·`membershipProblems`, meta 열·값, DB CONNECT), 0002 up/down, DATA_CONTRACT §5·§6(메인 동기화), 운영 런북(F6) | 권한이 migration 이력과 체크섬 안에 있다. app_role과 같은 기존 패턴이고 down으로 대칭 회수된다 | 운영 provisioning 계약이 한 열 늘어난다 |
+| B provisioning이 migration 뒤 GRANT | 0002는 PUBLIC 회수만 하고, owner 권한 step이 따로 GRANT한다 | helpers.ts(post-up GRANT step), 런북 | migration이 role을 몰라도 된다 | 권한이 migration 밖에 있어 drift·누락 위험이 있고, `lazyMigrated` 뒤 별도 단계가 필요하며 down이 대칭이 아니다 |
+| (불가) migration이 role 생성 | — | — | — | migrator에 CREATEROLE이 없다(F2 계약) |
+
+- **실패 정리:**
+  - A에서 role이나 열이 없으면 0002가 롤백되고 기록 행도 남지 않는다.
+  - 하네스는 기존 규칙대로 role을 "없으면 만들고, 있으면 속성만 확인(다르면 중단, 비밀번호 덮어쓰기 금지)"한다. 이번 실행이 만든 DB만 삭제하고, role은 지우지 않는다(기존 관례).
+- **운영 경계(F6):** 실제 dev/prod purge role 생성·비밀번호·접속 경로·실행 주기는 비공개 런북이 정한다. 이 추천은 메인 기술 검토 대상이며, 사용자에게 인프라 권한을 새로 승인받은 것이 아니다.
+
+## 12. 시험·runner 소유 (`.claude/tdd.conf` TEST_PATTERNS)
+
+[사실] `TEST_PATTERNS="tests/* .claude/tdd.conf app/tests/* app/vitest*.ts app/playwright*.ts"`. `server-only`는 `app/vitest*.ts`의 no-op alias로 해석되고, migration CLI 경로(`migrate-cli.ts`·`migrate.ts`·`sql-policy.ts`)에는 marker가 없다(유지).
+
+| 단계 | 소유 경로 | 내용 |
+|---|---|---|
+| RED | `app/tests/db/helpers.ts`, `app/tests/db/f2-support.ts`(필요한 helper만), `app/tests/db/environment.test.ts`, `app/tests/db/migrate.test.ts`, `app/tests/db/privileges.test.ts`, 신규 `app/tests/db/lifecycle-schema.test.ts`(L1), `app/tests/db/f3-login-grant.test.ts`, 신규 `app/tests/db/lifecycle.test.ts`(L2) | harness role·meta 열, 기대값 변경, 새 시험. 새 제품 모듈은 각 `it` 안에서 동적 import한다 |
+| GREEN | `app/migrations/0002_account_lifecycle.{up,down}.sql`(L1), `app/src/server/account/lifecycle.ts`·`login.ts`(L2) | RED 파일 수정 0 |
+| 변경 없음 | `sql-policy.ts`, `migrate.ts`, `.github/workflows/app-validation.yml` | CI는 기존 `npm run test:db` + global-setup의 role 부트스트랩으로 실행된다 |
+
+- **RED에서 고칠 기존 기대값:**
+  - `migrate.test` "up on an empty DB applies 0001"의 기록 행이 `[(1,'init',…), (2,'account_lifecycle',…)]`이 된다. pod 테이블 목록은 8개 그대로다.
+  - `f3-login-grant`의 `toEqual({ userId, createdUser, granted, balance })` 같은 정확 일치는 `{ kind: "active", userId, gen: 1, createdUser, granted, balance }`로 바뀐다(`toMatchObject` 사례는 `kind`만 추가).
+  - `environment.test`: purge role 속성과 meta `purge_role` 값.
+- **실제 PG18 시험**(일회용 DB, app·purge·owner 접속, mock 최소화):
+  - **L1** `lifecycle-schema.test.ts`:
+    - CHECK 위반(23514)
+    - app 열 UPDATE 허용 / users DELETE 42501
+    - app이 두 함수 호출 시 **42501**
+    - purge role 함수 실행 OK / purge role의 `pod.users`·`emotion_ledger` 직접 SELECT·DELETE 42501
+    - 카탈로그 `prosecdef=true`·`proconfig={search_path=pg_catalog, pg_temp}`·PUBLIC EXECUTE 없음
+    - 원장: app UPDATE·DELETE 42501, owner의 GUC 없는 DELETE·UPDATE·TRUNCATE P0001, owner가 GUC를 다른 user로 설정한 DELETE P0001
+    - purge: `not_due`(기한 전) / `purged`(owner가 과거 시각으로 만든 행, 8개 테이블 종속 행 0) / 재실행 `absent` / 실패 주입 트리거로 전체 롤백
+    - `list_purge_due` 정렬·limit 경계
+    - up→down→up 스냅샷 동일
+  - **L2** `lifecycle.test.ts`(§9 표의 모든 분기):
+    - 탈퇴 중복 → `changed:false`, 기한·gen 불변
+    - stale session·stale proof
+    - `purge_after − 1s` 복구 OK / `purge_after` 이후 `expired`
+    - **잠금 대기 경계:** tx A가 행을 잠그고 기한을 넘긴 뒤 커밋하면, 기한 전에 시작한 복구는 거부된다
+    - 복구 뒤 잔액·원장 행 수·`first_login_at` 불변, gen +1
+    - `verifyActiveAccount`: 옛 gen·pending·없음·int4 초과 gen(예: 2^31) → false(raw 22003 없음)
+    - 로그인: Google·Kakao 각각 pending → `pending_deletion`(원장 불변), due → `purge_due`(새 user 없음)
+    - 동시성: 로그인 대 탈퇴, 복구 대 purge, 탈퇴 2건
+    - purge 뒤 재로그인 → 새 user + 지급(현행 기술 결과)
+  - **회귀:** 기존 단위 122·빌드 경계 4·DB 99(기대값만 바뀐 사례 포함)·prod 6·E2E 12·root 42 유지. 신규 시험 수는 잠그지 않는다.
+- **명령**(일회용 PG18 컨테이너·격리 CI만): `npm --prefix app run test:db -- tests/db/lifecycle-schema.test.ts`, `… tests/db/lifecycle.test.ts`, 전체 `npm --prefix app run test:db`·`npm --prefix app test`.
+
+## 13. slice와 완료 조건
+
+| slice | 전제 | 범위 | 완료 조건 | 롤백 |
+|---|---|---|---|---|
+| **L1 schema·role** | 이 계획 수락, §11 안 선택(A 추천), F4a 통합 | RED: harness role·meta, migrate·environment·privileges 기대값, `lifecycle-schema.test`. GREEN: 0002 up/down | L1 시험과 기존 회귀 통과(Node 24·26 CI), down 대칭 | PR revert(앱 경로 미연결이라 영향 없음). 적용된 DB는 빈 CI에서만 down |
+| **L2 도메인·로그인** | L1 통합 | RED: `f3-login-grant` 기대값, `lifecycle.test`. GREEN: `lifecycle.ts`, `login.ts` | §9 모든 분기, 동시성, 지급 회귀 | PR revert. 열은 expand 상태로 남는다 |
+
+- **범위 밖(F4b/c·F6):** OAuth·HTTP route·DAL 연결·복구 쿠키 codec·화면, 실제 purge 실행 주기·SLA·백업 삭제 재적용, 운영 role provisioning.
+- 새 개인정보·법정 보관 정책이나 SLA 값은 만들지 않는다. 계정 연결 답변은 이 canonical user 단위 backend의 선행 조건이 아니다.
