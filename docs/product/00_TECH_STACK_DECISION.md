@@ -81,7 +81,7 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
 
 ## 4. 이 결정이 확정하지 않는 것
 
-- 인증 공급자와 로그인 방식 [미정]. 첫 로그인 지급의 기준 사건이 이 결정에 달려 있다.
+- 로그인 공급자는 2026-11-03 사용자가 **Google·Kakao 둘 다**로 확정했다(PRD §0). 공급자 간 계정 연결 방식은 [미정]이다.
 - 외부 서비스로 개인정보나 일기 내용을 보내는 일(외부 인증 공급자에게 넘어가는 식별 정보, AI 제공자 등)은 확정하지 않았다. 각각 사용자 결정과 동의 설계가 먼저다.
 - 사진의 MVP 포함 여부(PRD Q1), AI 초안(PRD Q2), 공유(PRD Q3).
 - 앱 이미지의 배포 전환. 현행 배포 프로그램은 승인된 정적 nginx 이미지만 허용하므로, 전환에는 별도 계획과 메인 검토가 필요하다(PLAN_mvp-foundation F6).
@@ -108,4 +108,5 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
   - 제품 저장소 설치는 F4a 호환 bootstrap에서 Node 24·26 CI로 검증한다.
   - 세션 정책 세부(R2)는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5.
 - **설치 시점:** F4a에서는 `iron-session`만 설치하고, `openid-client`는 필요해지는 F4b에서 설치한다.
-- **공급자:** Google / Kakao / 둘 다는 **사용자 답변 대기**다. 고르지 않았다.
+- **공급자:** 2026-11-03 사용자 확정은 **Google·Kakao 둘 다**다(PRD §0). 이 절의 기술 기본값은 메인 결정으로 그대로 둔다. 계정 연결은 사용자 답변 대기다.
+- **세션 payload의 generation 필드 [검토 대기]:** 30일 복구형 탈퇴(PRD §0)에서 이전 쿠키를 무효화하려고 제안했다. [PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) §4 참조. F4a RED 전에 메인 검토가 필요하다. package-only `iron-session` bootstrap은 이와 무관하게 진행할 수 있다.

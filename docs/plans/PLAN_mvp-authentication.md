@@ -1,7 +1,9 @@
-# PLAN — F4 인증·세션·첫 로그인 지급 연결 (R2)
+# PLAN — F4 인증·세션·첫 로그인 지급 연결 (R3)
 
 - 상태:
-  - 공급자는 **사용자 선택 대기**다.
+  - **2026-11-03 사용자 확정:** 로그인 공급자는 **Google·Kakao 둘 다**, 계정 탈퇴는 **30일 복구 기간 뒤 삭제**다([PRD](../PRD.md) §0, 탈퇴 설계는 [PLAN_account-lifecycle](PLAN_account-lifecycle.md)).
+  - 공급자 간 계정 연결은 **사용자 답변 대기**다.
+  - 세션 payload의 `gen` 추가(§5.4)는 **F4a RED 전 메인 검토 대기**다.
   - 기술 기본값은 **메인이 수락**했다(R1·R2, 2026-11-03).
   - 이 문서는 **검토 중**이다.
   - F4 착수 승인이나 인증 완료 문서가 아니다. 코드·의존성·SQL·환경은 바꾸지 않았다.
@@ -23,10 +25,11 @@
 
 | 구분 | 내용 |
 |---|---|
-| [확정] 사용자 | 전체 스택, D 테마, 감정덩어리 **계정당 첫 성공 로그인 10개 한 번** |
+| [확정] 사용자 | 전체 스택, D 테마, 감정덩어리 **계정당 첫 성공 로그인 10개 한 번**, **Google·Kakao 로그인 둘 다**, **탈퇴 → 30일 복구 → 삭제**(2026-11-03) |
 | [메인] | OIDC 검증 `openid-client` 6.8.9, 세션 S1 `iron-session` 9.0.1 봉인, 절대 7일, Next 내장 `server-only`, POST 요청의 명시 Origin 검사, 첫 성공 로그인 = 공급자 검증 + F3 COMMIT, scope `openid`만, 토큰·email 저장 안 함 |
 | [메인] R2 | §5 설정 계약, 쿠키 이름 분기, `readSession` 분류, payload 시간 규칙, Origin 정확 대조, F4a 파일·단계 소유 |
-| [미정] 사용자 | **공급자(Google / Kakao / 둘 다)**. 무응답·첫 선택지는 승인이 아니다. 계정 연결, 사진·공유·AI, 탈퇴 |
+| [미정] 사용자 | **공급자 간 계정 연결**(권고 후보: 로그인 뒤 다른 수단 연결 / 대안: 공급자별 별도 계정, email 자동 연결·기록·잔액 병합은 미승인), 사진·공유·AI |
+| [검토 대기] | 세션 `gen`과 DAL의 사용자 상태 대조(§5.4), F3 `completeSuccessfulLogin`의 탈퇴 상태 분기([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §3) |
 | [미정] 메인(조건부) | 서버 측 state 소비 저장소(§3), S2 DB 세션(§6) |
 | [미확인] | Node 24.22.2에서의 iron 설치·빌드, DB·E2E에서의 동작, Kakao가 실제로 `code_challenge`를 받는지, Playwright Chromium이 `http://127.0.0.1`에서 Secure 쿠키를 받는지(R2는 http에 Secure를 쓰지 않으므로 의존하지 않음) |
 
@@ -117,7 +120,7 @@ type SessionConfig = Readonly<{
   secureCookies: boolean;                       // baseUrl.protocol에서 파생
   now: () => Date;                              // 기본 () => new Date()
 }>;
-type SessionPayload = { v: 1; userId: string; iat: number; exp: number }; // iat·exp = epoch ms 정수
+type SessionPayload = { v: 1; userId: string; iat: number; exp: number }; // R2 초안. §5.4 결정 전에는 잠그지 않는다
 
 loadSessionConfig(env: Record<string, string | undefined>, nodeEnv: string | undefined):
   Result<SessionConfig, "auth_not_configured" | "invalid_config">;
@@ -164,6 +167,19 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 | `assertSameOrigin` | `null`·`""` → `origin_missing`. 그 밖에는 `cfg.baseUrl.origin`의 직렬화 문자열과 **정확히 같을 때만** `ok`. 리터럴 `"null"`, 공백, 경로가 붙은 값, 여러 origin, 파싱 불가, port·scheme·host가 다른 값은 모두 `origin_mismatch`. 요청의 Host·forwarded 헤더로 기준을 만들지 않는다 |
 
 - 새 오류 코드·역할·세션 정책은 추가하지 않는다.
+- **R2 리뷰 P2 정리:**
+  - (1) `expired`와 `invalid`는 소비자(F4b/c)가 똑같이 일반 "로그인 필요"로 처리한다. 문구·지표로 구분하는 데 쓰지 않는다. raw iron reason은 인증된 만료 근거가 아니다(실제 시계에서는 `exp` 뒤 약 60초만 `expired`가 관찰된다).
+  - (2) `iat ≤ now`는 **단일 시계(단일 컨테이너)** 전제다. 인스턴스를 늘리면 F6에서 다시 판단한다.
+  - (3) 요청에서 세션을 읽을 때도 `sessionCookieOptions(cfg)`의 **같은 이름 하나만** 읽는다. 다른 이름으로의 fallback은 없다(형제 도메인의 cookie tossing 방지).
+  - (4) URL 범위: 개발 http 예외는 §5.2 7행뿐이다. 개발에서 `https://localhost` 같은 https loopback은 8행에 따라 거부한다. WHATWG에서 빈 `?`·`#`는 빈 search·hash라 통과하고, 결과는 origin으로 정규화된다. 그 밖의 loopback 변형(`*.localhost`·`0.0.0.0`·IPv4-mapped)은 따로 목록화하지 않는다(운영은 https와 8행 목록만으로 판정).
+
+### 5.4 계정 상태·generation [검토 대기, F4a RED 전]
+
+- 30일 복구형 탈퇴(사용자 확정) 때문에, 복사된 쿠키를 철회할 수 없는 S1의 한계를 보완해야 한다. 비교와 권고는 [PLAN_account-lifecycle](PLAN_account-lifecycle.md) §4다.
+- **권고 최소안:** payload `{ v: 1, userId, gen, iat, exp }`(키 정확히 5개, `gen`은 안전한 양의 정수)로 하고, `sealSession(cfg, { userId, gen })`, `readSession` → `ok { userId, gen, expiresAt }`.
+  - 상태·`gen` 대조는 F4b/c DAL이 매 요청 DB에서 한다. 불일치나 비활성 상태는 "로그인 필요"다.
+  - 대안 S2(DB 세션)는 §6.
+- 메인이 결정하기 전까지 §5.1·§5.3의 "키 4개"는 확정하지 않는다. **package-only `iron-session` bootstrap(§8 ①)은 이 결정과 무관하게 진행할 수 있다.**
 - 로그아웃은 쿠키 삭제다. 복사된 쿠키를 서버에서 따로 폐기하는 것은 보장하지 않는다. 키 회전은 번호 붙은 키 맵으로 이전 키를 함께 허용하고 가장 큰 번호로 봉인한다(spike 실증).
 
 ## 6. 세션 대안·서버 경계
@@ -184,10 +200,10 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 - 키 이름:
   - `POD_AUTH_SESSION_SECRETS`(§5.2 형식)
   - `POD_AUTH_BASE_URL`
-  - 고른 공급자 것만: `POD_AUTH_GOOGLE_CLIENT_ID`·`_SECRET`, `POD_AUTH_KAKAO_CLIENT_ID`·`_SECRET`
+  - 공급자(둘 다 확정): `POD_AUTH_GOOGLE_CLIENT_ID`·`_SECRET`, `POD_AUTH_KAKAO_CLIENT_ID`·`_SECRET`
 - 설정이 없으면 fail closed다(로그인·세션 "사용 불가"). dummy 비밀로 인증되는 fallback은 없다. 빌드는 비밀 없이 성공하고, 검사는 요청 시점에 한다.
 - 실제 값은 Cloud·PR CI에 주지 않는다. 시험은 `ci-only-*` 가짜 키와 모의 issuer만 쓴다. 환경별 프로비저닝은 F6에서 메인이 비공개 런북으로 한다.
-- 공급자가 정해진 뒤의 콘솔 작업(지금 실행하지 않음):
+- 공급자 콘솔 작업(메인이 사용자에게 안내, 지금 실행하지 않음):
   - Google: 동의 화면, 웹 클라이언트, 환경별 redirect, `openid`.
   - Kakao: 앱, 도메인, Redirect URI, OIDC 활성화, 최소 동의항목, client secret, PKCE 수락 확인, 운영 앱 고정.
 
@@ -202,7 +218,9 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 **빌드 경계 harness(`node:test`):**
 - 실제 auth 진입 모듈을 기반으로 다음 세 가지를 확인한다: 서버 positive control(build 성공), client 직접 import 거부, shared를 거친 전이 import 거부. 단순 모형 marker만 시험하지 않는다.
 - 각각을 **격리된 임시 app 사본**에서 `next build`로 확인한다. 고정된 원본 소스는 편집하지 않는다.
-- node test마다 신규 auth 모듈이 없으면 실패로 수집한다(0개·skip 없음). positive control이 RED 단계에서 성립하는지 확인해 가짜 음성 통과를 막는다.
+- node test마다 신규 auth 모듈이 없으면 실패로 수집한다(0개·skip 없음).
+- **positive control의 단계 구분(R2 P2-4):** RED의 positive control은 auth import가 **없는** 기준 사본의 build 성공이다. RED 기준선에는 존재하지 않는 auth import를 넣지 않는다. 실제 auth 모듈 기반 서버 positive control은 GREEN에서 확인한다.
+- harness는 GREEN의 workflow step 전까지 CI에서 실행되지 않는다. RED 증거는 Cloud 독립 runner의 격리 실행 결과뿐이다.
 - `POD_FULL_CHECK_ISOLATED=1`이 없으면 시작을 거부한다. Cloud 독립 runner와 격리 CI에서만 실행하며, 공유 운영 서버에서는 실행하지 않는다.
 
 **기능 시험 사례 (RED 대상, 신규 시험 수는 잠그지 않음):**
@@ -223,14 +241,17 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 3. §3 표대로 동작한다. 서버 state 재사용 거부는 보장하지 않는다.
 4. PKCE S256·state·nonce·issuer·redirect를 검증한다. 공급자가 PKCE를 받지 않는 것으로 확인되면 착수 전에 메인이 결정한다.
 5. 상태 변경 POST는 `assertSameOrigin`을 통과해야 한다. 세션은 절대 7일이다(§5).
-6. 공급자 토큰·email을 저장하지 않는다. 세션 payload는 4개 키만 담는다.
+6. 공급자 토큰·email을 저장하지 않는다. 세션 payload는 §5.4 결정에 따른 키만 담는다.
 7. 운영은 모의 issuer·fixture·http·미설정 fallback을 거부한다.
 8. auth 모듈을 client에서 직접 또는 전이로 import하면 `next build`가 실패한다.
+9. 탈퇴 즉시 차단·30일 복구·삭제 기준은 [PLAN_account-lifecycle](PLAN_account-lifecycle.md) §7을 따른다.
 
-## 10. F4b/c (사용자가 공급자를 고른 뒤)
+## 10. F4b/c (공급자 확정: Google·Kakao. 계정 연결 답변과 §5.4·lifecycle 검토 뒤)
 
 - OIDC callback + F3 지급 + 세션 문맥·route·UI를 같은 기능 범위에서 연결해, 실제 로그인과 첫 지급이 동시에 켜지게 한다.
-- `openid-client`는 이 시점에 설치한다. 승인되지 않은 공급자는 기본값으로 켜지 않는다.
+- `openid-client`는 이 시점에 설치한다. 허용 목록은 Google·Kakao 두 개다.
+- Kakao는 실제 인가 요청의 PKCE 수락을 확인하기 전에는 켜지 않는다(§4).
+- 로그인 흐름에 탈퇴 상태 분기와 복구 확인 화면을 함께 넣는다([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §3).
 - 시험:
   - 단위·DB: §3 표의 세 사례, 지급 1회와 `SUM(delta)=balance`.
   - **격리 CI Playwright + 127.0.0.1 모의 OIDC issuer:** 성공·취소·state·서명·iss·aud·nonce 위조·같은 code 중복·쿠키 삭제 뒤 재요청, 운영의 모의·http issuer 거부. backdoor는 없다.
@@ -282,3 +303,5 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 | R1 P2-1~3 SECRETS·BASE_URL·nodeEnv | §5.2 |
 | R1 P2-4 `iat`/`exp` | §5.1·§5.3: epoch ms, 정확 7일, 미래 `iat`·수명 초과는 invalid |
 | R1 P2-5 빌드 경계 단계 | §8: bootstrap / RED / GREEN의 파일 소유와 isolated 조건 |
+| R2 P2-1~5 | §5.3 끝 (1)~(4), §8 positive control 단계 구분 |
+| 2026-11-03 사용자 확정(공급자 둘 다·30일 탈퇴) | §0, §5.4, §7, §10, [PLAN_account-lifecycle](PLAN_account-lifecycle.md) |

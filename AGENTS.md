@@ -18,6 +18,7 @@
 ## 1. 현재 상태
 
 - [PRD](docs/PRD.md)는 사용자 확정 요건과 미정 항목을 구분한 초안이다. 운영은 준비중 페이지, dev는 정적 프로토타입이다. 사용자 선택(2026-11-02)은 TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소, 그리기 Konva다. [app/](app/README.md)에 F1 화면·F2 스키마·F3 저장 코어(지급·기록·개인 꾸미기·기록 글꼴)를 검증했으며 실제 인증·화면 저장·서비스 DB 연결은 아직 없다. 현재 정적 배포에는 이 앱이 포함되지 않는다.
+  사용자 확정(2026-11-03): 로그인은 Google·Kakao 둘 다, 계정 탈퇴는 30일 복구 기간 뒤 삭제다. 공급자 간 계정 연결은 미정이다. 설계 문서는 `docs/plans/PLAN_mvp-authentication.md`·`docs/plans/PLAN_account-lifecycle.md`다(구현 전).
   신규 DB는 공통 docs/10의 PostgreSQL18 기준으로 계획하고, 과거 PostgreSQL14 등 표기를 이 서비스의 선택으로 보지 않는다.
 - 운영: `docker-compose.yml`의 `pieceofdays-comingsoon`은 준비중 페이지를 이미지로 빌드한다. 전환 전 bind mount 방식은 §3의 주의를 확인한다.
 - dev: `docker-compose.dev.yml`의 `pieceofdays-frontend-dev`가 `frontend/`를 정적 이미지로 빌드한다. `/design/`은 [시안 4안](docs/design/concepts/README.md) 비교판이며 **D 선택 완료**다. 기준은 [디자인 핸드오프](docs/design/README.md)다. 조각 수정·기록 글꼴은 메모리 시안이며 실제 저장과 혼동하지 않는다. `/promo/`는 D 화면의 20초 세로 콘셉트 영상이다.
@@ -28,13 +29,13 @@
 ## 2. 다음 진행 순서
 
 1. PRD 초안 검토·요건 확정(`docs/PRD.md`) → 공통 09 §2.1~2.3(PRD 분석·shaping·MVP, `docs/product/`).
-2. 공통 docs/10에 따른 구성 비교 뒤 사용자가 Next.js 구성을 선택했다. `docs/product/00_TECH_STACK_DECISION.md`에 버전·지원 근거·환경 경계를 기록하고 구현한다. 인증 제공자·AI 전송·공유 범위는 선택된 것으로 간주하지 않는다.
+2. 공통 docs/10에 따른 구성 비교 뒤 사용자가 Next.js 구성을 선택했다. `docs/product/00_TECH_STACK_DECISION.md`에 버전·지원 근거·환경 경계를 기록하고 구현한다. 로그인 공급자(Google·Kakao)와 탈퇴 30일 복구는 2026-11-03에 확정됐다. 계정 연결·AI 전송·공유 범위는 선택된 것으로 간주하지 않는다.
 3. 공통 09 §2.4: 스토리보드 → 디자인 브리프 → 서로 다른 시안 3안·사용자 선택 → 선택안 하이파이 아트보드와
    `docs/design/README.md` 핸드오프. 텍스트 와이어프레임·하이파이 문서를 필수 산출물로 만들지 않는다.
 4. 공통 09 §2.5 구현 계획(`docs/plans/PLAN_<작업명>.md`) → 구현·시험.
 
 2026-11-02 사용자 요청으로 선택용 정적 시안은 가정을 표시해 개발 도메인에 먼저 게시한다.
-시안 게시와 별도로 확인한 사용자 선택만 확정으로 기록한다. AI 사용 방식·공유·인증 제공자는 여전히 미정이다.
+시안 게시와 별도로 확인한 사용자 선택만 확정으로 기록한다. AI 사용 방식·공유·공급자 간 계정 연결은 여전히 미정이다.
 
 ## 3. GitHub·개발·운영 배포 경계
 
