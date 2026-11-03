@@ -17,13 +17,31 @@ export const BALANCE_MODULE = path.join(APP_DIR, "src", "server", "credit", "bal
 
 export type Result<T, E extends string> = { ok: true; value: T } | { ok: false; error: E };
 export type LoginIdentity = { provider: string; subject: string };
-export type LoginOutcome = { userId: string; createdUser: boolean; granted: boolean; balance: number };
+// F4 L2(PLAN_account-lifecycle §3·§9): 판별 union. 기존 F3 성공 값은 kind:"active"이며 잠금 안에서 읽은 gen을 포함한다.
+export type ActiveLoginOutcome = {
+  kind: "active";
+  userId: string;
+  gen: number;
+  createdUser: boolean;
+  granted: boolean;
+  balance: number;
+};
+export type PendingLoginOutcome = { kind: "pending_deletion"; userId: string; gen: number; purgeAfter: Date };
+export type PurgeDueLoginOutcome = { kind: "purge_due" };
+export type LoginOutcome = ActiveLoginOutcome | PendingLoginOutcome | PurgeDueLoginOutcome;
 export type CompleteSuccessfulLogin = (
   db: pg.Pool,
   identity: LoginIdentity,
 ) => Promise<Result<LoginOutcome, "invalid_identity">>;
 export type GrantFirstLogin = (tx: pg.PoolClient, userId: string) => Promise<{ granted: boolean; balance: number }>;
 export type GetBalance = (db: pg.Pool, userId: string) => Promise<number>;
+
+/** 로그인 결과가 active인지 단언하고 그 타입으로 좁힌다(F4 L2 이전 제품은 kind가 없어 여기서 실패한다). */
+export function expectActive(outcome: LoginOutcome, label = ""): ActiveLoginOutcome {
+  expect(outcome, `login outcome must be kind "active" ${label}`).toMatchObject({ kind: "active" });
+  if (outcome.kind !== "active") throw new Error(`unexpected login outcome ${outcome.kind} ${label}`);
+  return outcome;
+}
 
 /** 제품 모듈을 동적으로 불러와 이름 붙은 함수 export를 단언한다. 없으면 이 it만 실패한다(RED). */
 export async function loadExport<T>(file: string, name: string): Promise<T> {

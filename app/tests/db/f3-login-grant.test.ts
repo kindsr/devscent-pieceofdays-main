@@ -17,6 +17,7 @@ import {
   expectGrantedOnce,
   expectInjectedFailure,
   expectLedgerInvariants,
+  expectActive,
   expectPoolSettled,
   freshMigratedDb,
   injectFailure,
@@ -28,7 +29,7 @@ import {
   userState,
   type CompleteSuccessfulLogin,
   type LoginIdentity,
-  type LoginOutcome,
+  type ActiveLoginOutcome,
 } from "./f3-support";
 
 const CASE_TIMEOUT = 90_000;
@@ -55,12 +56,18 @@ async function withCase(label: string, fn: (db: DisposableDatabase) => Promise<v
   }
 }
 
-async function loginOk(login: CompleteSuccessfulLogin, pool: pg.Pool, identity: LoginIdentity): Promise<LoginOutcome> {
+async function loginOk(
+  login: CompleteSuccessfulLogin,
+  pool: pg.Pool,
+  identity: LoginIdentity,
+): Promise<ActiveLoginOutcome> {
   const r = await login(pool, identity);
   expect(r, `login ${JSON.stringify(identity)}`).toMatchObject({ ok: true });
   if (!r.ok) throw new Error(`unexpected ${r.error}`);
-  expect(r.value.userId).toMatch(UUID_RE);
-  return r.value;
+  // F4 L2: 활성 계정의 성공 값은 kind:"active" + 잠금 안에서 읽은 gen(PLAN_account-lifecycle §3·§9)
+  const out = expectActive(r.value, JSON.stringify(identity));
+  expect(out.userId).toMatch(UUID_RE);
+  return out;
 }
 
 const GOOGLE: LoginIdentity = { provider: "google", subject: "sub-0001" };
@@ -131,7 +138,7 @@ describe("completeSuccessfulLogin: identity validation (no SQL for invalid ident
         const ids = new Set<string>();
         for (const identity of valid) {
           const out = await loginOk(login, pool, identity);
-          expect(out, JSON.stringify(identity)).toMatchObject({ createdUser: true, granted: true, balance: 10 });
+          expect(out, JSON.stringify(identity)).toMatchObject({ kind: "active", gen: 1, createdUser: true, granted: true, balance: 10 });
           ids.add(out.userId);
           const state = await userState(env, db, out.userId);
           expect(state.identities, "stored exactly as given (parameterized)").toEqual([identity]);
@@ -163,14 +170,14 @@ describe("completeSuccessfulLogin: first login grant and idempotency", () => {
         const getBalance = await loadBalance();
 
         const first = await loginOk(login, pool, GOOGLE);
-        expect(first).toEqual({ userId: first.userId, createdUser: true, granted: true, balance: 10 });
+        expect(first).toEqual({ kind: "active", userId: first.userId, gen: 1, createdUser: true, granted: true, balance: 10 });
         expect(await counts(env, db)).toEqual({ users: 1, identities: 1, accounts: 1, ledger: 1 });
         const s1 = await userState(env, db, first.userId);
         expect(s1.identities).toEqual([GOOGLE]);
         expectGrantedOnce(s1, first.userId);
 
         const again = await loginOk(login, pool, { ...GOOGLE });
-        expect(again).toEqual({ userId: first.userId, createdUser: false, granted: false, balance: 10 });
+        expect(again).toEqual({ kind: "active", userId: first.userId, gen: 1, createdUser: false, granted: false, balance: 10 });
         const s2 = await userState(env, db, first.userId);
         expect(s2.firstLoginAt, "first_login_at does not move on later logins").toBe(s1.firstLoginAt);
         expectGrantedOnce(s2, first.userId);
@@ -179,7 +186,7 @@ describe("completeSuccessfulLogin: first login grant and idempotency", () => {
         // 같은 subject라도 provider가 다르면 다른 사용자다.
         const other = await loginOk(login, pool, { provider: "kakao", subject: GOOGLE.subject });
         expect(other.userId).not.toBe(first.userId);
-        expect(other).toMatchObject({ createdUser: true, granted: true, balance: 10 });
+        expect(other).toMatchObject({ kind: "active", gen: 1, createdUser: true, granted: true, balance: 10 });
 
         expect(await getBalance(pool, first.userId)).toBe(10);
         expect(await getBalance(pool, other.userId)).toBe(10);
@@ -387,7 +394,7 @@ describe("completeSuccessfulLogin: atomicity under injected failures (owner test
           }
           // 같은 Pool(max 1)·같은 identity: 연결이 반환·정리됐으면 정상 지급 1회.
           const out = await loginOk(login, pool, { ...identity });
-          expect(out).toMatchObject({ createdUser: true, granted: true, balance: 10 });
+          expect(out).toMatchObject({ kind: "active", gen: 1, createdUser: true, granted: true, balance: 10 });
           expect(await counts(env, db)).toEqual({ users: 1, identities: 1, accounts: 1, ledger: 1 });
           const state = await userState(env, db, out.userId);
           expect(state.identities).toEqual([identity]);
@@ -428,7 +435,7 @@ describe("completeSuccessfulLogin: atomicity under injected failures (owner test
             await drop();
           }
           const out = await loginOk(login, pool, { ...identity });
-          expect(out).toEqual({ userId, createdUser: false, granted: true, balance: 10 });
+          expect(out).toEqual({ kind: "active", userId, gen: 1, createdUser: false, granted: true, balance: 10 });
           expect(await counts(env, db)).toEqual({ users: 1, identities: 1, accounts: 1, ledger: 1 });
           expectGrantedOnce(await userState(env, db, userId), userId);
           expect(await getBalance(pool, userId)).toBe(10);
