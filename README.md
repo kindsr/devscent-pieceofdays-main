@@ -13,6 +13,8 @@
 
 DB 기반(F2)과 첫 로그인 지급·기록 CRUD·개인 꾸미기 버전·기록 글꼴 저장 코어(F3)를 일회용 PostgreSQL 18에서 검증했다. 단위 103·DB 99개와 앱 회귀를 통과했으며, 실제 인증·화면 저장 연결은 후속이다. 자세한 검증 결과는 [앱 문서](app/README.md)에 있다.
 
+로그인은 **Google·카카오 둘 다**, 계정 탈퇴는 **30일 복구 기간 후 삭제**로 정했다(2026-11-03 사용자 선택). [인증 계획](docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](docs/plans/PLAN_account-lifecycle.md)에 구현 순서를 정리한다. 공급자 간 계정 연결은 결정 대기이며, 실제 로그인·탈퇴·복구 기능은 아직 구현 전이다.
+
 ## GitHub와 자동배포
 
 Git 정본: https://github.com/kindsr/devscent-pieceofdays-main.git

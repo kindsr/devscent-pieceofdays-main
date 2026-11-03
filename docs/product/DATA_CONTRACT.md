@@ -3,7 +3,7 @@
 - 상태: **F2 설계·구현 계약.** `0001_init` SQL과 권한·제약을 일회용 PG18 CI에서 검증했다. 실서버 DB·계정은 만들지 않았다. 초기 설계 기준은 `dev` `e5ebd58`이며 [실행 계획·결과](../plans/PLAN_mvp-database.md)에 실제 구현 기준을 기록한다.
 - 정본 입력: [00_TECH_STACK_DECISION](00_TECH_STACK_DECISION.md) §3, [03_MVP](03_MVP.md), [PLAN_mvp-foundation](../plans/PLAN_mvp-foundation.md) §3·§5·F2·F3, [DECORATION_MARKET_ARCHITECTURE](DECORATION_MARKET_ARCHITECTURE.md) §3.4·§5·§6. F1 저장 port(작업 브랜치 `claude/nextjs-foundation-mvp-0p73cn` `e5dd64d`의 `app/src/server/diary/store.ts`)는 읽기만 했다.
 - 표기: **[계약]** F2 RED 시험이 그대로 검사할 값, **[가정]** 사용자 결정 전의 전제, **[미정]** 결정 필요.
-- 인증 공급자는 [미정]이다(메인이 질문 중). 이 계약은 공급자 중립이며, 이메일·이름·프로필 같은 공급자 개인정보 열을 두지 않는다.
+- 인증 공급자는 **Google·카카오 둘 다**로 확정했다(2026-11-03 사용자 선택). 이 현행 스키마 계약은 공급자 중립이며, 이메일·이름·프로필 같은 공급자 개인정보 열을 두지 않는다. 공급자 간 계정 연결은 미정이다.
 - 근거 문서: PostgreSQL 18 공식 문서
   - 제약: https://www.postgresql.org/docs/18/ddl-constraints.html
   - 권한: https://www.postgresql.org/docs/18/ddl-priv.html
@@ -17,7 +17,7 @@
 
 | 만든다 (F2) | 만들지 않는다 |
 |---|---|
-| `users`, `auth_identities`, `preferences`, `diary_moments`, `day_summaries`, `design_versions`, `credit_accounts`, `emotion_ledger`, 메타 `pod_meta.*` | 마켓(`design_listings`·`purchases`·`entitlements`), 정산, 사진·에셋 객체 테이블, 공유·AI 테이블, 세션 테이블(공급자 결정 후) |
+| `users`, `auth_identities`, `preferences`, `diary_moments`, `day_summaries`, `design_versions`, `credit_accounts`, `emotion_ledger`, 메타 `pod_meta.*` | 마켓(`design_listings`·`purchases`·`entitlements`), 정산, 사진·에셋 객체 테이블, 공유·AI 테이블, 세션 테이블(미도입) |
 
 ## 2. 공통 규칙 [계약]
 
@@ -46,7 +46,7 @@
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` |
 | `first_login_at` | `timestamptz NULL` — 첫 성공 로그인 시각(F4에서 기록) |
 
-삭제: 탈퇴 정책은 [미정]이다. 앱 role에는 `DELETE` 권한이 없다. 원장의 `RESTRICT`(§4.8) 때문에 원장이 있는 사용자는 owner 권한으로도 삭제되지 않는다.
+삭제 정책은 **계정 탈퇴 후 30일 복구 기간 뒤 삭제**로 확정했다(2026-11-03). 현행 스키마에는 이 상태·기한이 없고, 앱 role에는 `DELETE` 권한이 없다. 원장의 `RESTRICT`(§4.8) 때문에 원장이 있는 사용자는 owner 권한으로도 삭제되지 않는다. [계정 수명주기 계획](../plans/PLAN_account-lifecycle.md)에 후속 migration·삭제 경로를 분리하며, 이 문서는 현재 `0001_init`의 실제 제약을 유지한다.
 
 ### 4.2 `pod.auth_identities` (공급자 중립)
 
@@ -162,7 +162,7 @@ RETURNING version;
 - 인덱스: `(user_id, created_at)`.
 - 보호 트리거(심층 방어, owner 포함 모든 role에 적용): `BEFORE UPDATE OR DELETE … FOR EACH ROW`, `BEFORE TRUNCATE … FOR EACH STATEMENT`. 둘 다 `RAISE EXCEPTION 'emotion_ledger is append-only'`(SQLSTATE `P0001`)를 낸다.
 - 잔액의 권위는 `SUM(delta)`다. `credit_accounts.balance`는 같은 트랜잭션에서 갱신하는 사본이다. 일치 여부는 F3가 시험한다.
-- `ON DELETE RESTRICT`로 원장을 보존한다. 원장이 있는 사용자·계정은 지워지지 않는다. 사용자 삭제가 `CASCADE`로 일기를 지우려 해도 원장 쪽 `RESTRICT`가 전체 삭제를 막는다. 탈퇴 절차는 정책을 정한 뒤 별도 migration과 운영 절차로 만든다.
+- `ON DELETE RESTRICT`로 원장을 보존한다. 원장이 있는 사용자·계정은 지워지지 않는다. 사용자 삭제가 `CASCADE`로 일기를 지우려 해도 원장 쪽 `RESTRICT`가 전체 삭제를 막는다. 확정된 탈퇴 정책은 별도 migration과 운영 절차로 구현한다([계정 수명주기 계획](../plans/PLAN_account-lifecycle.md)).
 - PostgreSQL 18의 부모 `DELETE` RESTRICT 위반은 SQLSTATE `23001`이며, 참조 없는 FK 값의 삽입·갱신 위반 `23503`과 구분해 시험한다.
 
 ### 4.9 책임 분리 (F2 / F3 / F4)
@@ -212,4 +212,4 @@ role 이름은 논리 이름이다. 실제 이름과 비밀번호는 환경별 �
 
 ## 7. 미정
 
-인증 공급자와 다중 공급자 연결, 세션 저장 방식, 사용자별 시간대, 사진·예시 이미지 저장, 개인 버전 보관 개수, 탈퇴 시 기록·원장 처리, 잔액 표시, 감정덩어리의 다른 `reason`과 구매 원장.
+Google·카카오와 계정 탈퇴 후 30일 복구 뒤 삭제는 확정했다. 미정·구현 전 항목은 다중 공급자 연결, 세션 철회·탈퇴 상태·삭제 경로의 후속 migration, 사용자별 시간대, 사진·예시 이미지 저장, 개인 버전 보관 개수, 백업 만료·복원 시 삭제 재적용, 잔액 표시, 감정덩어리의 다른 `reason`과 구매 원장이다.

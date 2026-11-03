@@ -54,7 +54,7 @@ pending_deletion ──(t ≥ purge_after)── 복구·로그인·새 가입 �
 
 ```ts
 type LoginOutcome =
-  | { kind: "active"; userId: string; createdUser: boolean; granted: boolean; balance: number }
+  | { kind: "active"; userId: string; gen: number; createdUser: boolean; granted: boolean; balance: number }
   | { kind: "pending_deletion"; userId: string; gen: number; purgeAfter: Date }
   | { kind: "purge_due" };
 ```
@@ -62,9 +62,9 @@ type LoginOutcome =
 - 기존 identity이면 users 행을 `FOR UPDATE`로 잠그고 t를 읽는다.
   - `pending_deletion`이고 `t < purge_after`이면 **지급을 호출하지 않고 `first_login_at`도 바꾸지 않는다.** 세션도 발급하지 않는다.
   - `t ≥ purge_after`이면 `purge_due`이며, 새 계정을 만들지 않는다.
-- `active`만 지금의 흐름(지급 멱등)을 탄다.
+- `active`만 지금의 흐름(지급 멱등)을 탄다. 같은 행 잠금에서 읽은 `gen`을 반환해 세션을 발급한다.
 - **TDD 경로:**
-  - lifecycle RED에서 기존 `tests/db/f3-login-grant.test.ts`의 기대값(`toEqual({ userId, createdUser, granted, balance })`)을 `kind:"active"` 형태로 **먼저** 고치고, 새 경계 시험을 함께 작성한다(TEST_PATTERNS 경로).
+  - lifecycle RED에서 기존 `tests/db/f3-login-grant.test.ts`의 기대값(`toEqual({ userId, createdUser, granted, balance })`)을 `kind:"active"`·`gen`을 포함하는 형태로 **먼저** 고치고, 새 경계 시험을 함께 작성한다(TEST_PATTERNS 경로).
   - 그다음 GREEN에서 제품 코드를 고친다.
   - 기준선 단위 103·DB 99 회귀를 유지한다.
 - 다른 공급자 로그인: 같은 user에 연결된 identity면 위와 같다. 연결되지 않은 공급자 identity는 현행 스키마에서 별도 canonical user다. 연결 정책은 [미정]이다.
@@ -74,7 +74,7 @@ type LoginOutcome =
 | 항목 | 계약 |
 |---|---|
 | 이름 | `secureCookies`이면 `__Host-pod_recovery`, 개발 http이면 `pod_recovery`. 속성은 세션 쿠키와 같다(HttpOnly·`Path=/`·Lax·Domain 없음) |
-| payload | `{ purpose: "account_recovery", v: 1, userId, gen, iat, exp }` **정확히 키 6개**. `gen`은 안전한 양의 정수, 수명은 **10분 이하** |
+| payload | `{ purpose: "account_recovery", v: 1, userId, gen, iat, exp }` **정확히 키 6개**. `gen`은 안전한 양의 정수, 수명은 **10분 이하**. 봉인 시 iron `ttl: 600`을 명시하고 읽기는 자체 `exp`도 검사한다. 기본 TTL이나 `ttl: 0`에 의존하지 않는다 |
 | 분리 | 일반 세션 API(`readSession`)로 읽지 않는다. 일반 세션도 복구 API로 읽지 않는다(purpose·키 수가 다르면 `invalid`). F4a에는 복구 쿠키 함수를 넣지 않는다 |
 | 복구 POST | Origin 검사(`assertSameOrigin`) → 쿠키 검증 → users 행 잠금 → t → `status='pending_deletion' AND t < purge_after AND auth_generation = 쿠키 gen`일 때만 `status='active'`, 시각 NULL, `auth_generation + 1`. 성공하면 복구 쿠키를 삭제하고 새 `gen`으로 일반 세션을 발급한다 |
 | 재사용 차단 | 복구하면 `gen`이 증가하므로, 옛 복구 쿠키로는 "복구 → 재탈퇴" 뒤에 다시 복구할 수 없다 |
@@ -83,6 +83,7 @@ type LoginOutcome =
 
 - **[사실]** S1 봉인 쿠키만으로는 복사된 쿠키를 철회할 수 없다.
 - **채택:** `users.auth_generation` + 세션 payload `gen` + DAL이 **매 요청** `SELECT status, auth_generation FROM pod.users WHERE id=$1`로 `status='active' AND auth_generation = gen`을 확인한다.
+  - codec은 안전 정수 범위를 허용하고 DB 열은 int4이므로, SQL에서 비교할 때 `auth_generation::bigint = $n::bigint`로 대조한다. int4 범위를 넘는 봉인 값을 raw `22003`으로 흘리지 않고 불일치로 거부하는 회귀를 추가한다.
   - 탈퇴·복구 때 `gen + 1`. 불일치·비활성·행 없음은 "로그인 필요"다.
   - 비용은 요청마다 PK 조회 1회이고, 기기별 개별 로그아웃은 불가능하다.
   - S2(DB 세션)는 미채택 대안이다.

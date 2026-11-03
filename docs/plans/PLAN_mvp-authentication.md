@@ -5,8 +5,8 @@
   - 공급자 간 계정 연결은 **사용자 답변 대기**다.
   - 세션 `gen`(키 5개)과 DAL 매 요청 검사는 **메인이 채택**했다(R4, 2026-11-03, 사용자 선택 아님).
   - 기술 기본값은 **메인이 수락**했다(R1·R2·R4, 2026-11-03).
-  - 이 문서는 **검토 중**이다.
-  - F4 착수 승인이나 인증 완료 문서가 아니다. 코드·의존성·SQL·환경은 바꾸지 않았다.
+  - R4 설계는 **독립 검토 후 메인이 수락**했다(2026-11-03, P0·P1 없음). 복구 TTL·DB generation 비교의 비차단 P2도 계약에 반영했다.
+  - 실제 인증 완료 문서는 아니다. 계획 PR은 코드·의존성·SQL·환경을 바꾸지 않았으며, 패키지 준비 결과는 아래에 구분한다.
 - BASE: `dev` `76a39d1e65a889a03eb1e5bd64a7e0b3ef161800`.
   - F3 최종 `c69384f` 기준선: 단위 103 · DB 99 · Node 24/26 prod 6 · E2E 12 · root 42.
   - BASE의 앱 CI(41549378945), dev 자동배포(41549378967), container·HTTPS는 **메인이 확인**했다(작성자가 직접 확인한 것 아님).
@@ -31,7 +31,7 @@
 | [미정] 사용자 | **공급자 간 계정 연결**(권고 후보: 로그인 뒤 다른 수단 연결 / 대안: 공급자별 별도 계정, email 자동 연결·기록·잔액 병합은 미승인), 사진·공유·AI |
 | [메인] R4 | 세션 `gen` 키 5개 계약(§5.1·§5.3), DAL 매 요청 `status`·`gen` 검사(§5.4), F3 `LoginOutcome` kind union 확장과 복구 쿠키 계약([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §3). 구현 착수·완료를 뜻하지 않는다 |
 | [미정] 메인(조건부) | 서버 측 state 소비 저장소(§3), S2 DB 세션(§6) |
-| [미확인] | Node 24.22.2에서의 iron 설치·빌드, DB·E2E에서의 동작, Kakao가 실제로 `code_challenge`를 받는지, Playwright Chromium이 `http://127.0.0.1`에서 Secure 쿠키를 받는지(R2는 http에 Secure를 쓰지 않으므로 의존하지 않음) |
+| [미확인] | 새 세션 codec·실제 인증·공급자 연동, Kakao가 실제로 `code_challenge`를 받는지. 패키지 설치와 기존 회귀는 PR28의 Node 24·26 CI에서 통과했다. http Secure 쿠키 수락에 의존하지 않는다 |
 
 ## 1. 현재 코드 사실 (BASE)
 
@@ -134,6 +134,7 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 ```
 
 - 시계 주입: 호출자는 검증된 cfg를 복사한 새 객체에서 `now`만 바꿔 넘길 수 있다(`{ ...cfg, now }`).
+- 패키지 준비 완료: PR28 `7004e8a`와 [CI 41656725705](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41656725705)에서 Node 24.22.2·26.13.0 설치·앱 회귀를 검증했다. 이 결과는 신규 세션 API의 동작 검증과 구분한다.
 - 제품 코드는 전역 시계나 환경 변수를 바꾸지 않는다.
 - `cfg.now`는 유효한 `Date`를 돌려주는 내부 DI 계약이다.
 

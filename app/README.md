@@ -94,6 +94,10 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 [최종 F3 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41548015623): 단위 103·DB 99개, Node 24·26 각각 운영 경계 6·E2E 12개 통과. 개인 버전 권한·목록·기본값·동시 설정 저장과 비정상 배열 입력을 Result로 거부하는 회귀를 확인했다. 각 TDD 구간·독립 검토·미실행 범위는 [F3 계획](../docs/plans/PLAN_mvp-domain-storage.md)에 기록한다.
 
+## 세션 패키지 준비 (F4a)
+
+`iron-session` 9.0.1을 정확한 버전으로 추가했다. [패키지 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41656725705)에서 Node 24.22.2·26.13.0의 설치·lint·타입·빌드, 단위 103·운영 경계 6·E2E 12개와 DB 99개가 통과했다. 이 단계는 설치와 기존 회귀 유지에 대한 확인이며, 세션 codec·로그인·탈퇴·복구 구현은 아직 없다. 다음 계약은 [인증 계획](../docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](../docs/plans/PLAN_account-lifecycle.md)을 따른다.
+
 ## 한계 (제품 구현)
 
 - 실제 로그인·앱의 PG 저장 연결·버킷 없음. 지급·기록·개인 꾸미기·글꼴 저장은 도메인 함수로 검증했으며 실제 인증 연결은 F4다. 화면의 조각 삭제·하루 꾸미기 편집기는 아직 없다.

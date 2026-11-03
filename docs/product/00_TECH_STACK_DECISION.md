@@ -102,10 +102,11 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
   - `iron-session` 9.0.1은 Cloud scratch 사본(Node 26.13.0·npm 11.20.0, Next 16.4.3·React 19.3.1)에서 확인했다(PR27 호환 spike, 원본 저장소 불변).
     - 설치(peer 없음), `npm ls`, lint·typecheck·단위 103, `next build` 통과
     - `server-only` 패키지 없이 Next 내장 처리와 client import 거부 확인
+  - 제품 저장소 패키지 준비(PR28 `7004e8a`)는 [CI 41656725705](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41656725705)에서 Node 24.22.2·26.13.0 설치·lint·타입·빌드, 단위 103·DB 99·운영 경계 6·E2E 12개를 통과했다. 새 세션 API를 호출한 결과는 아니다.
   - **미검증:**
-    - Node 24.22.2, DB·E2E·실서비스에서의 동작
+    - 새 세션 codec, 실제 OAuth·서비스에서의 동작
     - `openid-client` 6.8.9 전체(F4b에서 설치·검증)
-  - 제품 저장소 설치는 F4a 호환 bootstrap에서 Node 24·26 CI로 검증한다.
+  - 세션 codec의 RED·GREEN은 패키지 준비 뒤 별도로 진행한다.
   - 세션 정책 세부(R2)는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5.
 - **설치 시점:** F4a에서는 `iron-session`만 설치하고, `openid-client`는 필요해지는 F4b에서 설치한다.
 - **공급자:** 2026-11-03 사용자 확정은 **Google·Kakao 둘 다**다(PRD §0). 이 절의 기술 기본값은 메인 결정으로 그대로 둔다. 계정 연결은 사용자 답변 대기다.
