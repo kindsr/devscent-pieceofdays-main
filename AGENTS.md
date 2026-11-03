@@ -17,8 +17,8 @@
 
 ## 1. 현재 상태
 
-- [PRD](docs/PRD.md)는 사용자 확정 요건과 미정 항목을 구분한 초안이다. 운영은 준비중 페이지, dev는 정적 프로토타입이다. 사용자 선택(2026-11-02)은 TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소, 그리기 Konva다. [app/](app/README.md)에 F1 화면·F2 스키마·F3 저장 코어(지급·기록·개인 꾸미기·기록 글꼴)를 검증했으며 실제 인증·화면 저장·서비스 DB 연결은 아직 없다. 현재 정적 배포에는 이 앱이 포함되지 않는다.
-  사용자 확정(2026-11-03): 로그인은 Google·Kakao 둘 다, 계정 탈퇴는 30일 복구 기간 뒤 삭제다. 공급자 간 계정 연결은 미정이다. 설계 문서는 `docs/plans/PLAN_mvp-authentication.md`·`docs/plans/PLAN_account-lifecycle.md`다(구현 전).
+- [PRD](docs/PRD.md)는 사용자 확정 요건과 미정 항목을 구분한 초안이다. 운영은 준비중 페이지, dev는 정적 프로토타입이다. 사용자 선택(2026-11-02)은 TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소, 그리기 Konva다. [app/](app/README.md)에 F1 화면·F2 스키마·F3 저장 코어(지급·기록·개인 꾸미기·기록 글꼴)·F4a 세션 codec과 서버 전용 경계를 검증했다(단위 122·DB 99·빌드 경계 4). 실제 인증·화면 저장·서비스 DB 연결은 아직 없다. 현재 정적 배포에는 이 앱이 포함되지 않는다.
+  사용자 확정(2026-11-03): 로그인은 Google·Kakao 둘 다, 계정 탈퇴는 30일 복구 기간 뒤 삭제다. 공급자 간 계정 연결은 미정이다. 설계 문서는 `docs/plans/PLAN_mvp-authentication.md`·`docs/plans/PLAN_account-lifecycle.md`다(F4a만 구현, OAuth·DB 상태 대조·탈퇴·복구·삭제는 후속).
   신규 DB는 공통 docs/10의 PostgreSQL18 기준으로 계획하고, 과거 PostgreSQL14 등 표기를 이 서비스의 선택으로 보지 않는다.
 - 운영: `docker-compose.yml`의 `pieceofdays-comingsoon`은 준비중 페이지를 이미지로 빌드한다. 전환 전 bind mount 방식은 §3의 주의를 확인한다.
 - dev: `docker-compose.dev.yml`의 `pieceofdays-frontend-dev`가 `frontend/`를 정적 이미지로 빌드한다. `/design/`은 [시안 4안](docs/design/concepts/README.md) 비교판이며 **D 선택 완료**다. 기준은 [디자인 핸드오프](docs/design/README.md)다. 조각 수정·기록 글꼴은 메모리 시안이며 실제 저장과 혼동하지 않는다. `/promo/`는 D 화면의 20초 세로 콘셉트 영상이다.

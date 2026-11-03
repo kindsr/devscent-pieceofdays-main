@@ -103,14 +103,15 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
     - 설치(peer 없음), `npm ls`, lint·typecheck·단위 103, `next build` 통과
     - `server-only` 패키지 없이 Next 내장 처리와 client import 거부 확인
   - 제품 저장소 패키지 준비(PR28 `7004e8a`)는 [CI 41656725705](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41656725705)에서 Node 24.22.2·26.13.0 설치·lint·타입·빌드, 단위 103·DB 99·운영 경계 6·E2E 12개를 통과했다. 새 세션 API를 호출한 결과는 아니다.
+  - F4a GREEN `96bcf8c`는 [CI 41663957968](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41663957968)에서 Node 24·26 각각 단위 122·실제 auth 빌드 경계 4·운영 경계 6·E2E 12개와 DB 99개를 통과했다. 세션 API·원시 TTL child도 실제로 실행했다. 독립 runner가 같은 커밋의 단위 122·경계 4개를 다시 통과했다.
   - **미검증:**
-    - 새 세션 codec, 실제 OAuth·서비스에서의 동작
+    - 실제 OAuth·서비스에서의 동작, 요청마다 하는 DB 상태·generation 대조와 탈퇴·복구·삭제
     - `openid-client` 6.8.9 전체(F4b에서 설치·검증)
-  - 세션 codec의 RED·GREEN은 패키지 준비 뒤 별도로 진행한다.
+  - 세션 codec의 RED·GREEN은 완료했다. 실제 인증 연결은 F4b/c다.
   - 세션 정책 세부(R2)는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5.
 - **설치 시점:** F4a에서는 `iron-session`만 설치하고, `openid-client`는 필요해지는 F4b에서 설치한다.
 - **공급자:** 2026-11-03 사용자 확정은 **Google·Kakao 둘 다**다(PRD §0). 이 절의 기술 기본값은 메인 결정으로 그대로 둔다. 계정 연결은 사용자 답변 대기다.
 - **세션 generation [메인 채택, 2026-11-03]:**
   - payload `{ v, userId, gen, iat, exp }`(키 5개)와 `users.auth_generation`을 쓰고, DAL이 매 요청 `status`·`gen`을 검사한다(M안).
-  - 사용자 선택이 아니며 구현 전이다. 계약은 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5, 근거는 [PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) §4.
+  - 사용자 선택이 아니다. codec의 `gen` 형식 검증은 구현했고 DB 대조·탈퇴 시 세대 변경은 후속이다. 계약은 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5, 근거는 [PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) §4.
   - package-only `iron-session` bootstrap은 독립적으로 진행할 수 있다.

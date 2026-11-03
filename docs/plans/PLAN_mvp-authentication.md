@@ -7,6 +7,7 @@
   - 기술 기본값은 **메인이 수락**했다(R1·R2·R4, 2026-11-03).
   - R4 설계는 **독립 검토 후 메인이 수락**했다(2026-11-03, P0·P1 없음). 복구 TTL·DB generation 비교의 비차단 P2도 계약에 반영했다.
   - 실제 인증 완료 문서는 아니다. 계획 PR은 코드·의존성·SQL·환경을 바꾸지 않았으며, 패키지 준비 결과는 아래에 구분한다.
+  - **F4a 완료(2026-11-03):** 세션 codec·서버 전용 경계를 구현·독립 검증했다(§13). 실제 OAuth·DAL·탈퇴·복구·삭제는 후속이다.
 - BASE: `dev` `76a39d1e65a889a03eb1e5bd64a7e0b3ef161800`.
   - F3 최종 `c69384f` 기준선: 단위 103 · DB 99 · Node 24/26 prod 6 · E2E 12 · root 42.
   - BASE의 앱 CI(41549378945), dev 자동배포(41549378967), container·HTTPS는 **메인이 확인**했다(작성자가 직접 확인한 것 아님).
@@ -31,7 +32,7 @@
 | [미정] 사용자 | **공급자 간 계정 연결**(권고 후보: 로그인 뒤 다른 수단 연결 / 대안: 공급자별 별도 계정, email 자동 연결·기록·잔액 병합은 미승인), 사진·공유·AI |
 | [메인] R4 | 세션 `gen` 키 5개 계약(§5.1·§5.3), DAL 매 요청 `status`·`gen` 검사(§5.4), F3 `LoginOutcome` kind union 확장과 복구 쿠키 계약([PLAN_account-lifecycle](PLAN_account-lifecycle.md) §3). 구현 착수·완료를 뜻하지 않는다 |
 | [미정] 메인(조건부) | 서버 측 state 소비 저장소(§3), S2 DB 세션(§6) |
-| [미확인] | 새 세션 codec·실제 인증·공급자 연동, Kakao가 실제로 `code_challenge`를 받는지. 패키지 설치와 기존 회귀는 PR28의 Node 24·26 CI에서 통과했다. http Secure 쿠키 수락에 의존하지 않는다 |
+| [미확인] | 실제 인증·공급자 연동·DAL 상태/세대 대조, Kakao가 실제로 `code_challenge`를 받는지. 패키지·세션 codec은 Node 24·26 CI에서 통과했다(§13). http Secure 쿠키 수락에 의존하지 않는다 |
 
 ## 1. 현재 코드 사실 (BASE)
 
@@ -309,3 +310,12 @@ assertSameOrigin(cfg: SessionConfig, origin: string | null): Result<null, "origi
 | R2 P2-1~5 | §5.3 끝 (1)~(4), §8 positive control 단계 구분 |
 | 2026-11-03 사용자 확정(공급자 둘 다·30일 탈퇴) | §0, §5.4, §7, §10, [PLAN_account-lifecycle](PLAN_account-lifecycle.md) |
 | R3 리뷰 + 메인 R4 결정 | §0, §5.1·§5.3·§5.4(키 5개 단일 계약), lifecycle §2·§3·§5·§6·§7 |
+
+## 13. F4a 실행·수락 (2026-11-03)
+
+- BASE `fa00282`, RED `5edf286`, GREEN `96bcf8c`(PR29·PR30). RED에서 설정 미정 입력의 기본값 치환과 iron 버전 접미사 기대값을 보정한 뒤 독립 runner가 수락했다. GREEN은 시험 파일을 바꾸지 않았다. 정본 RED·GREEN gate와 diff --check를 메인이 통과시켰다.
+- 구현: §5의 공개 helper 5개와 서버 모듈 경계. Next 내장 `server-only`를 쓰고 CLI 체인·`runtime-mode.ts`를 제외했다. CI app matrix에 격리 빌드 harness만 추가했으며 권한·배포 설정은 바꾸지 않았다.
+- [PR30 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41663957968): Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12, DB 99개 통과. 배포 계약 CI `41663958109`의 root 42·Compose도 통과했다.
+- 독립 Cloud runner가 GREEN의 새 단위 19·전체 122·빌드 경계 4개, lint·타입 검사를 직접 통과했다(skip 0). 코드 검토 P0·P1·P2 없음. vendor 9.0.1의 실패 반환 경로도 확인했다. 미래 vendor 교체 시 다시 검토한다.
+- 공유 서버에서는 gate·diff·문서 검증만 했고 Next/DB 시험을 실행하지 않았다. FullCheck 스크립트의 통합 실행은 이번에도 미실행이며, 빌드 harness는 별도 CI step과 독립 runner에서 검증했다.
+- 실제 공급자·요청 세션 문맥·DB 상태/세대 대조·복구 쿠키·탈퇴·purge·서비스 DB·F6 앱 배포는 구현하지 않았다. 다음은 계정 수명주기 migration·도메인 계약을 구체화한 뒤 RED부터 진행한다.

@@ -1,4 +1,4 @@
-# pieceofdays app (F1 화면·F2 DB·F3 도메인 개발)
+# pieceofdays app (F1 화면·F2 DB·F3 도메인·F4a 세션 개발)
 
 Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기, 첫 로그인 지급·기록 CRUD·개인 꾸미기 버전·기록 글꼴 저장 코어를 검증했다. **실제 로그인·화면의 PG 저장 연결·이미지 저장소는 아직 구현 전**이다. 지급 함수를 실제 인증 성공 사건에 연결하는 것은 F4다. MVP 완료가 아니다.
 루트 `frontend/`(정적 nginx 이미지)와 별개이며, **현재 dev 정적 배포(`dev.pieceofdays.com`)에 자동으로 포함되지 않는다**.
@@ -94,9 +94,13 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 [최종 F3 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41548015623): 단위 103·DB 99개, Node 24·26 각각 운영 경계 6·E2E 12개 통과. 개인 버전 권한·목록·기본값·동시 설정 저장과 비정상 배열 입력을 Result로 거부하는 회귀를 확인했다. 각 TDD 구간·독립 검토·미실행 범위는 [F3 계획](../docs/plans/PLAN_mvp-domain-storage.md)에 기록한다.
 
-## 세션 패키지 준비 (F4a)
+## 세션 기반 (F4a)
 
-`iron-session` 9.0.1을 정확한 버전으로 추가했다. [패키지 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41656725705)에서 Node 24.22.2·26.13.0의 설치·lint·타입·빌드, 단위 103·운영 경계 6·E2E 12개와 DB 99개가 통과했다. 이 단계는 설치와 기존 회귀 유지에 대한 확인이며, 세션 codec·로그인·탈퇴·복구 구현은 아직 없다. 다음 계약은 [인증 계획](../docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](../docs/plans/PLAN_account-lifecycle.md)을 따른다.
+`iron-session` 9.0.1을 고정하고 `src/server/auth/session.ts`에 설정 검증·7일 봉인/읽기·쿠키 속성·Origin 대조를 구현했다. payload는 `v`·`userId`·`gen`·`iat`·`exp` 5개 키다. 서버 모듈에는 `server-only` 경계를 적용하고 F2 migration CLI와 `runtime-mode.ts`는 제외했다.
+
+[F4a CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41663957968): Node 24.22.2·26.13.0 각각 단위 122·빌드 경계 4·운영 경계 6·E2E 12개, DB 99개 통과. 빌드 경계는 기준 사본과 실제 auth 서버 import의 빌드 성공, 클라이언트 직접·전이 import 거부를 임시 사본에서 확인한다. 독립 Cloud runner도 같은 GREEN 커밋 `96bcf8c`의 단위 122·경계 4개를 통과했다.
+
+격리 Cloud·CI·개발 PC에서만 경계를 따로 실행한다: `POD_FULL_CHECK_ISOLATED=1 node --test app/tests/auth-build-boundary.test.mjs`(저장소 루트). 이 `node:test` harness는 현재 FullCheck 스크립트와 별도로 CI에서 실행한다. 실제 OAuth·요청별 DB 상태/세대 대조·복구 쿠키·탈퇴·삭제는 아직 없다. 후속 계약은 [인증 계획](../docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](../docs/plans/PLAN_account-lifecycle.md)을 따른다.
 
 ## 한계 (제품 구현)
 

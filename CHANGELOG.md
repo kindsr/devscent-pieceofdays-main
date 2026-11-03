@@ -15,6 +15,7 @@
 ## [Unreleased]
 
 ### Added
+- F4a 봉인 세션·서버 전용 경계 (2026-11-03): 설정 검증, 정확한 5키 payload·7일 만료·쿠키·Origin helper와 `server-only` 경계를 추가했다. Node 24·26 CI와 독립 검증에서 단위 122·빌드 경계 4·DB 99개 및 기존 앱 회귀를 통과했다. 실제 OAuth·요청별 상태 대조·탈퇴·복구·삭제는 후속이다.
 - F4a 세션 패키지 준비 (2026-11-03): `iron-session` 9.0.1을 고정하고 Node 24·26의 설치·기존 앱 회귀(단위 103·DB 99·운영 경계 6·E2E 12)를 검증했다. 실제 세션·로그인 구현은 후속이다. README·데이터 계약·기반 계획에 Google·카카오와 탈퇴 30일 정책의 확정 상태를 동기화했다.
 - 사용자 확정 반영과 계정 수명주기 계획 (2026-11-03): Google·Kakao 로그인 둘 다, 계정 탈퇴 30일 복구 뒤 삭제를 PRD·MVP·기술 결정·AGENTS 상태에 반영했다. `docs/plans/PLAN_account-lifecycle.md`(탈퇴·30일 경계·복구·purge·원장 삭제 경로)를 추가했다. 메인 기술 결정 R4로 세션 `gen` 키 5개·DAL 매 요청 검사, 잠금 뒤 `clock_timestamp()` 경계, purge 함수 PUBLIC 회수·전용 role, 복구 쿠키 계약을 채택했다(사용자 확정과 구분). 공급자 간 계정 연결은 미정이며, 구현·SQL·설치는 없다.
 - F4 인증·세션·첫 로그인 지급 연결 계획 (2026-11-03): `docs/plans/PLAN_mvp-authentication.md`. 메인 기술 기본값(openid-client 6.8.9·iron-session 9.0.1 S1·절대 7일·`server-only`)과 R2 세션·설정·Origin 계약, F4a 단계별 파일 소유를 문서로 기록했다. 공급자는 사용자 선택 대기이며, 구현·설치·스키마·환경 변경은 없다.
