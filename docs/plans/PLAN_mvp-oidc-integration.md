@@ -714,6 +714,15 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 
 ---
 
+## 18. B3 요청 context·DAL 진행 (2026-11-04)
+
+- **시작 기준:** dev `c7e09ee6ae9276fd7fa17dd555011f2b025f950b`. 재개 시 작업 트리 clean·원격 일치, dev 체험판·운영 HTTPS와 두 컨테이너의 healthy, 배포 기록 success·pending 부재를 메인이 읽기 전용으로 확인했다. 재배포·운영 승격·인프라 변경은 하지 않았다.
+- **진행:** 기존 Claude Cloud RED에 `request-context.test.ts`·`f4-dal.test.ts` 두 파일만 배정했다. 전달 응답을 받았으며 아직 작성 완료·RED 실패 확인·독립 수락을 뜻하지 않는다. RED → 독립 runner → GREEN(시험 변경 0) → 독립 검토 → 메인 통합 순서를 유지한다.
+- **담당 경계:** GREEN은 §3의 제품 6파일(context·shared diary·layout·page 3개)만 맡는다. §7 표의 TopBar viewer 표시와 settings 계정 영역은 §3에서 TopBar·settings를 소유한 B4로 유예한다. B3 layout은 async 문맥으로 `canWrite`를 계산하고 fixture에서만 작성 UI를 허용한다. `/login` 화면·발급 route·실로그인·PG 기록 읽기/쓰기·서비스 DB·앱 배포는 이번 slice에 포함하지 않는다.
+- **시험 관점:** 정확한 세션 쿠키 이름, fixture/auth 충돌 우선 거부, 설정 오류·세션 거부·DB 장애 구분, 계정 상태·세대 확인, 탈퇴 COMMIT 뒤 새 요청 거부, 요청 사이 사용자 정보 누수를 검증한다. 기존 unit 196·DB 165와 build 경계 4·운영 경계 6·E2E 12를 기준으로 신규 사례와 기존 회귀를 구분한다. 공유 운영 서버에서 npm·Next·DB·FullCheck를 실행하지 않는다.
+- **요청 cache 근거:** [React cache](https://react.dev/reference/react/cache)는 서버 요청마다 무효화되며 컴포넌트 렌더 밖 호출에는 memo를 제공하지 않는다. [Next 인증 가이드](https://nextjs.org/docs/app/guides/authentication)는 layout의 Partial Rendering 때문에 데이터 접근 가까이에서 재검사할 것을 설명한다(2026-11-04 조회). 시험의 요청 seam과 실제 React 동작을 구분해 보고하고, page 각각이 DAL을 호출하는지 검토한다. 설치된 버전은 그대로 유지한다.
+- **되돌리기:** 서비스 DB·schema·HTTP 발급 경로를 바꾸지 않는다. B3 제품·시험·문서 커밋을 revert해 이전 동기 fixture 문맥으로 돌아갈 수 있다. 현재 정적 이미지와 브라우저 저장 키는 변경하지 않는다.
+
 ## 부록 A — Windows 세션용 OAuth 콘솔 설정 프롬프트 (초안)
 
 > 이 문단은 사용자의 Windows PC Claude 세션에 붙여 넣는 용도다.
