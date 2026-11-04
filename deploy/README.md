@@ -13,7 +13,7 @@
 3. 개발 검증을 마친 `dev`를 PR로 `main`에 병합한다. Actions가 운영 배포를 실행하며, 서버는 해당 소스 tree가 성공한 개발 배포와 같은지 확인한다.
 4. 운영은 소스 bind mount 없이 서버의 릴리스 영역에 둔 고정 이미지로 `https://pieceofdays.com`을 제공한다.
 
-`app/`에 앱·DB 기반이 있지만 현재 배포는 준비중/정적 시안 페이지다. 개발 정적 이미지에는 `frontend/public/try/`의 브라우저 저장 체험판(`/try/`)이 같은 이미지·같은 `COPY public`으로 함께 들어가도록 준비됐다. 기록은 사용자 브라우저에만 저장되며 서버 DB·secret·포트·Compose·배포 권한·절차·복귀는 바뀌지 않는다. 체험판은 검토 중이며 아직 게시 전이다. 앱 배포 전환은 F6에서 별도로 검토한다. 개발·운영 Compose project는 각각 `pieceofdays-dev`·`devscent-pieceofdays-main`, 컨테이너는 기존 이름을 유지한다.
+`app/`에 앱·DB 기반이 있지만 현재 배포는 준비중/정적 시안 페이지다. 개발 정적 이미지에는 `frontend/public/try/`의 브라우저 저장 체험판(`/try/`)이 같은 이미지·같은 `COPY public`으로 함께 들어간다. 기록은 사용자 브라우저에만 저장되며 서버 DB·secret·포트·Compose·배포 권한·절차·복귀는 바뀌지 않는다. 체험판의 독립 검토 PASS를 수락했으며 dev 자동배포·실제 게시 검증은 PR43에 기록한다. 앱 배포 전환은 F6에서 별도로 검토한다. 개발·운영 Compose project는 각각 `pieceofdays-dev`·`devscent-pieceofdays-main`, 컨테이너는 기존 이름을 유지한다.
 
 ## GitHub와 배포 경계
 

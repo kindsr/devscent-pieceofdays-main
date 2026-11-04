@@ -4,7 +4,7 @@
 - 저장 방식 선택 질문은 열어 두었으며, 빠른 체험을 위한 임시 기본값은 브라우저 저장이다. 사용자 확정 정책으로 기록하지 않는다.
 - 기준: `dev` `f5123937fceb2e867b443468ccde2e4566ad5bc3`. B2 인증 구현은 별도 Cloud 브랜치에서 계속한다.
 - 목표: MVP 전체 완성을 기다리지 않고 개발 도메인에서 직접 작성한 기록을 새로고침 뒤에도 다시 연다.
-- **진행(2026-11-04):** RED·GREEN 구현과 CI는 통과했다. **독립 GREEN 검토 진행 중, dev 통합·게시 전**이다(아래 실행 결과). 위 "기준"은 계획 작성 당시 값이다.
+- **진행(2026-11-04):** RED·GREEN 구현과 CI는 통과했다. **독립 GREEN 검토 PASS를 수락했다**(아래 실행 결과). 위 "기준"은 계획 작성 당시 값이다.
 
 ## 범위와 경로
 
@@ -55,7 +55,7 @@
 - 실패 시 직전 검증 정적 이미지로 복귀한다. 체험판을 되돌려도 사용자의 브라우저 저장 키를 삭제하거나 재해석하지 않는다.
 - Next 앱의 실제 Google·Kakao 인증/계정 저장은 기존 B2 이후 순서로 연결한다. 체험판 공개를 MVP 완료로 표시하지 않는다.
 
-## 실행 결과 (2026-11-04, 검토 중)
+## 실행 결과 (2026-11-04)
 
 이 절은 실행 기록이다. 위 범위·사용자 경험·저장·운영 계약은 바꾸지 않았다.
 
@@ -70,6 +70,6 @@
   - [app 41793116422](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116422): Node 24.22.2·26.13.0 각각 단위 196(B2 178 + 체험판 18)·빌드 경계 4·운영 경계 6·기존 E2E 12·lint·typecheck·build, PG 18.6 DB 165
   - [root 41793116522](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116522) 42·Compose, PR deploy는 정상 skip
   - [preview 41793116570](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116570): Node 26 JS 구문·저장 단위 18·실제 브라우저 10 passed(4.6s). 기존 E2E 12와 섞지 않는다. 메인이 원문 로그에서 10 passed를 직접 확인했다.
-- **상태:** 독립 GREEN 검토 **진행 중**, dev 통합·게시 전. 실제 게시·HTTPS·실기기 브라우저 확인은 메인이 통합 뒤 한다.
+- **상태:** [독립 GREEN 검토 PASS](https://github.com/kindsr/devscent-pieceofdays-main/pull/43#pullrequestreview-5764965020)를 수락했다(P0·P1 없음). 선택 P2는 제목의 프로그램 포커스 표시·Vitest 설정 단독 변경 시 preview 경로 필터·D 시안 링크의 한 단계 이동 3건이며 이번 게시를 막지 않는다. dev 자동배포 뒤 HTTPS·실제 브라우저 저장 유지 검증은 메인이 [PR43](https://github.com/kindsr/devscent-pieceofdays-main/pull/43)에 남긴다.
 - **브라우저 저장 한계:** 같은 브라우저에만 남고 브라우저 데이터 삭제 시 사라진다. 기기 동기화·실계정 자동 병합은 없다. 체험판을 Next 앱이나 MVP 완료로 표시하지 않는다.
 - **미실행(이 기록 작성자):** 코드·브라우저·DB 시험, 서버, 설치, FullCheck. 실행 근거는 위 CI와 메인 확인이다.

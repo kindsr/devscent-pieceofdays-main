@@ -185,7 +185,7 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 **독립 검토를 수락해 dev에 통합했다.** 처리 함수는 시험에서만 호출한다. 발급 HTTP route·요청별 DAL·D 인증 화면(B3·B4), 실제 공급자 검증(B5)이 없어 서비스의 실제 로그인은 꺼져 있다. 화면 PG 저장(F5)·서비스 DB·앱 배포(F6)도 없다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구, 계정 연결 미정)은 바뀌지 않았다.
 
-## 개발 체험판 `/try/`와의 관계 (검토 중 · 게시 전)
+## 개발 체험판 `/try/`와의 관계
 
 `frontend/public/try/`의 정적 체험판은 **이 Next 앱과 별개**다([계획](../docs/plans/PLAN_dev-local-preview.md)). 기존 정적 이미지가 제공하는 D 화면이며 기록을 브라우저의 전용 저장 항목 하나에만 둔다. 이 앱의 로그인·세션·PG 저장·고정 사용자 모드와 연결되지 않는다.
 
@@ -193,7 +193,7 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 - 체험판 시험은 기존 app lock의 Vitest·Playwright만 빌려 쓴다. 단위 시험 `tests/unit/dev-preview.test.ts`(18)는 기존 `npm test`에 포함돼 현재 단위가 196이다(B2 178 + 18). 브라우저 시험은 기존 E2E 12와 섞지 않는다.
 - 명령(격리 Cloud·CI·개발 PC만, `app/`에서): `npx vitest run tests/unit/dev-preview.test.ts`, `POD_FULL_CHECK_ISOLATED=1 npx playwright test -c playwright.preview.config.ts`. 설정은 플래그가 없으면 시작을 거부하고, `frontend/public`을 Python 표준 정적 서버로 `127.0.0.1:3400`에만 연다. 공유 서버에서 실행하지 않는다.
 - CI는 별도 workflow `.github/workflows/preview-validation.yml`(Secrets·배포 권한 없음)이다. GREEN `2f3e61b`의 [preview CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116570)에서 구문 검사·저장 단위 18·브라우저 10이 통과했다. [app CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116422)에서는 Node 24·26 각각 단위 196·빌드 경계 4·운영 경계 6·E2E 12·lint·typecheck·build, DB 165가 통과했다.
-- 독립 GREEN 검토가 진행 중이며 dev 통합·게시 전이다.
+- 독립 GREEN 검토 PASS(P0·P1 없음, 선택 P2 3건)를 수락했다. dev 자동배포·실제 게시 검증은 [PR43](https://github.com/kindsr/devscent-pieceofdays-main/pull/43)에 기록한다.
 
 ## 한계 (제품 구현)
 
