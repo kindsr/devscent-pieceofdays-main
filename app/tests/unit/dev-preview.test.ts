@@ -1,6 +1,7 @@
 // DEV PREVIEW RED — 개발 도메인 /try/ 체험판의 브라우저 저장 모듈 계약(docs/plans/PLAN_dev-local-preview.md).
 //
-// 대상: frontend/public/try/store.mjs(아직 없음). 순수 ES module이며 각 it 안에서 동적 import하고 export를 확인한다.
+// 대상: frontend/public/try/store.js(아직 없음). 순수 ES module이며 각 it 안에서 동적 import하고 export를 확인한다.
+// - 확장자는 .js다(메인 정정 2026-11-04): 실제 dev nginx mime.types에 mjs 매핑이 없어 .mjs 모듈이 MIME으로 거부된다.
 // - 브라우저 저장은 빠른 체험을 위한 임시 기본값이다. 사용자의 확정 계정·저장 정책이 아니다.
 // - storage는 getItem/setItem/removeItem만 가진 Map 기반 가짜 저장소, now는 시험이 주입하는 시각이다.
 //   전역 Date.now·process.env·실제 localStorage는 바꾸지 않는다.
@@ -10,7 +11,7 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { APP_DIR } from "./auth-b1-support";
 
-const STORE_MODULE = path.join(APP_DIR, "..", "frontend", "public", "try", "store.mjs");
+const STORE_MODULE = path.join(APP_DIR, "..", "frontend", "public", "try", "store.js");
 
 // ---------------------------------------------------------------- 공개 계약(최소 로컬 타입)
 
@@ -43,11 +44,11 @@ async function loadStore(): Promise<StoreApi> {
     mod = (await import(/* @vite-ignore */ pathToFileURL(STORE_MODULE).href)) as Record<string, unknown>;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`DEV PREVIEW product module frontend/public/try/store.mjs could not be loaded (expected before GREEN): ${msg}`);
+    throw new Error(`DEV PREVIEW product module frontend/public/try/store.js could not be loaded (expected before GREEN): ${msg}`);
   }
-  expect(typeof mod.STORAGE_KEY, "store.mjs must export string STORAGE_KEY").toBe("string");
-  expect(typeof mod.seoulDate, "store.mjs must export function seoulDate").toBe("function");
-  expect(typeof mod.createPreviewStore, "store.mjs must export function createPreviewStore").toBe("function");
+  expect(typeof mod.STORAGE_KEY, "store.js must export string STORAGE_KEY").toBe("string");
+  expect(typeof mod.seoulDate, "store.js must export function seoulDate").toBe("function");
+  expect(typeof mod.createPreviewStore, "store.js must export function createPreviewStore").toBe("function");
   return mod as unknown as StoreApi;
 }
 
@@ -117,7 +118,7 @@ function expectOtherKeysKept(storage: FakeStorage) {
 
 // ================================================================= 상수·날짜
 
-describe("store.mjs exports and Seoul date", () => {
+describe("store.js exports and Seoul date", () => {
   it("STORAGE_KEY is the dedicated versioned key", async () => {
     const api = await loadStore();
     expect(api.STORAGE_KEY).toBe(KEY);
