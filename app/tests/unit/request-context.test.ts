@@ -123,12 +123,13 @@ function setEnv(env: EnvMap): void {
   for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
 }
 
-/** 새 요청을 시작한다: 요청 번호 증가, 쿠키·헤더 교체, 읽기 기록 초기화. */
+/** 새 요청을 시작한다: 요청 번호 증가, 쿠키·헤더 교체, 요청별 관찰값(쿠키 읽기·getAppDb 호출 수) 초기화. */
 function newRequest(cookies: Record<string, string> = {}, headers: Record<string, string> = {}): void {
   h.request++;
   h.cookies = new Map(Object.entries(cookies));
   h.headers = new Map(Object.entries(headers));
   h.cookieReads = [];
+  h.getDbCalls = 0;
 }
 
 type Query = { sql: string; params: unknown[] };
