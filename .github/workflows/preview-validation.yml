@@ -1,0 +1,66 @@
+name: Validate pieceofdays dev preview (/try/)
+
+# 개발 정적 이미지 /try/ 체험판(브라우저 저장) 전용 브라우저 검사. docs/plans/PLAN_dev-local-preview.md.
+# 배포 job·배포 키·Secrets·environment를 쓰지 않는다. 기존 app-validation.yml·deploy.yml과 별개다.
+# frontend/public을 runner loopback의 python 정적 서버로만 연다(Next 서버·DB 없음, playwright.preview.config.ts).
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - "frontend/public/try/**"
+      - "frontend/public/index.html"
+      - "frontend/public/design/d-warm-pieces/style.css"
+      - "app/tests/e2e-preview/**"
+      - "app/playwright.preview.config.ts"
+      - "app/tests/unit/dev-preview.test.ts"
+      - "app/package.json"
+      - "app/package-lock.json"
+      - ".github/workflows/preview-validation.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "frontend/public/try/**"
+      - "frontend/public/index.html"
+      - "frontend/public/design/d-warm-pieces/style.css"
+      - "app/tests/e2e-preview/**"
+      - "app/playwright.preview.config.ts"
+      - "app/tests/unit/dev-preview.test.ts"
+      - "app/package.json"
+      - "app/package-lock.json"
+      - ".github/workflows/preview-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      # actions/checkout v6.1.0 (same pinned commit as app-validation.yml)
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      # actions/setup-node v6.5.0 (same pinned commit as app-validation.yml)
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install (existing app lockfile only)
+        run: npm ci
+      - name: Syntax check of the static preview modules
+        run: node --check ../frontend/public/try/store.js && node --check ../frontend/public/try/app.js
+      - name: Preview store unit contract
+        run: npx vitest run tests/unit/dev-preview.test.ts
+      - name: Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Preview browser flow (isolated static server on 127.0.0.1)
+        run: POD_FULL_CHECK_ISOLATED=1 npx playwright test -c playwright.preview.config.ts

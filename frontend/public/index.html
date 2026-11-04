@@ -4,70 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>Piece of Days — dev</title>
+  <title>pieceofdays — 개발 체험</title>
+  <link rel="stylesheet" href="/design/d-warm-pieces/style.css">
   <style>
-    :root {
-      color-scheme: dark;
-      --ds-bg: #08090c;
-      --ds-surface: #101218;
-      --ds-foreground: #e6e4df;
-      --ds-muted-foreground: #8b93a8;
-      --ds-border: #1e2232;
-      --ds-warning: #f4a261;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: var(--ds-bg);
-      color: var(--ds-foreground);
-      font-family: "Pretendard", "Noto Sans KR", -apple-system, BlinkMacSystemFont,
-                   "Segoe UI", Roboto, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
-    main { max-width: 560px; text-align: center; }
-    .badge {
-      display: inline-block;
-      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 12px;
-      letter-spacing: 0.18em;
-      color: var(--ds-warning);
-      border: 1px solid var(--ds-border);
-      background: var(--ds-surface);
-      border-radius: 4px;
-      padding: 6px 12px;
-      margin-bottom: 28px;
-    }
-    h1 { font-size: 48px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 16px; }
-    p { font-size: 15px; line-height: 1.7; color: var(--ds-muted-foreground); word-break: keep-all; }
-    .design-link {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-height: 52px; margin-top: 32px; padding: 0 28px;
-      background: var(--ds-foreground); color: var(--ds-bg);
-      border-radius: 6px; font-size: 18px; font-weight: 700; text-decoration: none;
-    }
-    .design-link:hover { background: #ffffff; }
-    .design-link:focus-visible { outline: 3px solid var(--ds-warning); outline-offset: 3px; }
-    .design-note { margin-top: 12px; font-size: 14px; }
-    code {
-      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 13px;
-      color: var(--ds-foreground);
-    }
+    .entry { max-width: 640px; margin: 0 auto; padding: var(--s-5) var(--s-3); display: grid; gap: var(--s-3); }
+    .entry > *, .entry-card > * { grid-area: auto; }
+    .entry .brand { font-size: 28px; }
+    .entry h1 { font-size: 30px; font-weight: 800; line-height: 1.35; }
+    .entry .lead { font-size: 17px; color: var(--muted); }
+    .entry-card { position: relative; display: grid; gap: var(--s-2); padding: var(--s-4) var(--s-3) var(--s-3); background: var(--surface); border: var(--border); border-radius: 4px; }
+    .entry-card::before { content: ""; position: absolute; top: -12px; left: 24px; width: 72px; height: 22px; background: var(--tape); border: 1px solid #A8998A; transform: rotate(-4deg); }
+    .entry-card .btn-main { justify-self: start; font-size: 18px; }
+    .entry-note { font-size: 14px; color: var(--muted); font-weight: 700; }
+    .entry-more { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); }
+    .entry-more a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 700; }
+    @media (prefers-reduced-motion: reduce) { .entry-card::before { transform: none; } }
   </style>
 </head>
 <body>
-  <main>
-    <p class="badge">DEV ENVIRONMENT</p>
-    <h1>Piece of Days</h1>
-    <p>dev.pieceofdays.com 개발 환경이 연결되었습니다.<br>
-    <code>dev</code> 브랜치에 push 하면 GitHub Actions 검사 후 자동배포됩니다.<br>
-    실제 앱 개발이 시작되면 이 플레이스홀더는 교체됩니다.</p>
-    <a class="design-link" href="/design/d-warm-pieces/">선택한 D 화면 보기</a>
-    <p class="design-note">조각 수정·기록 글꼴을 미리 써 보세요. 예시 기록이며 저장되지 않습니다.</p>
-    <p class="design-note"><a href="/design/">4안 비교</a> · <a href="/promo/">20초 세로 홍보영상</a></p>
+  <main class="entry">
+    <p class="brand">pieceofdays
+      <svg class="squiggle" viewBox="0 0 120 10" aria-hidden="true" focusable="false"><path d="M2 6 C 14 1, 22 9, 34 5 S 56 1, 68 6 S 92 9, 118 3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+    </p>
+    <h1>하루의 조각을 모아 두는 기록장</h1>
+    <p class="lead">메모 한 줄을 조각으로 붙이고, 하루를 한 줄로 묶고, 지난 날을 다시 열어 보세요.</p>
+    <section class="entry-card" aria-labelledby="try-h">
+      <h2 id="try-h" class="hand" style="font-size:22px;color:var(--muted)">개발 체험판</h2>
+      <a class="btn-main" href="/try/">기록장 써 보기</a>
+      <p class="entry-note">이 브라우저에 저장 · 계정 동기화 전</p>
+      <p class="hint">브라우저 데이터를 지우면 기록도 사라져요. 설정에서 기록을 내려받을 수 있어요.</p>
+    </section>
+    <nav class="entry-more" aria-label="디자인 자료">
+      <a href="/design/">디자인 4안 비교</a>
+      <a href="/promo/">20초 세로 홍보영상</a>
+    </nav>
   </main>
 </body>
 </html>

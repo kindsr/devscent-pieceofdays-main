@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>기록장 체험판 — pieceofdays</title>
+  <link rel="stylesheet" href="../design/d-warm-pieces/style.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-in">
+      <a class="brand" href="#today">pieceofdays
+        <svg class="squiggle" viewBox="0 0 120 10" aria-hidden="true" focusable="false"><path d="M2 6 C 14 1, 22 9, 34 5 S 56 1, 68 6 S 92 9, 118 3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+      </a>
+      <nav class="seg" aria-label="주 메뉴">
+        <a data-tab="today" href="#today">오늘</a>
+        <a data-tab="days" href="#days">모아보기</a>
+        <a data-tab="settings" href="#settings">설정</a>
+      </nav>
+      <button class="btn-add" type="button" id="add"><span aria-hidden="true">+</span> 조각 추가</button>
+    </div>
+  </header>
+  <div class="try-bar">
+    <p class="try-note">이 브라우저에 저장 · 계정 동기화 전</p>
+    <p id="status" class="try-status" role="status" aria-live="polite"></p>
+  </div>
+  <div id="stale" class="try-stale" role="region" aria-label="다른 탭 변경 알림" hidden>
+    <p>다른 탭에서 기록이 바뀌었어요. 쓰던 글은 그대로 두었어요.</p>
+    <button class="btn-ghost" type="button" id="stale-reload">다시 읽기</button>
+  </div>
+  <main id="view" tabindex="-1"></main>
+
+  <dialog id="compose" class="pop" aria-labelledby="compose-h">
+    <form id="compose-form" novalidate>
+      <h2 id="compose-h"><span id="compose-title">조각 붙이기</span> <small id="compose-time" class="hand"></small></h2>
+      <label class="lbl" for="compose-text">메모</label>
+      <textarea id="compose-text" rows="4" aria-describedby="compose-err compose-hint" placeholder="짧게 한 줄이면 충분해요"></textarea>
+      <p id="compose-err" class="err" role="alert" hidden></p>
+      <p id="compose-hint" class="hint">1~300자 · 이 브라우저에만 남고 다른 기기와 동기화되지 않아요.</p>
+      <div class="pop-actions">
+        <button type="button" class="btn-ghost" id="compose-cancel">취소</button>
+        <button type="submit" class="btn-main">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="confirm" class="pop" aria-labelledby="confirm-h" aria-describedby="confirm-body">
+    <form id="confirm-form" novalidate>
+      <h2 id="confirm-h"></h2>
+      <p id="confirm-body"></p>
+      <p id="confirm-err" class="err" role="alert" hidden></p>
+      <div class="pop-actions">
+        <button type="button" class="btn-ghost" id="confirm-cancel">취소</button>
+        <button type="submit" class="btn-main" id="confirm-yes"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+/* 기록장 체험판 — D style.css(../design/d-warm-pieces/style.css)에 더하는 최소 규칙. 새 색·글꼴 내려받기·장식 움직임 없음. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+[hidden] { display: none !important; }
+
+/* 메뉴 3칸 */
+.seg { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.btn-add:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; transform: none; }
+
+/* 저장 위치 안내·상태 */
+.try-bar {
+  max-width: 1200px; margin: 0 auto; padding: var(--s-1) var(--s-3) 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2); font-size: 14px;
+}
+.try-note { color: var(--muted); font-weight: 700; }
+.try-status { font-weight: 700; }
+.try-stale {
+  max-width: 1200px; margin: var(--s-1) auto 0; padding: var(--s-1) var(--s-3);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2);
+}
+.try-stale p { font-weight: 700; }
+.try-muted { color: var(--muted); }
+
+/* 조각 안의 수정·삭제 */
+.piece-meta { flex-wrap: wrap; }
+.piece-acts { display: inline-flex; gap: 2px; margin-left: auto; }
+.piece-acts .piece-edit { margin: -6px 0; }
+.piece-acts .piece-edit:last-child { margin-right: -6px; }
+.note p { white-space: pre-wrap; }
+.add-tile { width: 100%; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.first .btn-main { grid-area: auto; }
+
+/* 모아보기 달력 */
+.try-calnav { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); }
+.try-calnav h2 { flex: 1; margin: 0; text-align: center; }
+.try-calnav .btn-ghost { min-width: 44px; padding: 0 12px; }
+.try-calnav .btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+.cal { max-width: 560px; }
+.cal-hint { margin-top: var(--s-2); }
+.try-dots {
+  position: absolute; right: 4px; bottom: 3px; min-width: 20px; padding: 0 4px; border-radius: 10px;
+  background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 800; text-align: center; line-height: 1.5;
+}
+
+/* 설정·문제 안내 */
+.try-keep { margin-top: var(--s-4); }
+.try-danger { color: #8E2A12; border-color: #8E2A12; }
+.try-problem { display: grid; gap: var(--s-2); max-width: 640px; padding: var(--s-3); background: var(--surface); border: var(--border); border-radius: var(--r); }
+
+/* 확인 팝업 */
+#confirm-body { color: var(--muted); }
+
+@media (min-width: 768px) {
+  .seg { width: 330px; }
+}
