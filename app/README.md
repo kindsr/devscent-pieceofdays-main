@@ -15,7 +15,7 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 | `src/ui/d/` | D 화면 컴포넌트(상단, 조각 보드·하루 한 줄·작성/수정 팝업, 달력, 글꼴 설정). 스타일은 `src/app/globals.css`(D `style.css`에서 옮김) |
 | `src/ui/decorate/` | Konva 클라이언트 전용 모듈. 지금은 호환 스모크만 있고 꾸미기 편집기 UI는 없다(별도 아트보드 필요) |
 | `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부, 고정 사용자+실제 인증 동시 사용·운영 단계 mock issuer 거부(순수 Node, `next.config.ts`가 호출) |
-| `src/server/auth/` | 세션 codec(F4a), 인증 설정·공급자 목록(`config.ts`), 로그인 진행·복구 쿠키 codec, returnTo 허용 목록(F4 B1). 아직 route·화면에서 호출하지 않는다 |
+| `src/server/auth/` | 세션 codec(F4a), 인증 설정·공급자 목록(`config.ts`), 로그인 진행·복구 쿠키 codec, returnTo 허용 목록(F4 B1), OIDC 어댑터(`oidc.ts`)·인증 처리 함수(`handlers.ts`, F4 B2). 아직 route·화면에서 호출하지 않는다 |
 | `src/server/context.ts` | 요청의 기록 문맥. 고정 사용자 모드가 아니면 "연결 안 됨" |
 | `src/server/diary/` | 읽기·쓰기 port(`store.ts`)와 PG CRUD 구현, 메모리 구현·예시 기록(로컬·시험 전용) |
 | `src/server/account/`, `src/server/credit/` | identity별 계정 해석·첫 성공 로그인 10개 1회 지급·잔액 조회, 글꼴·디자인 적용 설정(실제 인증 연결 전) |
@@ -143,7 +143,7 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 ## OIDC 패키지 준비 (F4 B0)
 
-`openid-client` 6.8.9(전이 `jose` 6.2.15·`oauth4webapi` 3.8.8)를 고정하고 독립 검토를 수락해 dev에 통합했다. B0 실행 당시 제품 호출부는 0개였다. 현재도 `openid-client`를 import하는 제품 코드는 없고(B2 범위) 실제 로그인은 구현 전이다. 설치·import·CI 결과는 [OIDC 연결 계획](../docs/plans/PLAN_mvp-oidc-integration.md) §15에 있다.
+`openid-client` 6.8.9(전이 `jose` 6.2.15·`oauth4webapi` 3.8.8)를 고정하고 독립 검토를 수락해 dev에 통합했다. B0 실행 당시 제품 호출부는 0개였다(B1 시점까지 같음). 현재는 B2의 `auth/oidc.ts`가 import한다. 실제 로그인은 아직 꺼져 있다(아래 B2 절). 설치·import·CI 결과는 [OIDC 연결 계획](../docs/plans/PLAN_mvp-oidc-integration.md) §15에 있다.
 
 ## 인증 모드·설정·쿠키 codec (F4 B1)
 
@@ -163,7 +163,26 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 명령(격리 Cloud·CI·개발 PC): `npm --prefix app test -- tests/unit/runtime-mode.test.ts tests/unit/auth-config.test.ts tests/unit/auth-flow-cookie.test.ts tests/unit/auth-recovery-cookie.test.ts tests/unit/return-to.test.ts`(저장소 루트).
 
-**독립 검토를 수락해 dev에 통합했다.** 이 모듈을 쓰는 OAuth discovery·토큰 교환·처리 함수(B2), 요청별 DAL(B3), HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)은 없다. 실제 로그인은 꺼져 있고 화면 PG 저장(F5)·서비스 DB·앱 배포(F6)도 없다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구)은 바뀌지 않았다.
+**독립 검토를 수락해 dev에 통합했다.** B1 실행 당시에는 이 모듈을 쓰는 OAuth discovery·토큰 교환·처리 함수(B2), 요청별 DAL(B3), HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)이 없었다(B2 현황은 아래 절). 실제 로그인은 꺼져 있고 화면 PG 저장(F5)·서비스 DB·앱 배포(F6)도 없다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구)은 바뀌지 않았다.
+
+## OIDC 어댑터·인증 처리 함수 (F4 B2)
+
+[OIDC 연결 계획](../docs/plans/PLAN_mvp-oidc-integration.md) §6의 계약을 제품 2파일로 구현했다(PR41 GREEN `db5d213`, +309). 시험·기존 source·config·SQL·package·CI·문서는 바꾸지 않았다.
+
+- `auth/oidc.ts`(`beginLogin`·`finishLogin`): `openid-client` 6.8.9가 discovery·인가 요청·code 교환·ID Token 검증을 한다. `ClientSecretPost`, PKCE S256·state·nonce, `idTokenExpected`, ID Token 서명 검증(`enableNonRepudiationChecks`)을 항상 켜고, mock issuer일 때만 `allowInsecureRequests`를 더한다. discovery 결과는 issuer·client ID·secret·mock 여부 4종을 키로 프로세스 메모리에 두고 실패한 Promise는 지운다. callback query는 모든 항목을 그대로 덧붙여 중복을 보존한다. 취소는 vendor가 검증한 `access_denied`만이다. `sub`만 돌려주고 token·오류 원문은 저장·로그하지 않는다.
+- `auth/handlers.ts`(`handleStart`·`handleCallback`·`handleLogout`·`handleWithdraw`·`handleRestore`): Next 타입 없이 status·Location·쿠키 효과만 돌려준다. 설정 오류 503과 Origin 검사가 먼저이고, F3 `completeSuccessfulLogin`·L2 `requestWithdrawal`·`restoreAccount`를 호출한다. COMMIT 뒤 봉인 실패에도 원장을 되돌리거나 다시 지급하지 않는다. 검증 전 callback 실패는 기존 세션·복구 쿠키를 유지하고, 탈퇴 DB 실패는 세션을 유지하며, 복구는 증명 검사 뒤 복구 쿠키를 소비하고 세대를 검사한다.
+
+검증:
+
+- RED(PR40 `eb7fa37`, 신규 시험 3파일: `tests/support/mock-oidc-issuer.ts`·`tests/unit/auth-oidc.test.ts`·`tests/db/f4-auth-handlers.test.ts`): 단위 11 실패·167 통과(기존 162 + mock·vendor 대조 5), DB 26 실패·139 통과(기존 138 + 실패 주입 대조 1). 제품 모듈 부재만 유효한 RED였고 메인 RED gate를 통과했다. RED 단계의 build 이후 단계(빌드 경계·운영 경계·E2E)는 실행되지 않았다(통과로 세지 않음).
+- GREEN: 시험 변경 0·제품 2파일만, 메인 GREEN gate·`diff --check` 통과.
+- [GREEN CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41787888546): Node 24.22.2·26.13.0 각각 단위 178(15파일, skip 0)·빌드 경계 4·운영 경계 6·E2E 12·lint·typecheck·build, DB 165(10파일, skip 0, PG 18.6 + Node 26. `f4-auth-handlers` 27 = 대조 1 + 처리 함수 26, 기존 138 유지). [root 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41787888296) 42·Compose 통과.
+- exact GREEN의 독립 검토 PASS(P0·P1·P2 없음)를 메인이 수락했다. 독립 runner가 Node 26에서 단위 178·lint·typecheck를 직접 재현했고, Node 24·DB는 CI 근거다.
+- 참고: 빈 `sub`는 vendor가 먼저 거부해 `failed` 응답이 된다. 서명이 정상인 256자 `sub`로 도메인 `invalid_identity` 경로를 확인했다.
+
+명령(격리 Cloud·CI·개발 PC, 저장소 루트): `npm --prefix app test -- tests/unit/auth-oidc.test.ts`, DB는 일회용 PG18에서 `npm --prefix app run test:db -- tests/db/f4-auth-handlers.test.ts`.
+
+**dev 통합 전이다.** 처리 함수는 시험에서만 호출한다. 발급 HTTP route·요청별 DAL·D 인증 화면(B3·B4), 실제 공급자 검증(B5)이 없어 서비스의 실제 로그인은 꺼져 있다. 화면 PG 저장(F5)·서비스 DB·앱 배포(F6)도 없다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구, 계정 연결 미정)은 바뀌지 않았다.
 
 ## 한계 (제품 구현)
 

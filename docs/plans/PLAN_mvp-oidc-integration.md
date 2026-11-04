@@ -38,7 +38,7 @@
 
 ## 1. 현재 코드 사실 (BASE `eaf9d4f`)과 갭
 
-> 이 절은 계획 수립 BASE `eaf9d4f` 시점의 사실이다. 이후 실행 결과는 §15(B0)·§16(B1)을 본다.
+> 이 절은 계획 수립 BASE `eaf9d4f` 시점의 사실이다. 이후 실행 결과는 §15(B0)·§16(B1)·§17(B2)을 본다.
 
 **[사실] 이미 있는 모듈:**
 
@@ -681,11 +681,36 @@ export async function getDiaryContext(): Promise<DiaryContext>;
   - 독립 runner는 Node 26에서 단위 162·lint·typecheck를 직접 재현했다. Node 24는 CI 근거다.
   - flow·복구 쿠키의 iron 자체 TTL 경과 child 시험이 GREEN에서 처음 실제로 실행되어, 앱 시계 만료(`expired`)와 iron TTL 경과(`invalid`)를 구분해 확인했다.
 - **통합 상태:** exact GREEN의 독립 검토를 수락하고 문서 5파일을 대조해 dev에 통합했다. 메인은 코드·시험·공개 계약을 바꾸지 않았으며 현재 상태와 후속 범위만 문서에 갱신했다.
-- **미실행·미연결:**
-  - 제품에서 `openid-client`를 import하지 않는다. OAuth discovery·토큰 교환·처리 함수(B2), 요청별 DAL(B3), 발급 HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)은 없다.
+- **미실행·미연결(B1 실행 당시):**
+  - 제품에서 `openid-client`를 import하지 않았다. OAuth discovery·토큰 교환·처리 함수(B2), 요청별 DAL(B3), 발급 HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)은 없었다(B2 결과는 §17).
   - 서비스의 실제 로그인은 꺼져 있다. 화면 PG 저장(F5), 서비스 DB·Next 배포(F6)도 없다. dev는 정적 D, 운영은 준비중 페이지다.
   - 정책(공급자 둘 다·첫 성공 로그인 10개·30일 복구) 변경은 없다.
   - 이 기록 작성자는 코드·DB·E2E 시험, 설치, 서버, FullCheck를 실행하지 않았다. 실행 근거는 위 CI와 독립 runner다.
+
+## 17. B2 OIDC 어댑터·처리 함수 실행 결과 (RED 2026-11-03, GREEN·CI 2026-11-04)
+
+이 절은 실행 기록이다. 원래 BASE·설계·공개 API·쿠키·표·모드·정책(§0~§13)은 바꾸지 않았다.
+
+- **커밋:** 이전 dev(B1 통합) `f5123937fceb2e867b443468ccde2e4566ad5bc3` → RED PR40 `eb7fa370c721a7de9f10fc4860962eab34a9d39f` → GREEN PR41 `db5d213f81a6aed321dbdd84d823d694b80ee529`.
+- **RED:** 신규 시험 3파일만 — `tests/support/mock-oidc-issuer.ts`(425줄), `tests/unit/auth-oidc.test.ts`(708줄), `tests/db/f4-auth-handlers.test.ts`(1177줄). 메인 RED gate 3개 통과.
+  - 단위 11 실패·167 통과(기존 162 + mock·vendor 대조 5), DB 26 실패·139 통과(기존 138 + 실패 주입 대조 1). 제품 모듈 부재만 유효한 실패였다.
+  - RED 단계의 빌드 경계·운영 경계·E2E는 실행되지 않았다. 통과로 기록하지 않는다.
+- **GREEN:** 제품 2파일만(+309): `auth/oidc.ts`(105줄), `auth/handlers.ts`(204줄). 시험 변경 0, 기존 source·config·SQL·package·CI·문서 변경 0. 메인 GREEN gate(시험 0·제품 2), `diff --check` 0, 메인이 코드 전체를 읽었다.
+  - `oidc.ts`(§6.1): 실제 `openid-client` 6.8.9의 discovery·`ClientSecretPost`·PKCE S256·state·nonce·`idTokenExpected`, `enableNonRepudiationChecks` 필수, mock에서만 `allowInsecureRequests`. Configuration 캐시 키는 issuer·client ID·secret·mock 여부 4종이고 실패 Promise는 제거한다. query는 모든 항목을 `append`해 중복을 보존한다. `cancelled`는 vendor가 검증한 `access_denied`만이다. `sub`만 반환하고 token 저장·오류 원문 로그는 0이다.
+  - `handlers.ts`(§6.2·§6.3): Next 독립 처리 함수 5개. 설정 오류·Origin 검사를 먼저 하고, 표의 쿠키 효과를 정확히 따르며 F3·L2 함수를 호출한다. COMMIT 뒤 봉인 실패에서 원장 유지·재지급 0, 검증 전 callback 실패에서 세션·복구 쿠키 유지, 탈퇴 DB 실패에서 세션 유지, 복구는 증명 검사 뒤 복구 쿠키 소비·세대 검사.
+  - 공개 계약·정책 변경은 없다.
+- **CI(exact GREEN):** [app 41787888546](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41787888546)
+  - Node 24.22.2·26.13.0 각각 단위 178(15파일, skip 0)·빌드 경계 4·운영 경계 6·E2E 12·lint·typecheck·build
+  - DB 165(10파일, skip 0, PG 18.6 + Node 26). `f4-auth-handlers` 27 = 실패 주입 대조 1 + 처리 함수 26. 기존 138 유지
+  - [root 41787888296](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41787888296) validate 42·Compose 통과, PR deploy는 정상 skip
+- **독립 검토:** 작성자 Cloud에서 Node 26·24 단위 178, Node 26 lint·typecheck를 직접 실행했다. GREEN 작성자는 exact HEAD clean·원격 일치를 확인하고 수정을 멈췄다(`F4_AUTH_B2_GREEN_READY_FOR_RUNNER`). 독립 runner는 Node 26에서 단위 178·lint·typecheck를 직접 재현했고 Node 24·DB는 CI 근거로 구분했다. PASS(P0·P1·P2 없음, `F4_AUTH_B2_GREEN_RUNNER_COMPLETE`)를 메인이 수락했다.
+  - 정보성(RED P2, 유지): 빈 `sub`는 vendor가 먼저 거부해 `failed` 응답이 된다. 서명이 정상인 256자 `sub`로 도메인 `invalid_identity` 경로를 확인했다. 시험 수정·우회는 없다.
+- **통합 상태:** 독립 검토는 수락됐고 **dev 통합 전**이다. 메인이 통합 단계에서 상태를 갱신한다.
+- **미실행·미연결:**
+  - 처리 함수는 시험에서만 호출한다. 발급 HTTP route·요청별 DAL·D 인증 화면(B3·B4)이 없어 서비스의 실제 로그인은 꺼져 있다.
+  - 실제 공급자 검증(B5), 화면 PG 저장(F5), 서비스 DB·Next 배포(F6)는 없다. dev는 정적 D, 운영은 준비중 페이지다.
+  - 정책(공급자 둘 다·첫 성공 로그인 10개·30일 복구·계정 연결 미정) 변경은 없다.
+  - 이 기록 작성자는 코드·DB·E2E 시험, 설치, 서버, FullCheck를 실행하지 않았다. 실행 근거는 위 CI·작성자·독립 runner다.
 
 ---
 
