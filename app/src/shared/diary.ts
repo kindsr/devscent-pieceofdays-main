@@ -17,8 +17,10 @@ export interface DiaryStore {
 
 /**
  * 요청의 기록 문맥. userId는 세션에서만 얻는다(F4). 헤더·URL·폼 값의 사용자 ID는 쓰지 않는다.
- * F1에는 실제 로그인과 저장소가 없으므로, 로컬 고정 사용자 모드가 아니면 "연결 안 됨"을 돌려준다.
+ * signed_in은 F5 전까지 저장소 없이 "기록 연결 전" 안내만 한다. 설정 없음·DB 실패는 unavailable이다.
  */
 export type DiaryContext =
   | { kind: "fixture"; userId: string; store: DiaryStore; today: string }
+  | { kind: "signed_in" }
+  | { kind: "signed_out" }
   | { kind: "unavailable" };
