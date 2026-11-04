@@ -12,7 +12,7 @@
 
 | 경로 | 변경 |
 |---|---|
-| `frontend/public/try/store.mjs` | 브라우저 저장·입력/문서 검증·날짜/글꼴·기록 CRUD·내보내기용 문서 |
+| `frontend/public/try/store.js` | 브라우저 저장·입력/문서 검증·날짜/글꼴·기록 CRUD·내보내기용 문서. ES module이며 현행 nginx MIME 매핑에 맞춰 `.js`를 사용한다 |
 | `frontend/public/try/index.html`, `app.js`, `style.css` | D CSS 재사용, 빈 오늘·작성/수정/삭제·하루 한 줄·달력·설정·저장 오류 표시 |
 | `frontend/public/index.html` | 체험판으로 들어가는 주 링크, 시안·영상 링크 유지 |
 | `app/tests/unit/dev-preview.test.ts` | 저장 모듈 계약. 기존 단위 검사에 포함 |
