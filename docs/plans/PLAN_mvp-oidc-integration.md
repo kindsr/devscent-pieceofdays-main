@@ -705,7 +705,7 @@ export async function getDiaryContext(): Promise<DiaryContext>;
   - [root 41787888296](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41787888296) validate 42·Compose 통과, PR deploy는 정상 skip
 - **독립 검토:** 작성자 Cloud에서 Node 26·24 단위 178, Node 26 lint·typecheck를 직접 실행했다. GREEN 작성자는 exact HEAD clean·원격 일치를 확인하고 수정을 멈췄다(`F4_AUTH_B2_GREEN_READY_FOR_RUNNER`). 독립 runner는 Node 26에서 단위 178·lint·typecheck를 직접 재현했고 Node 24·DB는 CI 근거로 구분했다. PASS(P0·P1·P2 없음, `F4_AUTH_B2_GREEN_RUNNER_COMPLETE`)를 메인이 수락했다.
   - 정보성(RED P2, 유지): 빈 `sub`는 vendor가 먼저 거부해 `failed` 응답이 된다. 서명이 정상인 256자 `sub`로 도메인 `invalid_identity` 경로를 확인했다. 시험 수정·우회는 없다.
-- **통합 상태:** 독립 검토는 수락됐고 **dev 통합 전**이다. 메인이 통합 단계에서 상태를 갱신한다.
+- **통합 상태:** exact GREEN의 독립 검토를 수락하고 문서 5파일을 대조해 dev에 통합했다. 메인은 코드·시험·공개 계약을 바꾸지 않고 현재 통합 상태만 갱신했다.
 - **미실행·미연결:**
   - 처리 함수는 시험에서만 호출한다. 발급 HTTP route·요청별 DAL·D 인증 화면(B3·B4)이 없어 서비스의 실제 로그인은 꺼져 있다.
   - 실제 공급자 검증(B5), 화면 PG 저장(F5), 서비스 DB·Next 배포(F6)는 없다. dev는 정적 D, 운영은 준비중 페이지다.
