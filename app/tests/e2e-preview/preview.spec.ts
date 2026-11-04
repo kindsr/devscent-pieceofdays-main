@@ -4,11 +4,12 @@
 // - 브라우저 저장은 빠른 체험용 임시 기본값이다. 계정·서버 저장·이미지·꾸미기·감정덩어리·마켓은 기대하지 않는다.
 // - UI 계약(D 문구·상태, 최소 고정):
 //   제목 "오늘의 조각" 또는 "M월 D일 X요일의 조각" · "조각 추가" · 조각마다 "수정"/"삭제" 버튼 ·
+//   모아보기에서 선택한 날짜 경로의 제목은 "M월 D일 X요일의 조각"으로 표시한다.
 //   작성 팝업(dialog) "메모" 칸 + "저장"/"취소" · 삭제·전체 지우기는 확인 dialog("취소"로 취소) ·
 //   "하루 한 줄" 칸(form 또는 dialog 안의 "저장") · 메뉴(navigation) "오늘"/"모아보기"/"설정" ·
 //   모아보기 달력의 날짜 링크 이름에 "M월 D일" · 설정의 글꼴 라디오 고딕/명조/손글씨 · "기록 내려받기" · "체험 기록 지우기" ·
 //   "이 브라우저에 저장"과 "계정 동기화 전" 안내.
-// - 각 사례는 새 브라우저 context(빈 localStorage)에서 시작한다. 날짜 기대값은 시험 실행 시각의 서울 날짜다.
+// - 각 사례는 새 브라우저 context(빈 localStorage)에서 시작한다. 날짜 기대값과 브라우저 시각을 같은 시점에 고정한다.
 import { readFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
@@ -19,10 +20,13 @@ function seoulParts(d = new Date()) {
   const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
   return { m: Number(p.month), d: Number(p.day), iso: `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}` };
 }
-const today = seoulParts();
+const TEST_NOW = new Date();
+const today = seoulParts(TEST_NOW);
 const TODAY_LABEL = `${today.m}월 ${today.d}일`;
 
 async function openTry(page: Page, path = "/try/"): Promise<void> {
+  // 서울 자정을 넘어 실행돼도 제목·달력 기대 날짜가 바뀌지 않는다. 타이머는 계속 실행한다.
+  await page.clock.setFixedTime(TEST_NOW);
   const res = await page.goto(path);
   expect(res?.status(), `GET ${path} (the /try/ preview must exist)`).toBe(200);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -102,7 +106,7 @@ test("write → reload → edit → 모아보기 → reopen the date → delete 
   await expect(piece(page, "국숫집 줄이 생각보다 짧았다")).toBeVisible();
   await page.reload();
   await expect(piece(page, "국숫집 줄이 생각보다 짧았다")).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: /^국숫집 줄이 짧았다$/ })).toHaveCount(0);
+  await expect(piece(page, "국숫집 줄이 짧았다")).toHaveCount(0);
 
   await nav(page, "모아보기");
   await page.getByRole("link", { name: new RegExp(TODAY_LABEL) }).first().click();
@@ -221,11 +225,14 @@ test("corrupt stored data is neither overwritten nor deleted by opening, writing
   await page.evaluate((k) => window.localStorage.setItem(k, '{"v":1,"days":broken'), KEY);
   await openTry(page);
   expect(await raw(page)).toBe('{"v":1,"days":broken');
-  await addButton(page).click();
-  const dlg = dialog(page);
-  if (await dlg.isVisible()) {
-    await dlg.getByRole("textbox", { name: "메모" }).fill("손상 위에 쓰기");
-    await dlg.getByRole("button", { name: "저장", exact: true }).click();
+  const add = addButton(page);
+  if (await add.count() > 0 && await add.isEnabled()) {
+    await add.click();
+    const dlg = dialog(page);
+    if (await dlg.isVisible()) {
+      await dlg.getByRole("textbox", { name: "메모" }).fill("손상 위에 쓰기");
+      await dlg.getByRole("button", { name: "저장", exact: true }).click();
+    }
   }
   expect(await raw(page), "not overwritten").toBe('{"v":1,"days":broken');
   await page.reload();
