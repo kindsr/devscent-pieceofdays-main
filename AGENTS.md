@@ -17,7 +17,7 @@
 
 ## 1. 현재 상태
 
-- [PRD](docs/PRD.md)는 사용자 확정 요건과 미정 항목을 구분한 초안이다. 운영은 준비중 페이지, dev는 정적 프로토타입이다. 사용자 선택(2026-11-02)은 TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소, 그리기 Konva다. [app/](app/README.md)에 F1 화면·F2 스키마·F3 저장 코어(지급·기록·개인 꾸미기·기록 글꼴)·F4a 세션 codec·서버 전용 경계, F4 L1 계정 수명주기 스키마(0002)·L2 탈퇴·복구 도메인, F4 B1 실행 모드 검사·인증 설정·flow/복구 쿠키 codec, F4 B2 OIDC 어댑터·인증 처리 함수를 검증했다(현재 단위 178·DB 165·빌드 경계 4). L1·L2·B1·B2는 독립 검토를 수락해 dev에 통합했다(인증 처리 함수는 시험에서만 호출). 실제 인증·화면 저장·서비스 DB 연결은 아직 없다. 현재 정적 배포에는 이 앱이 포함되지 않는다.
+- [PRD](docs/PRD.md)는 사용자 확정 요건과 미정 항목을 구분한 초안이다. 운영은 준비중 페이지, dev는 정적 프로토타입이다. 사용자 선택(2026-11-02)은 TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소, 그리기 Konva다. [app/](app/README.md)에 F1 화면·F2 스키마·F3 저장 코어(지급·기록·개인 꾸미기·기록 글꼴)·F4a 세션 codec·서버 전용 경계, F4 L1 계정 수명주기 스키마(0002)·L2 탈퇴·복구 도메인, F4 B1 실행 모드 검사·인증 설정·flow/복구 쿠키 codec, F4 B2 OIDC 어댑터·인증 처리 함수를 검증했다(현재 단위 196·DB 165·빌드 경계 4, 단위에 체험판 저장 모듈 18 포함). L1·L2·B1·B2는 독립 검토를 수락해 dev에 통합했다(인증 처리 함수는 시험에서만 호출). 실제 인증·화면 저장·서비스 DB 연결은 아직 없다. 현재 정적 배포에는 이 앱이 포함되지 않는다. 별도로 정적 이미지의 `/try/`에 D 브라우저 저장 체험판([계획](docs/plans/PLAN_dev-local-preview.md))을 준비했으며 독립 검토·게시 전이다. 브라우저 저장은 빠른 체험용 임시 기본값이고 Next 앱 배포나 서버 저장 연결이 아니다.
   사용자 확정(2026-11-03): 로그인은 Google·Kakao 둘 다, 계정 탈퇴는 30일 복구 기간 뒤 삭제다. 공급자 간 계정 연결은 미정이다. 설계 문서는 `docs/plans/PLAN_mvp-authentication.md`·`docs/plans/PLAN_account-lifecycle.md`·`docs/plans/PLAN_mvp-oidc-integration.md`다(F4a·L1·L2 도메인·B1 설정/쿠키 codec 구현, 실제 OAuth·요청별 DAL 연결·복구 쿠키 발급 route·운영 삭제는 후속).
   신규 DB는 공통 docs/10의 PostgreSQL18 기준으로 계획하고, 과거 PostgreSQL14 등 표기를 이 서비스의 선택으로 보지 않는다.
 - 운영: `docker-compose.yml`의 `pieceofdays-comingsoon`은 준비중 페이지를 이미지로 빌드한다. 전환 전 bind mount 방식은 §3의 주의를 확인한다.

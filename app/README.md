@@ -23,6 +23,7 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 | `src/server/db/`, `migrations/` | 앱 Pool·트랜잭션, SQL 정책 검사·migration 실행기와 8개 테이블·권한·원장 보호 |
 | `src/shared/` | UI 공유 타입, 글꼴 허용 목록, 날짜 파싱·서울 날짜/시각, 꾸미기 manifest 검증·렌더용 필터 |
 | `tests/unit/`, `tests/db/`, `tests/e2e/`, `tests/prod/` | Vitest 단위·일회용 PG18 통합 시험 / Playwright E2E / 운영 모드 경계 smoke |
+| `tests/unit/dev-preview.test.ts`, `tests/e2e-preview/`, `playwright.preview.config.ts` | `app/` 밖 정적 체험판(`frontend/public/try/`)의 저장 모듈·브라우저 시험. 이 앱의 코드가 아니다(아래 체험판 절) |
 | `docs/screenshots/` | F1 확인 스크린샷(로컬 고정 사용자 모드, 375/768/1440) |
 
 ## 실행 모드
@@ -183,6 +184,16 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 명령(격리 Cloud·CI·개발 PC, 저장소 루트): `npm --prefix app test -- tests/unit/auth-oidc.test.ts`, DB는 일회용 PG18에서 `npm --prefix app run test:db -- tests/db/f4-auth-handlers.test.ts`.
 
 **독립 검토를 수락해 dev에 통합했다.** 처리 함수는 시험에서만 호출한다. 발급 HTTP route·요청별 DAL·D 인증 화면(B3·B4), 실제 공급자 검증(B5)이 없어 서비스의 실제 로그인은 꺼져 있다. 화면 PG 저장(F5)·서비스 DB·앱 배포(F6)도 없다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구, 계정 연결 미정)은 바뀌지 않았다.
+
+## 개발 체험판 `/try/`와의 관계 (검토 중 · 게시 전)
+
+`frontend/public/try/`의 정적 체험판은 **이 Next 앱과 별개**다([계획](../docs/plans/PLAN_dev-local-preview.md)). 기존 정적 이미지가 제공하는 D 화면이며 기록을 브라우저의 전용 저장 항목 하나에만 둔다. 이 앱의 로그인·세션·PG 저장·고정 사용자 모드와 연결되지 않는다.
+
+- 이 앱의 상태는 그대로다: 실제 로그인은 꺼져 있고, 화면은 PG에 저장하지 않으며, 서비스 DB·Next 배포(F6)도 없다. `POD_LOCAL_FIXTURE`는 여전히 개발·시험 전용이고 운영에서 거부된다. 체험판은 이 규칙을 바꾸지 않는다.
+- 체험판 시험은 기존 app lock의 Vitest·Playwright만 빌려 쓴다. 단위 시험 `tests/unit/dev-preview.test.ts`(18)는 기존 `npm test`에 포함돼 현재 단위가 196이다(B2 178 + 18). 브라우저 시험은 기존 E2E 12와 섞지 않는다.
+- 명령(격리 Cloud·CI·개발 PC만, `app/`에서): `npx vitest run tests/unit/dev-preview.test.ts`, `POD_FULL_CHECK_ISOLATED=1 npx playwright test -c playwright.preview.config.ts`. 설정은 플래그가 없으면 시작을 거부하고, `frontend/public`을 Python 표준 정적 서버로 `127.0.0.1:3400`에만 연다. 공유 서버에서 실행하지 않는다.
+- CI는 별도 workflow `.github/workflows/preview-validation.yml`(Secrets·배포 권한 없음)이다. GREEN `2f3e61b`의 [preview CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116570)에서 구문 검사·저장 단위 18·브라우저 10이 통과했다. [app CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116422)에서는 Node 24·26 각각 단위 196·빌드 경계 4·운영 경계 6·E2E 12·lint·typecheck·build, DB 165가 통과했다.
+- 독립 GREEN 검토가 진행 중이며 dev 통합·게시 전이다.
 
 ## 한계 (제품 구현)
 

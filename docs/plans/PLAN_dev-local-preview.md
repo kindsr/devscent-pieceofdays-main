@@ -4,6 +4,7 @@
 - 저장 방식 선택 질문은 열어 두었으며, 빠른 체험을 위한 임시 기본값은 브라우저 저장이다. 사용자 확정 정책으로 기록하지 않는다.
 - 기준: `dev` `f5123937fceb2e867b443468ccde2e4566ad5bc3`. B2 인증 구현은 별도 Cloud 브랜치에서 계속한다.
 - 목표: MVP 전체 완성을 기다리지 않고 개발 도메인에서 직접 작성한 기록을 새로고침 뒤에도 다시 연다.
+- **진행(2026-11-04):** RED·GREEN 구현과 CI는 통과했다. **독립 GREEN 검토 진행 중, dev 통합·게시 전**이다(아래 실행 결과). 위 "기준"은 계획 작성 당시 값이다.
 
 ## 범위와 경로
 
@@ -53,3 +54,22 @@
 - 이번 결과는 개발 도메인에만 반영한다. 운영 main 승격은 하지 않는다.
 - 실패 시 직전 검증 정적 이미지로 복귀한다. 체험판을 되돌려도 사용자의 브라우저 저장 키를 삭제하거나 재해석하지 않는다.
 - Next 앱의 실제 Google·Kakao 인증/계정 저장은 기존 B2 이후 순서로 연결한다. 체험판 공개를 MVP 완료로 표시하지 않는다.
+
+## 실행 결과 (2026-11-04, 검토 중)
+
+이 절은 실행 기록이다. 위 범위·사용자 경험·저장·운영 계약은 바꾸지 않았다.
+
+- **RED(PR42):** 최종 BASE `4efa55836cba03b79964149e1f9b2bb3119dde10`, HEAD `02358bec365c48df349f4036e8b046e1757d4b2b`. 시험 3파일(`tests/unit/dev-preview.test.ts`, `tests/e2e-preview/preview.spec.ts`, `playwright.preview.config.ts`)만, 메인 RED gate 통과, 독립 PASS(P0·P1·P2 없음).
+  - [CI 41791303869](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41791303869): 단위 18 실패·178 통과(전체 196), DB 165. [root 41791303797](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41791303797) 통과. 같은 시험 blob의 독립 E2E는 대조 1 통과·`/try/` 404로 9 실패였다.
+  - R1 보완은 좁은 범위였다: 옛 글 부재 검사, 손상 문서 읽기 전용 허용, 날짜 제목 명시, 브라우저 시계 기대 일치.
+- **GREEN(PR43):** `2f3e61b7417237aaf267a433e13dde247211d236`(브랜치 `claude/dev-preview-green-g0sym2`). 제품 6파일만: `frontend/public/try/{store.js,app.js,index.html,style.css}`, `frontend/public/index.html`, `.github/workflows/preview-validation.yml`. 시험 변경 0, 기존 Next 앱·D 원본·공용 sample·Dockerfile·Compose 변경 0. 메인 GREEN gate(시험 0·제품 6)·`diff --check` 0, 메인이 코드 전체를 읽었다.
+  - 전용 `localStorage` 키 하나의 버전 JSON. 쓰기마다 최신 문서를 다시 읽고, `setItem` 성공 뒤에만 성공을 알린다. 실패하면 초안을 유지한다. 손상된 원문은 덮어쓰지 않고 내려받을 수 있다. 다른 키는 지우지 않는다. 다른 탭의 변경을 알리지만 탭 간 원자적 동기화는 보장하지 않는다.
+  - D `style.css`를 그대로 불러오고 최소 CSS만 더했다. 사용자 글은 `textContent`로 렌더한다. 서버 전송·추적·실계정·감정덩어리·예시 기록·이미지·펜·마켓은 없다.
+  - dev 첫 화면의 주 링크는 `/try/`이고 `/design/`·`/promo/` 링크와 `noindex`는 유지한다.
+- **CI(exact GREEN):**
+  - [app 41793116422](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116422): Node 24.22.2·26.13.0 각각 단위 196(B2 178 + 체험판 18)·빌드 경계 4·운영 경계 6·기존 E2E 12·lint·typecheck·build, PG 18.6 DB 165
+  - [root 41793116522](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116522) 42·Compose, PR deploy는 정상 skip
+  - [preview 41793116570](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116570): Node 26 JS 구문·저장 단위 18·실제 브라우저 10 passed(4.6s). 기존 E2E 12와 섞지 않는다. 메인이 원문 로그에서 10 passed를 직접 확인했다.
+- **상태:** 독립 GREEN 검토 **진행 중**, dev 통합·게시 전. 실제 게시·HTTPS·실기기 브라우저 확인은 메인이 통합 뒤 한다.
+- **브라우저 저장 한계:** 같은 브라우저에만 남고 브라우저 데이터 삭제 시 사라진다. 기기 동기화·실계정 자동 병합은 없다. 체험판을 Next 앱이나 MVP 완료로 표시하지 않는다.
+- **미실행(이 기록 작성자):** 코드·브라우저·DB 시험, 서버, 설치, FullCheck. 실행 근거는 위 CI와 메인 확인이다.
