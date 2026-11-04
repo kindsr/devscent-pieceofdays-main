@@ -714,6 +714,20 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 
 ---
 
+## 18. B3 요청 context·DAL 진행 (2026-11-04)
+
+- **시작 기준:** dev `c7e09ee6ae9276fd7fa17dd555011f2b025f950b`. 재개 시 작업 트리 clean·원격 일치, dev 체험판·운영 HTTPS와 두 컨테이너의 healthy, 배포 기록 success·pending 부재를 메인이 읽기 전용으로 확인했다. 재배포·운영 승격·인프라 변경은 하지 않았다.
+- **진행:** RED PR44 `bccb7f74cc1dbac277aecd3d8ff4b30d438e2df2`의 [독립 PASS](https://github.com/kindsr/devscent-pieceofdays-main/pull/44#pullrequestreview-5771019879)와 별도 Claude Cloud GREEN PR45 `7acef57`의 [독립 PASS](https://github.com/kindsr/devscent-pieceofdays-main/pull/45#pullrequestreview-5771337007)를 메인이 수락했다. RED → 독립 runner → GREEN(시험 변경 0) → 독립 검토를 마쳤고, 최종 dev 통합·배포 결과는 PR45에 기록한다.
+- **RED 근거:** 시험 2파일만 추가했다. 최초 `bd03f8f`에서 메인이 발견한 DB 호출 관찰값 누적을 `bccb7f7`의 `newRequest` 초기화로 고쳤고 기대값은 유지했다. 정본 RED gate·diffcheck 통과. [CI 41857748109](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41857748109)에서 Node 24·26 각각 unit 10 failed / 기존 196 passed, PG18.6 DB 5 failed / 기존 165 passed(skip 0). 실패는 `getViewer` 부재 14건과 `getDiaryContext` 동기 반환 1건뿐이다. [root 41857748141](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41857748141)은 42·Compose 통과. Unit RED 뒤 build·경계·prod·E2E는 미실행이다. 독립 runner가 Node26 대상·전체 unit·lint·typecheck를 직접 재현했고 Node24·DB는 CI 근거로 구분했다.
+- **GREEN·CI:** PR45 `7acef5704516cc3a84a373f65e6271a2bd37ecd7`, 제품 6파일 +115/−15·시험 변경 0이다. 메인이 제품 전체를 읽고 정본 GREEN gate·diffcheck와 통합 후보의 source/test blob 일치를 확인했다. [CI 41859926510](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41859926510)에서 Node 24·26 각각 unit 206·빌드 경계 4·prod 6·E2E 12, PG18.6 DB 170(skip 0)이 통과했다. [root 41859926273](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41859926273) 42·Compose도 통과했다. 실제 로그인·서버 저장을 켜지 않았다.
+- **작성자 회수·화면 범위:** [READY·소유권 반환 보고](https://github.com/kindsr/devscent-pieceofdays-main/pull/45#issuecomment-6635090669)를 받았다. Cloud Node26에서 unit 206·lint·typecheck·build를 직접 통과했고 DB·prod·E2E는 CI 근거로 구분했다. 화면은 저장소 밖 scratch 번들에서 context 입력만 `signed_in`으로 바꾸고 실제 page 3개·TopBar·globals.css의 정적 렌더를 Chromium 375/768/1440 총 9장으로 직접 확인했다(기존 D notice 구조·작성 버튼 없음·가로 넘침 없음). 이는 실제 Next 요청·로그인·redirect·배포 검증이 아니며 원본 제품·시험은 바꾸지 않았다. 메인은 화면을 직접 봤다고 보고하지 않는다.
+- **독립 GREEN 수락:** [PASS 보고](https://github.com/kindsr/devscent-pieceofdays-main/pull/45#pullrequestreview-5771337007)(P0·P1 없음)를 메인이 수락했다. runner가 Node26 대상 unit 10·전체 206·lint·typecheck를 직접 통과했고 나머지는 위 CI 원문으로 구분했다. 실제 React cache import·설치본 요청 dispatcher의 memo 범위·사용자 전역 정보 부재·page별 await를 소스로 확인했다. 정보성 P2는 B4의 `/login` route·실제 URL 사용자 ID 위조 HTTP 검사다. B3에서 인증 env를 수동으로 켜면 signed_out은 아직 없는 `/login`으로 이동하므로 B4 활성화 PR 전 서비스 env를 켜지 않는다.
+- **담당 경계:** GREEN은 §3의 제품 6파일(context·shared diary·layout·page 3개)만 맡는다. §7 표의 TopBar viewer 표시와 settings 계정 영역은 §3에서 TopBar·settings를 소유한 B4로 유예한다. B3 layout은 async 문맥으로 `canWrite`를 계산하고 fixture에서만 작성 UI를 허용한다. `/login` 화면·발급 route·실로그인·PG 기록 읽기/쓰기·서비스 DB·앱 배포는 이번 slice에 포함하지 않는다.
+- **시험 관점:** 정확한 세션 쿠키 이름, fixture/auth 충돌 우선 거부, 설정 오류·세션 거부·DB 장애 구분, 계정 상태·세대 확인, 탈퇴 COMMIT 뒤 새 요청 거부, 요청 사이 사용자 정보 누수를 검증한다. 기존 unit 196·DB 165와 build 경계 4·운영 경계 6·E2E 12를 기준으로 신규 사례와 기존 회귀를 구분한다. 공유 운영 서버에서 npm·Next·DB·FullCheck를 실행하지 않는다.
+- **요청 cache 근거:** [React cache](https://react.dev/reference/react/cache)는 서버 요청마다 무효화되며 컴포넌트 렌더 밖 호출에는 memo를 제공하지 않는다. [Next 인증 가이드](https://nextjs.org/docs/app/guides/authentication)는 layout의 Partial Rendering 때문에 데이터 접근 가까이에서 재검사할 것을 설명한다(2026-11-04 조회). 시험의 요청 seam과 실제 React 동작을 구분해 보고하고, page 각각이 DAL을 호출하는지 검토한다. 설치된 버전은 그대로 유지한다.
+- **RED 정보성 P2·후속 확인:** (1) 요청 번호별 memo seam은 실제 React 서버 렌더 격리의 실행 증거가 아니므로 GREEN의 실제 `react` cache import·사용자 전역 Promise/객체 부재·page별 await를 검토한다. (2) `getViewer`는 URL 인자를 받지 않아 B3의 사용자 ID 위조 사례는 header·referer·추가 cookie로 확인한다. 실제 `?userId=` HTTP 요청 무시는 §9 P1의 B4 prod smoke에서 확인하며 B3의 실행 실적으로 세지 않는다.
+- **되돌리기:** 서비스 DB·schema·HTTP 발급 경로를 바꾸지 않는다. B3 제품·시험·문서 커밋을 revert해 이전 동기 fixture 문맥으로 돌아갈 수 있다. 현재 정적 이미지와 브라우저 저장 키는 변경하지 않는다.
+
 ## 부록 A — Windows 세션용 OAuth 콘솔 설정 프롬프트 (초안)
 
 > 이 문단은 사용자의 Windows PC Claude 세션에 붙여 넣는 용도다.
