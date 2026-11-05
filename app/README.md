@@ -1,8 +1,10 @@
 # pieceofdays app (F1 화면·F2 DB·F3 도메인·F4 인증 기반)
 
+2026-11-05 B4: 인증 route 5개와 D 로그인·탈퇴·복구 화면, 설정의 계정 영역을 구현했다([PR57](https://github.com/kindsr/devscent-pieceofdays-main/pull/57), 제품 `cdf4edd`). route는 기존 B2 처리 함수와 쿠키 설정을 그대로 사용한다. `POD_WITHDRAWAL_ENABLED=1`일 때만 탈퇴 요청을 허용하며 기본은 닫힘이다. 복구는 이 설정과 독립이다. JS 없이도 공급자 form은 POST·303으로 동작한다. 계정 사용자는 아직 기록 연결 전 안내를 보며 S3b에서 저장 화면을 연결한다. 실제 공급자 자격·서비스 DB·개발 앱 배포는 미설정이다. 최종 통합 SHA의 CI·독립 검토 결과는 PR57에 기록한다.
+
 2026-11-05 S3a: `src/app/actions/diary.ts`의 기록 작성·수정·삭제·하루 한 줄·글꼴 저장 액션을 검증했다. config → 명시 Origin → `getViewer()` → 입력 형태 → 기존 F3 순서이며, 예상 밖 오류는 원문 없이 `unavailable`이다. 화면에서 아직 호출하지 않아 실제 저장 UI가 켜진 것은 아니다. [PR52](https://github.com/kindsr/devscent-pieceofdays-main/pull/52) exact `24721ae`의 CI·독립 PASS: Node24/26 단위223·빌드 경계4·운영 경계6·E2E12, PG18 DB178(신규8), 배포 계약42. [연결 계약](../docs/plans/PLAN_dev-diary-actions.md)을 따른다.
 
-Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기, 첫 로그인 지급·기록 CRUD·개인 꾸미기 버전·기록 글꼴 저장 코어를 검증했다. **실제 로그인·화면의 PG 저장 연결·이미지 저장소는 아직 구현 전**이다. 지급 함수를 실제 인증 성공 사건에 연결하는 것은 F4다. MVP 완료가 아니다.
+Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기, 첫 로그인 지급·기록 CRUD·개인 꾸미기 버전·기록 글꼴 저장 코어, 인증 HTTP·화면을 구현했다. 실제 공급자 로그인 활성화·화면의 PG 저장 연결·이미지 저장소는 후속이다. 첫 지급은 B2의 성공 콜백에서 호출하며 실제 공급자 검증은 B5다. MVP 완료가 아니다.
 루트 `frontend/`(정적 nginx 이미지)와 별개이며, **현재 dev 정적 배포(`dev.pieceofdays.com`)에 자동으로 포함되지 않는다**.
 앱 배포 전환은 PLAN_mvp-foundation F6(메인 주도)에서 따로 정한다.
 
@@ -13,19 +15,19 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 
 | 경로 | 내용 |
 |---|---|
-| `src/app/` | 경로: `/` 오늘, `/days` 모아보기, `/days/[date]` 특정 날, `/settings` 기록 글꼴, `/dev/konva-smoke` 시험 fixture |
+| `src/app/` | 경로: `/` 오늘, `/days` 모아보기, `/days/[date]` 특정 날, `/settings` 기록 글꼴·계정, `/login`·`/account/withdraw`·`/account/restore` 인증 화면, `/auth/` 인증 route 5개, `/dev/konva-smoke` 시험 fixture |
 | `src/app/actions/diary.ts` | S3a Server Actions 5개: config·Origin·요청 사용자 확인 뒤 기존 F3 쓰기 호출. 아직 Client Component에서 호출하지 않는다 |
 | `src/ui/d/` | D 화면 컴포넌트(상단, 조각 보드·하루 한 줄·작성/수정 팝업, 달력, 글꼴 설정). 스타일은 `src/app/globals.css`(D `style.css`에서 옮김) |
 | `src/ui/decorate/` | Konva 클라이언트 전용 모듈. 지금은 호환 스모크만 있고 꾸미기 편집기 UI는 없다(별도 아트보드 필요) |
 | `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부, 고정 사용자+실제 인증 동시 사용·운영 단계 mock issuer 거부(순수 Node, `next.config.ts`가 호출) |
-| `src/server/auth/` | 세션 codec(F4a), 인증 설정·공급자 목록(`config.ts`), 로그인 진행·복구 쿠키 codec, returnTo 허용 목록(F4 B1), OIDC 어댑터(`oidc.ts`)·인증 처리 함수(`handlers.ts`, F4 B2). 아직 route·화면에서 호출하지 않는다 |
+| `src/server/auth/` | 세션 codec(F4a), 인증 설정·공급자 목록(`config.ts`), 로그인 진행·복구 쿠키 codec, returnTo 허용 목록(F4 B1), OIDC 어댑터·처리 함수(B2), HTTP 응답·쿠키 변환(`http.ts`, B4). 인증 route에서 호출한다 |
 | `src/server/context.ts` | 요청별 viewer·async 기록 문맥(B3). 세션 쿠키와 계정 활성 상태·세대를 확인하고 실제 계정에는 F5 전까지 기록 저장소를 주지 않는다 |
 | `src/server/diary/` | 읽기·쓰기 port(`store.ts`)와 PG CRUD 구현, 메모리 구현·예시 기록(로컬·시험 전용) |
-| `src/server/account/`, `src/server/credit/` | identity별 계정 해석·첫 성공 로그인 10개 1회 지급·잔액 조회, 글꼴·디자인 적용 설정(실제 인증 연결 전) |
+| `src/server/account/`, `src/server/credit/` | identity별 계정 해석·첫 성공 로그인 10개 1회 지급·잔액 조회, 글꼴·디자인 적용 설정. B2/B4 성공 콜백 연결, 실제 공급자 검증은 후속 |
 | `src/server/decoration/` | 본인 소유 개인 디자인 버전의 저장·목록·읽기 |
 | `src/server/db/`, `migrations/` | 앱 Pool·트랜잭션, SQL 정책 검사·migration 실행기와 8개 테이블·권한·원장 보호 |
 | `src/shared/` | UI 공유 타입, 글꼴 허용 목록, 날짜 파싱·서울 날짜/시각, 꾸미기 manifest 검증·렌더용 필터 |
-| `tests/unit/`, `tests/db/`, `tests/e2e/`, `tests/prod/` | Vitest 단위·일회용 PG18 통합 시험 / Playwright E2E / 운영 모드 경계 smoke |
+| `tests/unit/`, `tests/db/`, `tests/e2e/`, `tests/e2e-auth/`, `tests/prod/` | Vitest 단위·일회용 PG18 통합 시험 / fixture E2E / 실제 mock OIDC·PG18 인증 E2E / 운영 모드 경계 smoke |
 | `tests/unit/dev-preview.test.ts`, `tests/e2e-preview/`, `playwright.preview.config.ts` | `app/` 밖 정적 체험판(`frontend/public/try/`)의 저장 모듈·브라우저 시험. 이 앱의 코드가 아니다(아래 체험판 절) |
 | `docs/screenshots/` | F1 확인 스크린샷(로컬 고정 사용자 모드, 375/768/1440) |
 
@@ -187,7 +189,7 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 명령(격리 Cloud·CI·개발 PC, 저장소 루트): `npm --prefix app test -- tests/unit/auth-oidc.test.ts`, DB는 일회용 PG18에서 `npm --prefix app run test:db -- tests/db/f4-auth-handlers.test.ts`.
 
-**독립 검토를 수락해 dev에 통합했다.** 처리 함수는 시험에서만 호출한다. B2 통합 당시에는 요청별 DAL도 없었다(현재 B3는 아래 절). 발급 HTTP route·D 인증 화면(B4), 실제 공급자 검증(B5)이 없어 서비스의 실제 로그인은 꺼져 있다. 화면 PG 저장(F5)·서비스 DB·앱 배포(F6)도 없다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구, 계정 연결 미정)은 바뀌지 않았다.
+**독립 검토를 수락해 dev에 통합했다.** B2 통합 당시에는 처리 함수를 시험에서만 호출했고 요청별 DAL도 없었다(현재 B3는 아래 절). B4는 발급 HTTP route·D 인증 화면을 연결했다(상단 현황). 실제 공급자 검증(B5)·서비스 DB·앱 배포(F6) 전이라 서비스 로그인은 아직 꺼져 있다. 화면 PG 저장(F5)도 후속이다. 로그인 정책(공급자 둘 다·첫 로그인 10개·30일 복구, 계정 연결 미정)은 바뀌지 않았다.
 
 ## 요청별 viewer·DAL (F4 B3)
 
