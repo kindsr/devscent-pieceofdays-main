@@ -1,6 +1,6 @@
-# PLAN — F6-dev: 개발 도메인에 Next 앱 배포 (S4) — R1
+# PLAN — F6-dev: 개발 도메인에 Next 앱 배포 (S4) — R2
 
-- **상태:** R1 계획이다(2026-11-05). R0(`0b10580`)을 메인이 읽고 보안·복귀 경계 보완을 요청했다(P1 4건, P2 6건, §14 대응표). **독립 검토·메인 수락 전이다.**
+- **상태:** R2 계획이다(2026-11-05). R1(`4c3fb8a`) 독립 검토의 P1 2건과 운영 예산·deadline을 메인이 보완했다(§14). **재검토·메인 수락 전이다.**
   - 이 문서는 코드·CI·Compose·배포 프로그램·서버를 바꾸지 않았고 권한을 늘리지 않는다.
 - **BASE:** `dev` `e49b0c3ad79a32f16f8f33ca003aef9b57f43540`.
   - 함께 읽은 것: PR46 HEAD `6034fdf209ed716cb0079971beb327b8d019786d`의 [실사용 전환 계획](https://github.com/kindsr/devscent-pieceofdays-main/blob/6034fdf209ed716cb0079971beb327b8d019786d/docs/plans/PLAN_dev-usable-app.md) §6·§8과 `PLAN_dev-diary-actions.md`.
@@ -72,8 +72,8 @@
 - **egress:** 목적지를 443·공급자로 더 좁힐지는 메인 운영 결정이다 [미정].
 - **DB 권한·연결 예산 [메인 계산]:**
   - dev 전용 database에 role 4개(owner NOLOGIN, migrator, app, purge)와 예비 1개를 둔다. 이것은 **role 개수**이지 접속 예산이 아니다.
-  - 동시 연결 예산은 메인이 운영에서 계산한다. 이 계획의 제안값은 다음과 같다.
-    - app role: connection limit 5, 앱 Pool max 5(§4)
+  - 메인이 PG18 카탈로그의 최대 연결 100·기존 LOGIN role 상한 합 64를 확인했다. 이번 동시 최대 9를 더해 73으로 관리 여유를 둔다. 다른 서비스 상한은 바꾸지 않는다.
+    - app role: connection limit 6, 앱 Pool max 5 + 단발 readiness 1(§4)
     - migrator: 2(교체 전 수동 실행 때만)
     - purge: 1(아직 비활성)
     - owner: NOLOGIN
@@ -119,7 +119,8 @@ CMD ["node", "server.js"]
 - **`server/db/pool.ts` 명시 설정 [제안, F6a 코드 변경]:** `new pg.Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 10000 })`. 지금은 기본값이라 최대 10이고 연결 대기 timeout이 없다. app role connection limit 5와 맞추려면 이 변경이 필요하다. 수치는 메인 예산 계산에 따른다.
 - **health route(서버 전용, 쓰기 없음):**
   - `app/src/app/healthz/route.ts`: GET → 200 `ok`. DB·env를 읽지 않는다(liveness).
-  - `app/src/app/healthz/ready/route.ts`: GET → **앱 Pool을 쓰지 않는** 단발 `pg.Client`(`POD_DATABASE_URL`, `connectionTimeoutMillis: 2000`, `query_timeout: 2000`)로 `SELECT 1` → 200. 실패·미설정·2초 초과면 503.
+  - `app/src/app/healthz/ready/route.ts`: GET → **앱 Pool을 쓰지 않는** 단발 `pg.Client`(`POD_DATABASE_URL`, `connectionTimeoutMillis: 2000`, `query_timeout: 2000`)로 `SELECT 1` → 200. 실패·미설정·요청 시작부터 전체 2초 deadline이면 503이다. connect와 query의 직렬 timeout 합계를 전체 deadline으로 세지 않는다.
+    - 전체 2초 타이머와 connect/query 작업을 경합시키고 만료 시 즉시 고정 503을 반환한다. 모든 경로에서 타이머를 해제하고 client 종료를 시작한다. `client.end()` 대기로 응답 deadline을 늘리지 않으며 종료 거부·late rejection은 처리해 원문 로그·unhandled rejection을 남기지 않는다. 연결/쿼리 정리와 남은 소켓 0을 격리 시험한다.
     - 본문은 고정 문자열이다. 계정·원장·metadata를 쓰지 않는다.
     - Pool과 분리하는 이유: Pool이 고갈되거나 연결 대기가 길어도 readiness가 멈추지 않게 하기 위해서다.
   - **readiness 200은 migration 완료의 증거가 아니다.** migration은 §9의 메인 gate가 따로 확인한다.
@@ -142,7 +143,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - **proxy 허용 목록(정확히):** `= /`, `= /login`, `= /days`, `^~ /days/`, `= /settings`, `^~ /auth/`, `^~ /account/`, `^~ /_next/`. 그 밖은 `return 404`(`/healthz*`·`/dev/` 포함).
 - **헤더:** `proxy_pass http://pieceofdays-app-dev:3000`. `Host`·`X-Forwarded-Host`는 `dev.pieceofdays.com`, `X-Forwarded-Proto`는 `https`로 고정한다. `$host`·`$http_host`는 쓰지 않는다. `Origin`·`Cookie`는 그대로 전달한다.
 - **그 밖:** `proxy_cache` 없음, `client_max_body_size 1m`, `proxy_read_timeout 30s`.
-- **localStorage:** origin·`/try/` 파일·저장 키 불변. 앱은 `Clear-Site-Data`를 보내지 않는다.
+- **localStorage:** origin·`/try/` 파일·저장 키 불변. 앱은 `Clear-Site-Data`를 보내지 않는다. 정적 응답 비교에 `/status/`도 포함한다. Next 로그인·설정에는 `/try/`·`/status/` 링크를 유지한다. `/index.html`·`/favicon.ico`·`/sample/`는 공개하지 않는다. 실제 계정 화면은 예시 이미지를 쓰지 않으며 기존 fixture 시험은 nginx 밖의 격리 Next에서 유지한다.
 
 ## 6. 배포 helper 확장 (F6b, 저장소 RED/GREEN → 메인 수동 설치)
 
@@ -150,23 +151,24 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 | 명령 | 허용 키 | 동작 |
 |---|---|---|
-| `deploy-app dev <40hex sha> <40hex tree> sha256:<64hex manifest digest> sha256:<64hex config id>` | dev만 | 앱 모드 배포(B안) |
+| `deploy-app dev <40hex sha> <40hex tree> sha256:<64hex manifest digest> sha256:<64hex config digest>` | dev만 | 앱 모드 배포(B안). Docker 엔진의 image ID와 config digest는 다른 값이다 |
 | `revert-static dev` | dev만 | `dev-static-last.json`의 정적 기록으로 되돌리고 모드를 static으로 |
 | `deploy dev <sha>`(기존) | dev | 모드가 **static일 때만** 허용. app 모드면 거부 |
 | `deploy production <sha>`, `probe`(기존) | 기존 | 문법·상수·흐름 불변. `deploy-app production`·`revert-static production`은 문법에서 거부 |
 
 ### 6.2 설정 (신뢰 config의 dev 항목에만)
 
-- 키: `app_mode_enabled`, `app_env_file`(‹app_env_file›, live 원본), `db_network`(‹db_network›), `app_health_url`(`https://dev.pieceofdays.com/try/`)
+- 키: `app_mode_enabled`, `app_env_file`(‹app_env_file›, live 원본), `db_network`(‹db_network›), `app_health_url`(`https://dev.pieceofdays.com/try/`), `app_role`·`db_host`·`dev_db`(URL 검사의 기대값), `server_arch`(정확히 `amd64`). uid:gid는 요청/config에서 받지 않고 실행 사용자의 `os.getuid()/getgid()`만 쓰며 0이면 거부한다.
 - production 항목에 이 키가 있으면 거부한다.
 - 모든 경로에 기존 `trusted_file` 규칙(부모까지 root 또는 배포 사용자 소유, group·other 쓰기 없음)을 적용한다. env 파일은 regular file, 0600, 배포 사용자 소유.
 - 이미지 저장소는 helper 상수 `APP_IMAGE_REPOSITORY = "ghcr.io/kindsr/devscent-pieceofdays-main-app"`다. 요청 입력으로 바꿀 수 없다.
 
 ### 6.3 검사 함수 (공개 계약, RED가 고정)
 
-**`validate_app_env(text) -> dict`**
+**`validate_app_env(text, settings) -> dict`**
 
-- 형식: `KEY=VALUE` 줄만 받는다. 빈 줄·`#` 주석 허용, `export`·따옴표·중복 키 거부.
+- 형식: UTF-8 BOM 없는 `KEY=VALUE` 줄만 받는다(키 앞뒤 공백 없음). 빈 줄·줄 전체 `#` 주석은 허용하고 `export`·중복 키·CR·NUL·LF 이외 제어문자를 거부한다.
+- 값은 비어 있지 않고 앞뒤 공백이 없으며 `#`를 포함하지 않는다. `"`·`'`·backtick으로 시작하는 값은 거부한다. `{`로 시작하는 세션 JSON 안의 `"`는 허용한다. 이 부분집합은 Node `--env-file`이 원문 값을 그대로 읽는다. 새 비밀번호·세션 키는 이 문법으로 생성한다(URL 비밀번호는 percent encoding). Python 검사기와 고정 Node 26.13.0 `--env-file`의 키·값 집합 동일성을 가짜 파일로 CI 대조한다.
 - 필수 키:
   - `POD_AUTH_SESSION_SECRETS`(JSON 번호 맵, 값 ≥ 32자)
   - `POD_AUTH_BASE_URL`(정확히 `https://dev.pieceofdays.com`)
@@ -178,9 +180,14 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - 그 밖 모든 키는 거부한다. 특히 `POD_LOCAL_FIXTURE`, `POD_AUTH_MOCK_OIDC_ISSUER`, `POD_MIGRATE_DATABASE_URL`, `NODE_ENV`, `NODE_OPTIONS`.
 - 오류 메시지에는 키 이름만 넣고 값은 넣지 않는다.
 
-**`validate_app_image(inspect, sha, tree, config_id, manifest_digest)`**
+**`validate_app_manifest(document, config_digest) -> None`**
 
-- `Id == config_id`, `RepoDigests`에 `APP_IMAGE_REPOSITORY@<manifest_digest>`가 정확히 있음, `RepoTags`는 비어 있음.
+- 메인은 B(GHCR)를 선택한다. CI는 `--platform linux/amd64 --provenance=false --sbom=false`로 **단일 플랫폼 manifest**를 게시한다. `manifest_digest`는 그 manifest 원문 바이트의 digest, `config_digest`는 manifest가 참조하는 config blob digest다. index·manifest list는 거부한다.
+- manifest는 OCI image manifest 또는 Docker schema2이며 `schemaVersion=2`, 정확한 config digest·허용 config mediaType·양의 크기·비어 있지 않은 layer digest/크기 형식을 검사한다. CLI가 고정 저장소의 `@manifest_digest`를 읽어 검증한 문서를 사용한다. 출력에 config 원문·env를 남기지 않는다.
+
+**`validate_app_image(inspect, sha, tree, manifest_digest, settings) -> None`**
+
+- `Id`는 유효한 sha256 형식의 **엔진 image ID**로만 취급한다. `config_digest`와 비교하지 않는다. `RepoDigests`에 `APP_IMAGE_REPOSITORY@<manifest_digest>`가 정확히 있고 `RepoTags`는 비어 있어야 한다. fresh pull 전에 manifest/config 연결을 위 함수로 검증하고 Docker의 digest 검증으로 같은 자료를 pull한다.
 - `Config.User`가 비어 있지 않고 root·0이 아님.
 - 라벨 `revision == sha`, `pod.tree == tree`, `source == 저장소 URL`, `pod.migrations.latest`는 양의 정수.
 - `ExposedPorts == {"3000/tcp": {}}`, `Volumes`가 비어 있음.
@@ -199,10 +206,10 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 - **`release_id`:** `^[0-9a-f]{40}-[0-9a-f]{32}$`(sha + uuid4 hex).
 - **릴리스 디렉터리:** `‹state›/releases/dev/<release_id>/`(0700). 안에 `compose.json`과 `app.env`(0600, live 파일을 검사한 뒤 복사한 동결본)를 둔다.
-- **앱 기록 형식(정확한 키):** `{mode:"app", status:"success", sha, tree, release_id, front_image_id, app_image_id, app_manifest_digest, try_html_sha256, compose_sha256, env_sha256, timestamp}`.
+- **앱 기록 형식(정확한 키):** `{mode:"app", status:"success", sha, tree, release_id, front_image_id, app_image_id, app_manifest_digest, app_config_digest, try_html_sha256, compose_sha256, env_sha256, timestamp}`. image_id 2개는 각 엔진이 돌려준 불변 image ID다. 앱의 OCI config digest와 같다고 가정하지 않는다.
   - **경로 필드는 없다.** helper가 `release_id`로만 경로를 만든다. 임의 경로는 거부한다.
 - **기록을 읽을 때:** `release_id` 형식 → 디렉터리·파일이 symlink가 아닌 regular file이고 소유자가 배포 사용자, `app.env`가 0600, 부모가 신뢰 경로 → `compose.json`·`app.env`의 sha256이 기록과 일치 → `validate_app_env(동결본)` → compose가 `runtime_compose_app(…)` 결과와 정확히 같음 → 두 이미지 존재.
-- **복귀:** 직전 릴리스의 **동결 env와 compose**로 올린다. live 파일에는 의존하지 않는다.
+- **복귀:** 직전 릴리스의 **동결 env와 compose·로컬 image ID**로 올린다. live 파일이나 registry 접속에는 의존하지 않는다. 기록 읽기는 로컬 image ID·RepoDigests·라벨·구성을 검사하며 fresh 배포 때의 manifest 검증을 원격으로 반복하지 않는다. 컨테이너의 Image는 그 릴리스가 기록한 엔진 image ID와 일치해야 한다.
 - **비밀값 회전:** live 파일을 바꾼 뒤 `deploy-app`을 다시 호출한다. 같은 sha·digest라도 live env 해시가 현재 기록과 다르면 **새 릴리스**를 만든다. 둘 다 같을 때만 기존 idempotent 확인을 한다.
 - **보존:** helper는 릴리스 디렉터리를 지우지 않는다. 적어도 current·previous는 메인이 보존하고, 더 오래된 것은 메인이 정리한다. 동결 env는 비밀값이므로 일반 백업·PR·CI 아티팩트에 넣지 않는다(백업 처리는 메인 런북). CI는 `ci-only-*` 가짜 값만 쓴다.
 - **정적 기록:** 기존 형식 그대로(`mode` 없음 = static). static 성공 때만 `dev-static-last.json`을 갱신한다.
@@ -233,7 +240,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 1. 인자 형식 확인 → `assert_latest("dev", sha)`
 2. 기존 방식의 고정 source clone으로 tree를 계산하고 요청 tree와 같은지 확인
-3. `docker pull APP_IMAGE_REPOSITORY@<manifest_digest>`
+3. `docker manifest inspect APP_IMAGE_REPOSITORY@<manifest_digest>`의 단일 플랫폼 문서를 `validate_app_manifest`로 검사한 뒤 같은 digest를 `docker pull --platform linux/amd64`한다.
    - 빈 `DOCKER_CONFIG`로 익명 pull, 시간 상한 적용
    - 비공개 패키지라 실패하면 배포 실패 → 자격 추가는 메인 결정
 4. `validate_app_image`
@@ -272,7 +279,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 | job | 조건 | 권한·secret | 하는 일 | 하지 않는 일 |
 |---|---|---|---|---|
 | `validate`(기존) | push·PR | `contents: read` | 계약 시험·Compose 문법 | — |
-| `build-dev-app`(신규) | push to `dev`만 | `contents: read`, **`packages: write`(이 job에만, 최소 추가 권한)**. environment 없음, 배포 secret 없음 | checkout(`persist-credentials: false`) → 빌드 → 이미지 단언 → `GITHUB_TOKEN`으로 GHCR push → outputs `sha`·`tree`·`manifest_digest`·`config_id` | 배포·SSH |
+| `build-dev-app`(신규) | push to `dev`만 | `contents: read`, **`packages: write`(이 job에만, 최소 추가 권한)**. environment 없음, 배포 secret 없음 | checkout(`persist-credentials: false`) → 빌드 → 이미지 단언 → `GITHUB_TOKEN`으로 GHCR push → outputs `sha`·`tree`·`manifest_digest`·`config_digest` | 배포·SSH |
 | `deploy-dev-app`(신규) | `needs: [validate, build-dev-app]` | `environment: dev`, 기존 dev SSH secret | outputs 형식을 정규식으로 검사 → SSH `probe dev` → `deploy-app dev <sha> <tree> <digest> <id>` | **checkout 없음, 저장소 Dockerfile·스크립트·npm 실행 없음** |
 | `deploy`(기존) | push to `main` | `environment: production` | 정적 `deploy production <sha>` | 불변 |
 
@@ -281,8 +288,8 @@ COPY default.conf /etc/nginx/conf.d/default.conf
   - 서버 helper는 tree·digest·config id를 다시 대조한다.
 - **actions:** 새 marketplace action 없이 runner의 docker CLI·`docker login --password-stdin`을 쓴다. A안을 택하면 `actions/upload-artifact`·`download-artifact`를 공식 tag의 commit SHA로 고정하고, 같은 run의 artifact ID와 sha·tree·image ID를 연결해야 한다.
 - **PR:** 배포 secret 0, `packages: write` 없음(`app-image` job만 실행).
-- **승인:** `packages: write`와 GHCR 패키지 **공개 설정**은 새 운영 항목이다. 승인 범위는 메인이 판단한다. 이 문서가 권한을 자동으로 만들지 않지만, 이 항목들을 새 사용자 재승인 관문으로 만들지도 않는다.
-- **전환 순서:** F6c는 F6a·F6b 통합과 §9의 1~6이 끝난 뒤 병합한다. 그 전까지 dev push는 기존 정적 배포를 쓴다.
+- **메인 범위 결정:** 사용자 요청의 이 서비스 dev 앱 전환과 기존 dev 자동배포 범위에서 위 단일 build job의 `packages: write`와 공개 소스에 대응하는 앱 이미지 패키지 하나만 준비한다. 새 PAT·서버 registry 자격·다른 서비스/production 권한은 추가하지 않는다. 코드·CI·이미지 검증 뒤 F6c 전환을 수락한다. 공개 설정을 현재 인증으로 수행할 수 없으면 그 구체 항목만 사용자에게 전달하며 인증 범위를 임의로 넓히지 않는다.
+- **전환 순서:** F6c는 F6a·F6b·S2(B4) 통합과 §9의 1~7이 끝난 뒤 병합한다. 그 전까지 dev push는 기존 정적 배포를 쓴다.
 
 ## 8. 게시 기준
 
@@ -300,7 +307,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 1. 공용 PG18에 dev 전용 DB·role 준비(§3), `pod_meta.db_environment` 행 작성.
 2. **migration gate:** 배포 전에 migrator 자격으로 같은 이미지에서 실행한다.
    ```
-   docker run --rm --read-only --network ‹db_network› -v ‹migrator_env_file›:/run/secrets/migrator.env:ro <image@digest> node --env-file=/run/secrets/migrator.env src/server/db/migrate-cli.ts status
+   docker run --rm --read-only --user ‹deploy_uid›:‹deploy_gid› --cap-drop ALL --security-opt no-new-privileges --network ‹db_network› -v ‹migrator_env_file›:/run/secrets/migrator.env:ro <image@digest> node --env-file=/run/secrets/migrator.env src/server/db/migrate-cli.ts status
    ```
    그다음 `up`, 다시 `status`. 적용 버전이 이미지 라벨 `pod.migrations.latest`와 같아야 배포한다. 공유 호스트에서 npm·source를 실행하지 않는다.
 3. `‹app_env_file›` 작성(0600, §6.3 규칙). 값은 채팅·Cloud·저장소에 남기지 않는다.
@@ -327,7 +334,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 |---|---|---|---|
 | **F6a 앱 이미지** | RED: `app/tests/*`(health·pool 설정 단위). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-validation.yml`(`app-image` job) | 없음 | S1·S2·S3·F6b |
 | **F6b helper** | RED: `tests/test_deploy_app.py`. GREEN: `scripts/ops/deploy.py`(기존 static·production 동작 불변, §6.5 거부 추가) | 없음 | F6a |
-| **F6c 배포 전환** | `.github/workflows/deploy.yml`(dev job 분리, production 불변). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6a·F6b 통합, §9 1~7 | — |
+| **F6c 배포 전환** | `.github/workflows/deploy.yml`(dev job 분리, production 불변). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6a·F6b·S2 통합, §9 1~7 | — |
 | **G2** | — | F6c, S2(B4) 통합, B5 Google, 사용자 콘솔 | — |
 
 - 상태 문서 갱신 대상은 `README.md`·`app/README.md`·`deploy/README.md`·`CHANGELOG.md`·관련 계획이다. 통합 단계에서 메인·문서 담당이 한다.
@@ -338,7 +345,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 - **사용자(콘솔, 값은 채팅으로 받지 않음):** Google dev OAuth 클라이언트, redirect `https://dev.pieceofdays.com/auth/google/callback`(계획안), 테스트 사용자. Kakao는 B5 이후.
 - **메인:**
-  - B안 수락과 `packages: write`·GHCR 공개 설정 판단
+  - B안·CI 단일 build job의 `packages: write` 범위는 R2에서 메인이 선택. 실제 공개 설정 가능 여부는 확인 필요
   - 서버 아키텍처·egress·익명 pull 가능 여부
   - digest 고정값
   - DB 연결 예산과 Pool 수치
@@ -366,3 +373,13 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 | P2 E2E 구분 | §8 (a) 설정 없음 503 / (b) 가짜 HTTPS 구성 Origin 403·303 |
 | P2 Node | 기존 26.13.0 유지 |
 | P2 문서 범위 | §11: AGENTS·CLAUDE·skill 제외 |
+
+## 14. R2 메인 보완·확인 (2026-11-05)
+
+- R1 독립 검토 P1-1: Node env 파서와 동일한 값이 되는 부분집합을 §6.3에 고정하고 실제 Node 대조를 RED/CI에 추가했다.
+- P1-2: GHCR 단일 플랫폼 manifest·config blob digest·엔진 image ID를 분리했다. 메인이 현재 서버의 containerd image store와 amd64를 읽기 전용으로 확인했다. 저장소 모드를 바꾸지 않는다. opaque 엔진 ID를 로컬 복귀·컨테이너 대조에 쓰며 config digest와 같다고 가정하지 않는다.
+- 메인 조회한 공식 registry의 amd64 manifest 고정값: Node `26.13.0-bookworm-slim@sha256:cd820d60a7f3ae057389f3e1bcf1a0ac09dd57c428fe14f191dcbc5c56ac5fe2`, nginx `stable-alpine@sha256:84ed8c0dd296c188bfc24ed506f46589e9285fb0b11cf3a04d91d524d3067e11`, Dockerfile frontend `1@sha256:7b32114e84ca21aeb2d6f871a0b62b3a0762193f75d9afd048ee4cbe889f3148`(2026-11-05 `docker manifest inspect --verbose`, linux/amd64 항목). F6a/CI는 같은 원문과 실제 동작을 확인한다. 기존 static/production Dockerfile은 그대로 둔다.
+- P2: app role6/Pool5/readiness1·migrator2·purge1(미활성) 예산, 전체 readiness 2초 deadline과 소켓 정리, 기대값 config 키·실행 uid/gid 출처, migrator 실행 최소 권한, S2 선행, `/status/` 보존과 Next 링크를 고정했다.
+- dev 앱 모드 동안 main 자동배포는 기존 정적 검증을 넓히지 않고 거부된다. 운영 정적 반영이 필요하면 `revert-static dev` → 해당 tree의 정적 dev 성공 확인 → main 병합 순서다. 실제 운영 앱 전환은 별도 요청·계획이며 현재 준비중 운영은 유지한다. 이 영향을 F6 통합 때 `deploy/README.md`에 기록한다.
+- 앱의 `0.0.0.0:3000`은 연결된 내부 네트워크에서도 접근 가능하다. host port는 없고 각 route/action의 인증·Origin 검사로 보호한다. DB망을 인터넷 경계로 오인하지 않으며 기존 공용 네트워크·방화벽은 임의 변경하지 않는다.
+- 공식 근거: [GHCR 공개 이미지 익명 접근](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry), [Node 26 env-file](https://nodejs.org/api/cli.html#--env-filefile), [Next standalone 출력](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)(2026-11-05 조회). 설치 버전은 바꾸지 않는다.
