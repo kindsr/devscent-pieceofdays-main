@@ -50,8 +50,9 @@
 ### 4.1 서버 읽기·소유
 
 - `DiaryContext`의 `signed_in` 안내를 `{kind:"account";userId:string;store:DiaryStore;today:LocalDate}`로 바꾼다. `fixture`·`signed_out`은 유지한다. `unavailable`에는 선택 필드 `reason?:"db_unavailable"`만 추가한다. viewer의 DB 오류·store 초기화 실패에는 이 reason을 주고, 인증 미설정·설정 오류는 기존 `{kind:"unavailable"}` 그대로다. 값은 검증 사용자·PG store·서울 오늘에서만 만든다.
-- 서버 문맥·store·userId·gen을 Client Component에 넘기지 않는다. `DayBoard`에는 기존 `DiaryDay`와 `mode`만 추가한다. `mode?:"fixture"|"account"`, 기본은 `fixture`다. `DaysView`는 서버 컴포넌트로 fixture/account 문맥을 받고 최소 day 자료만 내려준다.
-- 오늘·달력·날짜 page는 각각 문맥을 확인한다. 실제 계정은 같은 PG store의 `getDay`·`listMonth`로 본인 자료만 읽는다. 자료 없음은 빈 하루다. `reason:"db_unavailable"` 또는 실제 읽기 예외에는 h1 "오늘"/"모아보기"를 유지하고 h2 "기록을 불러오지 못했어요", 본문 "잠시 뒤 다시 열어 주세요."를 보인다. 인증 미설정의 기존 준비 중 문구는 유지한다. 실패를 빈 자료나 fixture로 대체하지 않는다. `DaysView`는 읽기를 함께 성공한 뒤 달력/선택 자료를 그리고, 하나라도 실패하면 달력 전체 대신 위 실패 안내를 그린다.
+- 서버 문맥·store·userId·gen을 **어떤 React 컴포넌트의 props에도 넘기지 않는다(서버 컴포넌트 포함)**. `next dev`의 Flight 디버그 정보가 서버 컴포넌트 props도 직렬화할 수 있기 때문이다. page의 일반 서버 함수에서 문맥을 확인하고 모든 읽기를 마친 뒤 화면 자료만 JSX에 넣는다. 서버 함수의 내부 인자로 문맥을 쓰는 것은 허용하지만 JSX의 props로 전달하지 않는다.
+- `DayBoard`에는 기존 `DiaryDay`와 `mode?:"fixture"|"account"`만 추가하며 기본은 fixture다. `DaysView`의 props는 `{today,picked,thisMonth,lastMonth,day,mode?}`다. `today`·`picked`는 날짜(선택 없음은 null), 월 자료 둘은 `DiaryDay[]`, `day`는 `DiaryDay|null`, mode 기본은 fixture다. 날짜·최소 기록 자료 외 사용자 식별자·저장소는 없다. `DaysView`는 PG를 읽지 않는다.
+- 오늘·달력·날짜 page는 각각 문맥을 확인한다. 실제 계정은 같은 PG store의 `getDay`·`listMonth`로 본인 자료만 읽는다. 자료 없음은 빈 하루다. `reason:"db_unavailable"` 또는 실제 읽기 예외에는 h1 "오늘"/"모아보기"를 유지하고 h2 "기록을 불러오지 못했어요", 본문 "잠시 뒤 다시 열어 주세요."를 보인다. 인증 미설정의 기존 준비 중 문구는 유지한다. 실패를 빈 자료나 fixture로 대체하지 않는다. page는 월·선택 날짜의 읽기가 모두 성공한 뒤에만 `DaysView`를 그리고, 하나라도 실패하면 달력 전체 대신 위 실패 안내를 그린다.
 - layout은 상단 표시와 저장 글꼴에만 문맥을 쓴다. 접근 검사는 각 page/action에서 유지한다. `force-dynamic`·no-store를 유지한다. `canWrite`는 fixture/account에서만 true다.
 
 ### 4.2 기록·한 줄
@@ -88,10 +89,11 @@
 
 - S3b RED는 `app/tests/unit/request-context.test.ts`의 기존 `signed_in` 문맥 기대와 DB 실패의 문맥 기대만 위 account/reason으로 명시 전환하고, 신규 `app/tests/e2e-auth/diary.spec.ts`를 추가한다. 기존 `f4-dal.test.ts`의 getViewer 기대는 바꾸지 않는다. 실제 getDiaryContext의 PG 읽기 연결을 추가할 경우 신규 `app/tests/db/f5-diary-context.test.ts`만 쓴다. B4 harness 확장은 통합 SHA에서 main이 확인해 배정한다.
 - B4 E2E의 "기록 연결 전" 기대는 S3b RED에서 실제 빈 보드/저장 동작으로 명시 전환한다. 이 기대가 있는 정확 파일·행은 B4 통합 SHA에서 main이 확인해 배정한다. GREEN은 시험 변경 0이다.
-- GREEN 소유: `shared/diary.ts`, `server/context.ts`, page 3개·layout·settings, `ui/d/{DayBoard,DaysView,FontSettings,TopBar,MonthCalendar,NotConnected}.tsx`·필요한 최소 D CSS. B4 계정 영역·공식 버튼·route와 S3a 액션은 유지한다. 스키마·package·lock·배포/CI 변경은 없다.
+- GREEN 소유: `shared/diary.ts`, `server/context.ts`, page 3개·layout·settings, `ui/d/{DayBoard,DaysView,FontSettings,TopBar,MonthCalendar,NotConnected}.tsx`·필요한 최소 D CSS. fixture 경로를 보존하기 위한 내부 `ui/d/AccountDayBoard.tsx`·`AccountFontSettings.tsx` 분리와, 반복 읽기를 줄이는 일반 서버 helper `server/diary/view-data.ts`는 필요할 때만 허용한다. 추가 외부 API나 자료 수집은 없다. B4 계정 영역·공식 버튼·route와 S3a 액션은 유지한다. 스키마·package·lock·배포/CI 변경은 없다.
 - 시험은 실제 mock OAuth 로그인 → 첫 빈 보드 → 300코드포인트 조각 저장 → 새로고침·다른 browser context의 동일 계정에서 유지 → 수정·삭제·취소 → 한 줄(조각0개 포함)·달력/과거 보기 → 글꼴 새로고침 유지, A/B 격리, 낡은 버전 충돌·네트워크 실패 초안 보존·재조회만 실행을 검증한다. 계정 생성·지급·세션을 직접 조작해 성공 경로를 대신하지 않는다.
 - 실제 서버 액션 HTTP의 Origin 거부, 375/768/1440 넘침0·44px·키보드·초점·loading/error를 확인한다. 클라이언트 액션 참조는 Next의 허용된 Server Action 방식으로 연결하고 서버 저장 구현·자격이 client graph에 들어가지 않는 build 경계를 유지한다.
 - 읽기 실패는 해당 일회용 DB의 app 권한을 owner 시험 연결에서 잠깐 회수하고 finally 복원해 E2E로 재현한다(실서버 금지). 계정 식별자 비직렬화는 그 시험 계정 UUID가 문서 HTML·RSC 응답·Client props에 없음을 확인한다. B4 통합 후 실제 harness의 지원 방식과 시험 파일을 배정할 때 고정한다.
+- PR61 독립 검토(2026-11-05)의 개발 Flight props 문제는 위의 React props 경계로 해결한다. 비직렬화 시험을 느슨하게 하거나 운영에서만 확인하는 방식으로 옮기지 않는다. 이 보완은 화면·저장 정책을 바꾸지 않고 개발 모드에서도 같은 개인정보 경계를 지킨다.
 - 기존 fixture E2E12·production 기본6과 단위/PG 회귀를 유지한다. 의미 있는 새 경계만 검사하며 fixture를 실제 저장처럼 바꾸지 않는다. RED→독립 runner→GREEN→독립 검토를 따른다.
 
 ## 5. 배포 영향·되돌리기
