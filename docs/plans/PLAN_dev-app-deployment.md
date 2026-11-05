@@ -46,7 +46,7 @@
 | 결정 | 선택 | 근거·대안 |
 |---|---|---|
 | 앱 이미지 빌드 | 격리 GitHub Actions runner에서만 빌드한다. 공유 서버에서는 npm·Next build를 하지 않는다 | 서버에서 소스 실행 금지 |
-| **이미지 전달** | **B. GHCR 공개 패키지를 digest로 pull(R1 권장)** | `docker pull <repo>@sha256:<digest>`는 레지스트리가 내용 해시를 검증하고 RepoTags를 만들지 않는다. 공개 패키지는 익명 pull이 가능하므로 서버 pull 자격이 필수는 아니다 |
+| **이미지 전달** | **B. GHCR 공개 패키지를 digest로 pull(메인 선택)** | `docker pull <repo>@sha256:<digest>`는 레지스트리가 내용 해시를 검증하고 RepoTags를 만들지 않는다. 공개 패키지는 익명 pull이 가능하므로 서버 pull 자격이 필수는 아니다 |
 | 대안 | A. SSH로 `docker save` tar 전달 | `docker load`는 tar의 manifest가 가리키는 다른 이미지·태그를 적재하는 부작용이 검사 전에 끝난다. **§6.6의 load 전 archive 검증 계약과 CI에서 고정한 단일 형식이 있을 때만** 채택한다. 이 문서 작성 중 `docker save` 실제 형식은 격리 실행으로 확인하지 못했다 [미확인] |
 | 프런트 | 기존 정적 nginx를 dev 앞단에 둔다. 정적 경로는 그대로, 정해진 Next 경로만 내부 프록시 | origin·디렉터리 index·localStorage 보존 |
 | nginx 설정 출처 | helper 상수(설치본). 저장소의 nginx 설정은 받지 않는다 | 프록시 규칙을 저장소가 바꾸지 못하게 |
@@ -151,10 +151,12 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 | 명령 | 허용 키 | 동작 |
 |---|---|---|
-| `deploy-app dev <40hex sha> <40hex tree> sha256:<64hex manifest digest> sha256:<64hex config digest>` | dev만 | 앱 모드 배포(B안). Docker 엔진의 image ID와 config digest는 다른 값이다 |
+| `deploy-app dev <40hex sha> <40hex tree> sha256:<64hex manifest digest> sha256:<64hex config digest>` | dev만 | 앱 모드 배포(B안). Docker 엔진의 image ID와 config digest가 같다고 가정하지 않는다 |
 | `revert-static dev` | dev만 | `dev-static-last.json`의 정적 기록으로 되돌리고 모드를 static으로 |
 | `deploy dev <sha>`(기존) | dev | 모드가 **static일 때만** 허용. app 모드면 거부 |
 | `deploy production <sha>`, `probe`(기존) | 기존 | 문법·상수·흐름 불변. `deploy-app production`·`revert-static production`은 문법에서 거부 |
+
+기존 `parse_request(command)`의 반환 `(env,sha)`는 그대로다. 새 `parse_app_request(command)`는 위 정확 문법만 받아 `("deploy-app","dev",sha,tree,manifest_digest,config_digest)` 또는 `("revert-static","dev")` tuple을 반환하며 그 밖은 `ValueError`다. `main()`은 앱 명령이면 설정·registry·Docker 접근 전에 `--allowed-environment == dev`를 확인한다.
 
 ### 6.2 설정 (신뢰 config의 dev 항목에만)
 
@@ -169,6 +171,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 - 형식: UTF-8 BOM 없는 `KEY=VALUE` 줄만 받는다(키 앞뒤 공백 없음). 빈 줄·줄 전체 `#` 주석은 허용하고 `export`·중복 키·CR·NUL·LF 이외 제어문자를 거부한다.
 - 값은 비어 있지 않고 앞뒤 공백이 없으며 `#`를 포함하지 않는다. `"`·`'`·backtick으로 시작하는 값은 거부한다. `{`로 시작하는 세션 JSON 안의 `"`는 허용한다. 이 부분집합은 Node `--env-file`이 원문 값을 그대로 읽는다. 새 비밀번호·세션 키는 이 문법으로 생성한다(URL 비밀번호는 percent encoding). Python 검사기와 고정 Node 26.13.0 `--env-file`의 키·값 집합 동일성을 가짜 파일로 CI 대조한다.
+- Node 대조의 RED 파일은 `app/tests/deploy-env-parity.test.mjs`(node:test)다. F6b GREEN이 추가하는 `.github/workflows/deploy-app-validation.yml`에서 Node 26.13.0을 고정해 `node --test app/tests/deploy-env-parity.test.mjs`만 실행한다(npm·서버·DB·Secrets 없음). Python `tests/test_deploy_app.py`는 계속 표준 라이브러리 unittest만 쓰고 Node 부재를 skip/통과로 세지 않는다. 새 workflow는 PR 및 dev/main push의 helper·이 시험 파일·workflow 변경에만 반응하며 `contents:read`다.
 - 필수 키:
   - `POD_AUTH_SESSION_SECRETS`(JSON 번호 맵, 값 ≥ 32자)
   - `POD_AUTH_BASE_URL`(정확히 `https://dev.pieceofdays.com`)
@@ -195,9 +198,9 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - `Architecture ==` ‹server_arch›.
 - 이미지의 `Entrypoint`·`Cmd`·`Healthcheck`는 쓰지 않는다. 템플릿이 직접 지정한다.
 
-**`runtime_compose_app(front_id, app_ref, release_id, uid, gid, settings) -> dict`**
+**`runtime_compose_app(front_id, app_image_id, release_id, uid, gid, settings) -> dict`**
 
-- §3 그대로의 정확한 dict다: 서비스 2개, 네트워크 4개, `secrets.pod_app_env.file`은 **해당 릴리스의 동결 env 경로**.
+- §3 그대로의 정확한 dict다: 서비스 2개、네트워크 4개、`secrets.pod_app_env.file`은 **해당 릴리스의 동결 env 경로**. `services`의 image 값 2개는 모두 기록한 로컬 엔진 image ID다. registry 참조를 런타임에 재해석하지 않는다.
 - 앱: `entrypoint: ["node"]`, `command: ["--env-file=/run/secrets/pod_app_env", "server.js"]`, `user: "<uid>:<gid>"`.
 - 앱 health: `["CMD","node","-e","fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]`, 30s / 5s / 3, start_period 20s.
 - 프런트 health: `wget -q -O /dev/null http://127.0.0.1:80/try/`.
@@ -241,6 +244,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 1. 인자 형식 확인 → `assert_latest("dev", sha)`
 2. 기존 방식의 고정 source clone으로 tree를 계산하고 요청 tree와 같은지 확인
 3. `docker manifest inspect APP_IMAGE_REPOSITORY@<manifest_digest>`의 단일 플랫폼 문서를 `validate_app_manifest`로 검사한 뒤 같은 digest를 `docker pull --platform linux/amd64`한다.
+   - `manifest inspect`는 JSON을 재직렬화할 수 있으므로 그 stdout의 해시를 manifest digest와 비교하지 않는다. 고정 digest 조회와 Docker pull의 client·registry 내용 검증에 의존한다.
    - 빈 `DOCKER_CONFIG`로 익명 pull, 시간 상한 적용
    - 비공개 패키지라 실패하면 배포 실패 → 자격 추가는 메인 결정
 4. `validate_app_image`
@@ -280,7 +284,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 |---|---|---|---|---|
 | `validate`(기존) | push·PR | `contents: read` | 계약 시험·Compose 문법 | — |
 | `build-dev-app`(신규) | push to `dev`만 | `contents: read`, **`packages: write`(이 job에만, 최소 추가 권한)**. environment 없음, 배포 secret 없음 | checkout(`persist-credentials: false`) → 빌드 → 이미지 단언 → `GITHUB_TOKEN`으로 GHCR push → outputs `sha`·`tree`·`manifest_digest`·`config_digest` | 배포·SSH |
-| `deploy-dev-app`(신규) | `needs: [validate, build-dev-app]` | `environment: dev`, 기존 dev SSH secret | outputs 형식을 정규식으로 검사 → SSH `probe dev` → `deploy-app dev <sha> <tree> <digest> <id>` | **checkout 없음, 저장소 Dockerfile·스크립트·npm 실행 없음** |
+| `deploy-dev-app`(신규) | `needs: [validate, build-dev-app]` | `environment: dev`, 기존 dev SSH secret | outputs 형식을 정규식으로 검사 → SSH `probe dev` → `deploy-app dev <sha> <tree> <manifest_digest> <config_digest>` | **checkout 없음, 저장소 Dockerfile·스크립트·npm 실행 없음** |
 | `deploy`(기존) | push to `main` | `environment: production` | 정적 `deploy production <sha>` | 불변 |
 
 - **같은 run 연결:** deploy job은 `needs.build-dev-app.outputs`만 쓴다. 다른 run·다른 branch의 artifact나 이름 기반 선택은 없다.
@@ -333,7 +337,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 | slice | 파일 | 선행 | 병행 |
 |---|---|---|---|
 | **F6a 앱 이미지** | RED: `app/tests/*`(health·pool 설정 단위). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-validation.yml`(`app-image` job) | 없음 | S1·S2·S3·F6b |
-| **F6b helper** | RED: `tests/test_deploy_app.py`. GREEN: `scripts/ops/deploy.py`(기존 static·production 동작 불변, §6.5 거부 추가) | 없음 | F6a |
+| **F6b helper** | RED: `tests/test_deploy_app.py`·`app/tests/deploy-env-parity.test.mjs`. GREEN: `scripts/ops/deploy.py`(기존 static·production 동작 불변, §6.5 거부 추가)·`.github/workflows/deploy-app-validation.yml`(Node env 대조 전용) | 없음 | F6a |
 | **F6c 배포 전환** | `.github/workflows/deploy.yml`(dev job 분리, production 불변). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6a·F6b·S2 통합, §9 1~7 | — |
 | **G2** | — | F6c, S2(B4) 통합, B5 Google, 사용자 콘솔 | — |
 
@@ -347,8 +351,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - **메인:**
   - B안·CI 단일 build job의 `packages: write` 범위는 R2에서 메인이 선택. 실제 공개 설정 가능 여부는 확인 필요
   - 서버 아키텍처·egress·익명 pull 가능 여부
-  - digest 고정값
-  - DB 연결 예산과 Pool 수치
+  - digest·DB 연결 예산·Pool 수치는 R2 확정값 사용, CI에서 실제 동작 확인
   - 접근 제한 호환
   - 백업 등급
 - **[미확인] (모두 F6a·F6b CI에서 확인):**
