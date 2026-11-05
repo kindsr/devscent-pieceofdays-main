@@ -45,12 +45,54 @@
 - 실제 PG18: 기존 일회용 harness·app role·실제 세션 codec/getViewer·실제 F3 함수로 작성/읽기·수정/삭제/한 줄/글꼴, A/B 소유권, 낡은 버전 conflict·int4 초과 버전, 탈퇴 COMMIT 뒤 새 요청 거부, 실패 시 원문 보존을 확인한다. account/lifecycle·codec·저장 도메인을 mock하지 않는다. 요청 cookies/headers·React 요청 seam만 시험에서 대체한다.
 - RED → 독립 runner → GREEN → 독립 검토 → 메인 통합. 원본 `.claude/tdd.conf`와 gate를 따른다. Cloud에 PG18이 없으면 설치/PG16 우회 없이 CI PG18 근거로 구분한다. 공유 서버에서 npm/Next/DB 시험·FullCheck를 띄우지 않는다.
 
-## 4. S3b 연결 경계 (후속)
+## 4. S3b 화면 연결 계약 (B4·S3a 통합 뒤)
 
-- `DiaryContext`에 `{kind:"account";userId:string;store:DiaryStore;today:LocalDate}`를 추가한다. 값은 `getViewer`의 검증 사용자·PG store·서울 오늘에서만 만든다. 이 서버 문맥과 store·userId를 Client Component에 넘기지 않고 최소 day 자료만 전달한다.
-- 기존 `fixture`는 예시 메모리 동작을 그대로 유지한다. 실제 계정은 서버 액션을 기다려 성공/실패를 표시하고 예시 사진 선택을 보이지 않는다. 날짜별 저장·버전 갱신·삭제 확인·키보드와 375/768/1440을 auth mock E2E로 검증한다.
-- layout·설정은 `getPreferences`로 저장 글꼴을 읽고 허용된 키만 기록 본문에 적용한다. 함수/타입 공개 계약은 S3b RED 전에 이 절에 필요한 세부를 더 고정한다. S3a를 기다리게 만들지 않는다.
-- S3b RED에서 B3의 `signed_in` 저장소 없음 단언을 F5의 검증 사용자 문맥 단언으로 명시 전환한다. GREEN이 기존 시험을 조용히 바꾸지 않는다.
+### 4.1 서버 읽기·소유
+
+- `DiaryContext`의 `signed_in` 안내를 `{kind:"account";userId:string;store:DiaryStore;today:LocalDate}`로 바꾼다. `fixture`·`signed_out`은 유지한다. `unavailable`에는 선택 필드 `reason?:"db_unavailable"`만 추가한다. viewer의 DB 오류·store 초기화 실패에는 이 reason을 주고, 인증 미설정·설정 오류는 기존 `{kind:"unavailable"}` 그대로다. 값은 검증 사용자·PG store·서울 오늘에서만 만든다.
+- 서버 문맥·store·userId·gen을 Client Component에 넘기지 않는다. `DayBoard`에는 기존 `DiaryDay`와 `mode`만 추가한다. `mode?:"fixture"|"account"`, 기본은 `fixture`다. `DaysView`는 서버 컴포넌트로 fixture/account 문맥을 받고 최소 day 자료만 내려준다.
+- 오늘·달력·날짜 page는 각각 문맥을 확인한다. 실제 계정은 같은 PG store의 `getDay`·`listMonth`로 본인 자료만 읽는다. 자료 없음은 빈 하루다. `reason:"db_unavailable"` 또는 실제 읽기 예외에는 h1 "오늘"/"모아보기"를 유지하고 h2 "기록을 불러오지 못했어요", 본문 "잠시 뒤 다시 열어 주세요."를 보인다. 인증 미설정의 기존 준비 중 문구는 유지한다. 실패를 빈 자료나 fixture로 대체하지 않는다. `DaysView`는 읽기를 함께 성공한 뒤 달력/선택 자료를 그리고, 하나라도 실패하면 달력 전체 대신 위 실패 안내를 그린다.
+- layout은 상단 표시와 저장 글꼴에만 문맥을 쓴다. 접근 검사는 각 page/action에서 유지한다. `force-dynamic`·no-store를 유지한다. `canWrite`는 fixture/account에서만 true다.
+
+### 4.2 기록·한 줄
+
+- `DayBoard`의 fixture 경로는 기존 메모리 동작·문구·예시 이미지·E2E를 유지한다. account 경로만 S3a의 5개 액션 중 해당 함수를 직접 호출한다. 새 쓰기 route·클라이언트 userId·제품 DI는 없다.
+- account의 새 조각은 오늘 화면에서만 작성한다. 기존 조각은 과거 날도 수정·삭제한다. 폼은 마지막 서버 자료의 id·version을 사용한다. summary는 마지막 `summaryVersion`(없으면 null)을 보낸다. 입력에서 날짜·시각·userId를 조각 생성에 넣지 않는다.
+- account에는 예시 이미지 선택·업로드 제어가 없고 빈 상태 문구는 "메모 한 줄로 첫 조각을 붙여 보세요."다. 기록 본문에 예시 사진을 넣지 않는다. fixture의 기존 문구는 유지한다.
+- account의 하루 한 줄은 조각 0개여도 오늘 화면에서 쓸 수 있다. 과거 자료를 펼친 화면에서는 그날 한 줄을 수정·삭제할 수 있다. 빈 본문 저장은 기존 S3a 계약의 삭제다.
+- account 달력은 조각 또는 비어 있지 않은 한 줄이 있는 날을 누를 수 있다. 조각 0개·한 줄만 있는 날의 접근성 이름은 `${dateLabel(date)} 하루 한 줄`이고, 조각이 있는 날의 기존 이름은 유지한다. `MonthCalendar`에 `includeSummary?:boolean`(기본 false)을 추가하고 account에서만 true로 한다. 과거 날에 조각만 있고 한 줄이 없으면 "한 줄 쓰기"로 생성도 허용한다. 아무 자료도 없는 과거 날의 새 진입점은 추가하지 않는다.
+- 본문 검증은 trim 뒤 코드포인트 1~300(조각), 0~300(한 줄)이다. account textarea의 UTF-16 `maxLength`는 제거하고 코드포인트로 검사한다. 공백 조각은 "메모를 한 줄 적어 주세요.", 초과는 "300자 이하로 적어 주세요."로 표시한다. 서버 검증을 유지한다.
+- account 작성/수정의 제출 버튼은 "저장"/"고치기", 한 줄은 "저장"이다. pending 동안 중복 제출·입력 변경·dialog 취소·Esc를 막고 `role="status"`로 "저장 중…"을 알린다. account 작성 dialog는 client 시각을 표시하지 않으며, 수정에는 기존 서버 조각 시각만 표시한다.
+- account에만 삭제 버튼을 추가한다. 각 조각의 "조각 삭제" 접근성 이름을 가진 버튼으로 연다. D dialog에서 제목 "조각 지우기", 설명 "이 조각을 지울까요? 지운 뒤에는 되돌릴 수 없어요.", "지우기"·"취소"를 표시한다. pending 전 취소·Esc는 쓰기 0, 확인하면 해당 id·version으로 삭제한다. 성공 후 보드 제목으로 포커스를 돌린다.
+- 성공 전 목록·원문·초안을 성공 상태로 바꾸지 않는다. 실패하면 입력 초안과 기존 조각을 유지한다. 성공 후 작성/수정/한 줄/삭제는 각각 "조각을 저장했어요."/"조각을 고쳤어요."/"한 줄을 저장했어요."(빈 본문이면 "한 줄을 지웠어요.")/"조각을 지웠어요."로 알린다.
+- account의 목록·한 줄·기본 버전은 최신 서버 props에서 파생하고 첫 `useState(day)` 값에 고정하지 않는다. 열린 초안과 편집을 시작할 때의 기대 버전만 로컬에 둔다. 성공 후 `useTransition` 안의 `router.refresh()`로 canonical 자료를 읽고 refresh pending이 끝날 때까지 연속 쓰기를 막는다. 새 조각 강조에는 결과 id를 쓰며 client 시각으로 조각을 만들지 않는다. 자정을 넘겨 작성하면 서버의 새 서울 날짜에 저장되고 refresh 뒤 오늘 화면도 그 날짜가 된다.
+- conflict의 "다시 불러오기"는 읽기만 한다. 초안을 유지하고 새 서버 내용은 dialog 안 "서버의 최신 글"로 함께 표시한다. 사용자가 이 재조회를 명시 선택한 뒤에만 편집 기대 버전을 새 props로 갱신하고, 다시 "고치기"/"저장"을 눌러 반영한다. 외부의 자동 props 갱신은 열린 편집 버전을 조용히 바꾸지 않는다. 삭제된 대상은 재제출하지 못하게 하고 초안은 복사할 수 있게 둔다.
+- 생성 응답 유실 뒤 자동 재시도는 없다. 재조회에서 저장된 글을 사용자가 확인한 뒤 수동 재제출 여부를 정한다. 같은 글의 수동 재제출 중복을 서버에서 멱등 제거하는 새 기능은 이번 범위가 아니다. 시험은 요청 전 차단(쓰기0)과 처리 뒤 응답 유실(재조회 시1행·자동 재시도0)을 구분한다.
+
+### 4.3 오류·글꼴
+
+| 오류 | account 화면 문구·행동 |
+|---|---|
+| `forbidden` | "요청을 확인할 수 없어요. 화면을 다시 열고 시도해 주세요." |
+| `not_signed_in` | "다시 로그인해 주세요. 쓰던 글은 그대로 두었어요."와 로그인 링크. 초안은 유지 |
+| `unavailable` 또는 통신 예외 | "저장을 확인하지 못했어요. 쓰던 글은 그대로 두었어요. 다시 불러와 확인해 주세요."와 재조회. 응답 유실 때 DB 반영 여부는 단정하지 않으며 자동 재시도하지 않음 |
+| `conflict` | "다른 곳에서 기록이 바뀌었어요. 쓰던 글은 그대로 두었어요."와 "다시 불러오기"(읽기만) |
+| `not_found` | "기록을 찾을 수 없어요. 다시 불러와 주세요."와 재조회 |
+| 입력 오류 | 위 본문 문구, `invalid_date`는 "기록할 날짜를 확인해 주세요.", `invalid_version`은 재조회 안내, `invalid_font`는 "글꼴을 다시 골라 주세요." |
+
+- layout과 설정 page는 `getPreferences`로 허용된 `fontKey`를 읽는다. 기본 gothic은 html의 `data-record-font`를 생략하고 serif/hand만 넣는다. layout의 글꼴 조회 실패는 표시용 기본값으로 제한하고 접근을 허용하는 근거로 쓰지 않는다. 설정 조회 실패는 h1 "설정", h2 "기록 글꼴을 불러오지 못했어요", 본문 "잠시 뒤 다시 열어 주세요."이며 편집기는 없다.
+- `FontSettings`는 `mode?:"fixture"|"account"`·`initialFont?:FontKey`를 받으며 기본은 기존 fixture다. account는 마지막 서버 글꼴을 보여 주고 `setFontAction` 성공 뒤에만 라디오·html 속성을 바꾸며 refresh한다. 실패 시 이전 글꼴을 유지한다. 기본값 버튼도 같은 액션으로 gothic을 저장한다. 실제 계정 안내는 "계정에 저장돼 다른 기기에서도 같은 글꼴로 보여요."다.
+- 실제 계정에서 글꼴 성공 문구는 "기록 글꼴을 저장했어요."다. signed_out/unavailable에게는 저장할 수 있는 글꼴 편집기를 보이지 않고 B4의 계정/로그인 안내를 유지한다. fixture는 기존 메모리 편집기를 유지한다. 메뉴·제목·상단 글꼴은 바꾸지 않는다.
+
+### 4.4 소유·검증·회귀 기대 전환
+
+- S3b RED는 `app/tests/unit/request-context.test.ts`의 기존 `signed_in` 문맥 기대와 DB 실패의 문맥 기대만 위 account/reason으로 명시 전환하고, 신규 `app/tests/e2e-auth/diary.spec.ts`를 추가한다. 기존 `f4-dal.test.ts`의 getViewer 기대는 바꾸지 않는다. 실제 getDiaryContext의 PG 읽기 연결을 추가할 경우 신규 `app/tests/db/f5-diary-context.test.ts`만 쓴다. B4 harness 확장은 통합 SHA에서 main이 확인해 배정한다.
+- B4 E2E의 "기록 연결 전" 기대는 S3b RED에서 실제 빈 보드/저장 동작으로 명시 전환한다. 이 기대가 있는 정확 파일·행은 B4 통합 SHA에서 main이 확인해 배정한다. GREEN은 시험 변경 0이다.
+- GREEN 소유: `shared/diary.ts`, `server/context.ts`, page 3개·layout·settings, `ui/d/{DayBoard,DaysView,FontSettings,TopBar,MonthCalendar,NotConnected}.tsx`·필요한 최소 D CSS. B4 계정 영역·공식 버튼·route와 S3a 액션은 유지한다. 스키마·package·lock·배포/CI 변경은 없다.
+- 시험은 실제 mock OAuth 로그인 → 첫 빈 보드 → 300코드포인트 조각 저장 → 새로고침·다른 browser context의 동일 계정에서 유지 → 수정·삭제·취소 → 한 줄(조각0개 포함)·달력/과거 보기 → 글꼴 새로고침 유지, A/B 격리, 낡은 버전 충돌·네트워크 실패 초안 보존·재조회만 실행을 검증한다. 계정 생성·지급·세션을 직접 조작해 성공 경로를 대신하지 않는다.
+- 실제 서버 액션 HTTP의 Origin 거부, 375/768/1440 넘침0·44px·키보드·초점·loading/error를 확인한다. 클라이언트 액션 참조는 Next의 허용된 Server Action 방식으로 연결하고 서버 저장 구현·자격이 client graph에 들어가지 않는 build 경계를 유지한다.
+- 읽기 실패는 해당 일회용 DB의 app 권한을 owner 시험 연결에서 잠깐 회수하고 finally 복원해 E2E로 재현한다(실서버 금지). 계정 식별자 비직렬화는 그 시험 계정 UUID가 문서 HTML·RSC 응답·Client props에 없음을 확인한다. B4 통합 후 실제 harness의 지원 방식과 시험 파일을 배정할 때 고정한다.
+- 기존 fixture E2E12·production 기본6과 단위/PG 회귀를 유지한다. 의미 있는 새 경계만 검사하며 fixture를 실제 저장처럼 바꾸지 않는다. RED→독립 runner→GREEN→독립 검토를 따른다.
 
 ## 5. 배포 영향·되돌리기
 
