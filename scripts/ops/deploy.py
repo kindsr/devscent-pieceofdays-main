@@ -92,6 +92,9 @@ DEV_FRONT_NGINX_CONF = (
     "    proxy_set_header Connection \"\";\n"
     "\n"
     + "".join("    location %s { proxy_pass http://pieceofdays-app-dev:3000; }\n" % location for location in PROXIED_LOCATIONS)
+    # OIDC callbacks: exact matches win over `^~ /auth/`; same upstream, no logs for code/state/referrer,
+    # and no other directive so the server-level fixed headers and as-sent Origin/Cookie are inherited.
+    + "".join("    location = /auth/%s/callback { access_log off; error_log /dev/null crit; proxy_pass http://pieceofdays-app-dev:3000; }\n" % provider for provider in ("google", "kakao"))
     + "\n"
     + "".join("    location = /%s { }\n    location ^~ /%s/ { }\n" % (name, name) for name in STATIC_DIRECTORIES)
     + "\n"
