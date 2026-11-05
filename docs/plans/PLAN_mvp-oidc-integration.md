@@ -462,27 +462,27 @@ export async function getDiaryContext(): Promise<DiaryContext>;
 
 ## 8. D 화면 상태 (B4-d → B4)
 
-- [사실] D 핸드오프 §1은 로그인 관련 화면을 **아트보드 없음**으로 기록한다. 아래 표는 **설계 미확인**이다.
+- **[메인] 상태 기준(2026-11-05 수락):** B4-d 정적 아트보드 [`auth.html`](../design/concepts/d-warm-pieces/auth.html)과 대표 캡처 9장(login·withdraw·restore × 375/768/1440)을 메인이 직접 확인해 수락했다. PR47 독립 검토는 PASS였고, 그 P2 2건(복구하지 않기의 결과, 복구 시간 지남 화면)은 아트보드에 반영했다. 아래 표가 B4 RED/GREEN의 기준이다. 핸드오프는 [디자인 README](../design/README.md) §9다.
 - D 전역 테마·구조를 유지하고, 새 색·레이아웃·3안 재선택은 없다.
-- 기존 토큰과 클래스(`.board-head`, `.notice`, `.btn-main`·`.btn-add` 계열, `.btn-sub`, `.text-btn`, `.settings`)를 쓴다.
+- 기존 토큰과 클래스(`.board-head`, `.notice`, `.btn-main`·`.btn-add` 계열, `.btn-ghost`, `.text-btn`, `.settings`)와 D 고정 오류색 `#8E2A12`를 쓴다.
 
 | 화면 | 기반 | 고정 문구(한국어) | 트리거 |
 |---|---|---|---|
-| 로그인 | `board-head` + `notice` + 공급자 버튼(세로, ≥ 44px) | "pieceofdays에 로그인", "Google로 계속하기", "카카오로 계속하기" | `/login` |
+| 로그인 | `board-head` + `notice` + 공급자 버튼(세로, 높이 46) | "pieceofdays에 로그인". 공급자 버튼은 공식 에셋: Google 승인 이미지 "Sign in with Google"(영문, 207×46) + 한국어 접근성 이름 "(Google 계정으로 로그인)", Kakao 공식 SVG "카카오 로그인"(224×46) | `/login` |
 | 준비 중 | `NotConnected` 변형 | "로그인을 준비하고 있어요" | viewer `unavailable` |
 | 취소 | `notice` | "로그인을 취소했어요. 다시 시도할 수 있어요." | `error=cancelled` |
 | 실패 | `notice` + 오류색 테두리 | "로그인하지 못했어요. 잠시 뒤 다시 시도해 주세요." | `failed` |
 | 시간 지남 | `notice` | "확인 시간이 지났어요. 처음부터 다시 로그인해 주세요." | `expired` |
 | 복구 불가 | `notice` | "복구 기간이 지나 이 계정을 되돌릴 수 없어요." | `purge_due` |
 | 로그아웃·탈퇴 완료 | `notice`(`aria-live=polite`) | "로그아웃했어요" / "탈퇴를 요청했어요. 30일 안에 다시 로그인하면 복구할 수 있어요." | `notice=…` |
-| 탈퇴 확인 | `settings` 섹션 + 확인 체크 + `btn-sub` | "탈퇴하면 바로 로그아웃되고 30일 뒤 기록과 감정덩어리가 삭제돼요" | `/account/withdraw` |
-| 복구 확인 | `notice` + `btn-main` + `text-btn` | "탈퇴를 요청한 계정이에요. 복구할까요?" | `/account/restore` |
-| 복구 시간 지남 | `notice` | "확인 시간이 지났어요. 다시 로그인하면 복구할 수 있어요." | 복구 쿠키 무효 |
+| 탈퇴 확인 | `settings` 섹션 + 확인 체크 + `btn-ghost`(오류색 글자·테두리, 체크 전 비활성) | "탈퇴하면 바로 로그아웃되고 30일 뒤 기록과 감정덩어리가 삭제돼요" | `/account/withdraw` |
+| 복구 확인 | `notice` + `btn-main` + `text-btn` | "탈퇴를 요청한 계정이에요. 복구할까요?" — "복구하기"는 POST restore, "복구하지 않기"는 POST logout → `/login?notice=signed_out` | `/account/restore` |
+| 복구 시간 지남 | `/account/restore` page 하나에서만: h1 "계정 복구" + `notice` + `/login` 링크, 공급자 버튼 없음 | "확인 시간이 지났어요. 다시 로그인하면 복구할 수 있어요." | 복구 쿠키 무효 |
 | 로그인됨·기록 연결 전 | `NotConnected` 변형 | "로그인됐어요. 기록 쓰기·불러오기는 다음 단계에서 연결돼요." | `signed_in` |
 | 설정 › 계정 | `settings` 섹션 | 로그아웃, "계정 탈퇴" | `user` |
 | 503 고정 본문 | text/plain(디자인 밖) | §6.2 | 처리 불가 |
 
-- **로딩:** 제출 뒤 버튼에 `aria-disabled`와 "이동 중…"을 표시한다. JS가 없어도 POST·303으로 동작한다.
+- **로딩:** 제출 뒤 공급자 버튼에 `aria-disabled="true"`를 주고, "이동 중…"은 버튼 **밖** `role="status"`에 표시한다. 공급자 레이블·로고·색은 바꾸지 않는다. JS가 없어도 POST·303으로 동작한다.
 - **접근성:** 전환 시 `h1`(tabIndex −1)에 포커스한다. 오류는 `role="status"`·`aria-live`로 알린다. Tab으로 모두 닿고 `:focus-visible` 3px로 표시한다. 대비 AA는 기존 토큰 조합만 쓴다.
 - **i18n:** 키 → 문구 표 하나(`src/shared/auth-messages.ts`)로 모은다. 다국어는 [미정]이다.
 - **반응형:** 375/768/1440 수평 넘침 없음.
@@ -490,6 +490,8 @@ export async function getDiaryContext(): Promise<DiaryContext>;
   - B4-d 착수 전에 Google·Kakao의 공식 로그인 버튼 규정을 확인한다.
   - 공급자 버튼에 한정한 필수 공식 에셋·색만 D 아트보드에 넣고, 나머지는 D 전역 토큰을 유지한다.
   - 이 확인을 위한 별도 사용자 승인 흐름은 두지 않는다.
+  - **수락된 기술 선택(2026-11-05):** 공식 파일은 바이트 그대로 쓴다(Kakao 파일의 radius 8 유지, 출처·hash는 `auth-assets/SOURCES.md`). Google HTML 한국어 후보(`?g=html`)는 규정 적합성 미확인이라 실제 UI에 채택하지 않는다. 아트보드의 상태 선택 도구 영역은 실제 화면에 복제하지 않는다.
+- **탈퇴 진입 gate:** `POD_WITHDRAWAL_ENABLED`가 정확히 `1`일 때만 탈퇴 흐름을 연다. 그 밖에는 POST 503·GET redirect·설정 진입점 없음이며, [PLAN_dev-usable-app](PLAN_dev-usable-app.md) §6이 우선한다. B4 RED/GREEN에 반영 중이다.
 - **B4-d 완료 조건:** source 아트보드의 375/768/1440 스크린샷을 메인이 확인한 뒤 B4 UI GREEN을 시작한다.
 
 ## 9. 시험 계획 (RED가 그대로 쓰는 사례)
