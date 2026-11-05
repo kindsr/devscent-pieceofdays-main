@@ -104,17 +104,20 @@ COPY --from=build /app/public ./public
 # migrate CLI는 원래 상대 배치를 그대로 둔다 → 기본 경로 ../../../migrations = /app/migrations
 COPY --from=build /app/src/server/db/migrate-cli.ts /app/src/server/db/migrate.ts /app/src/server/db/sql-policy.ts ./src/server/db/
 COPY --from=build /app/migrations ./migrations
+COPY --from=build /app/runtime-startup.mjs ./runtime-startup.mjs
+COPY --from=build /app/src/server/runtime-mode.ts ./src/server/runtime-mode.ts
 ARG POD_SHA POD_TREE POD_MIGRATIONS_LATEST
 LABEL org.opencontainers.image.source="https://github.com/kindsr/devscent-pieceofdays-main" \
       org.opencontainers.image.revision="${POD_SHA}" pod.tree="${POD_TREE}" pod.migrations.latest="${POD_MIGRATIONS_LATEST}"
 USER node
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "runtime-startup.mjs"]
 ```
 
 - **`pg` 의존성:** standalone trace에는 앱이 import하는 `pg`가 들어간다고 예상하지만 [미확인], migrate CLI 경로까지 들어간다는 보장은 없다. CI가 이미지 안에서 `node src/server/db/migrate-cli.ts status`를 실제 PG18에 대해 실행해 확인한다. 실패하면 `node_modules/pg`와 그 의존 패키지를 build 단계에서 명시 `COPY`한다(정확한 목록은 lock에서 계산해 F6a에서 고정).
 - **migrate 명령(고정):** 작업 디렉터리 `/app`, `node --env-file=/run/secrets/migrator.env src/server/db/migrate-cli.ts status` / `… up`. `--migrations-dir`는 쓰지 않는다(기본 `/app/migrations`).
 - **`app/next.config.ts`:** `output: "standalone"` 1줄을 추가한다. 기존 모드 거부 호출은 그대로 둔다.
+- **`app/runtime-startup.mjs`:** standalone의 직렬화된 nextConfig만으로는 원래 production-server 시작 검사가 다시 실행된다고 가정하지 않는다. wrapper가 원본 `src/server/runtime-mode.ts`의 `assertFixtureModeAllowed("phase-production-server", process.env)`·`assertAuthModeAllowed("phase-production-server", process.env)`를 먼저 호출하고 `await import("./server.js")`한다. Node26의 erasable TS를 그대로 사용하며 새 모드/의존성은 없다. 이미지의 실제 기본 기동으로 fixture/mock 시작 거부를 검증한다. migration CLI는 별도로 실행한다.
 - **`app/.dockerignore`:** `node_modules`, `.next`, `tests`, `.env*`, `test-results`, `playwright-report`를 제외한다. 이미지에 `.env*`가 없음을 CI로 단언한다.
 - **`server/db/pool.ts` 명시 설정 [메인, F6a 코드 변경]:** `new pg.Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 10000 })`. 지금은 기본값이라 최대 10이고 연결 대기 timeout이 없다. app role limit 6 안에서 Pool 5 + readiness 1을 유지한다.
 - **health route(서버 전용, 쓰기 없음):**
@@ -201,7 +204,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 **`runtime_compose_app(front_id, app_image_id, release_id, uid, gid, settings) -> dict`**
 
 - §3 그대로의 정확한 dict다: 서비스 2개, 네트워크 4개, `secrets.pod_app_env.file`은 **해당 릴리스의 동결 env 경로**. `services`의 image 값 2개는 모두 기록한 로컬 엔진 image ID다. registry 참조를 런타임에 재해석하지 않는다.
-- 앱: `entrypoint: ["node"]`, `command: ["--env-file=/run/secrets/pod_app_env", "server.js"]`, `user: "<uid>:<gid>"`.
+- 앱: `entrypoint: ["node"]`, `command: ["--env-file=/run/secrets/pod_app_env", "runtime-startup.mjs"]`, `user: "<uid>:<gid>"`. 후보 기동도 같은 wrapper를 쓰며 env 없이 liveness를 확인한다.
 - 앱 health: `["CMD","node","-e","fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]`, 30s / 5s / 3, start_period 20s.
 - 프런트 health: `wget -q -O /dev/null http://127.0.0.1:80/try/`.
 
@@ -338,7 +341,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 | slice | 파일 | 선행 | 병행 |
 |---|---|---|---|
-| **F6a1 앱 이미지** | RED: `app/tests/unit/runtime-health.test.ts`·`app/tests/unit/db-pool.test.ts`·`app/tests/image-contract.test.mjs`(실제 이미지 검사). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-validation.yml`(`app-image` job 1~6단계) | 없음 | S1·S2·S3·F6b |
+| **F6a1 앱 이미지** | RED: `app/tests/unit/runtime-health.test.ts`·`app/tests/unit/db-pool.test.ts`·`app/tests/image-contract.test.mjs`(실제 이미지 검사). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/runtime-startup.mjs`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-validation.yml`(`app-image` job 1~6단계) | 없음 | S1·S2·S3·F6b |
 | **F6a2 프록시 조합** | §8의 프런트+앱 E2E 시험·app-image job 확장. 정확 시험 파일은 S2/F6b 통합 SHA의 helper 상수를 읽고 RED 전에 main이 고정 | S2·F6b·F6a1 통합 | S3b |
 | **F6b helper** | RED: `tests/test_deploy_app.py`·`app/tests/deploy-env-parity.test.mjs`. GREEN: `scripts/ops/deploy.py`(기존 static·production 동작 불변, §6.5 거부 추가)·`.github/workflows/deploy-app-validation.yml`(Node env 대조 전용) | 없음 | F6a |
 | **F6c 배포 전환** | `.github/workflows/deploy.yml`(dev job 분리, production 불변). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6a1·F6a2·F6b·S2 통합, §9 1~7 | — |
