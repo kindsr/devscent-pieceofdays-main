@@ -231,3 +231,4 @@ html[data-record-font="hand"] { --font-record: var(--font-hand); }
 .auth-trial { display: grid; gap: var(--s-1); max-width: 640px; margin-top: var(--s-3); }
 .row a.text-btn, .row .text-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
 .top-login { grid-area: add; justify-self: end; }
+.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }

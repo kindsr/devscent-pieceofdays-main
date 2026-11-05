@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getViewer } from "@/server/context";
 import { AUTH_TEXT } from "@/shared/auth-messages";
+import { WithdrawConfirm } from "@/ui/d/WithdrawConfirm";
 
 export const dynamic = "force-dynamic";
 
@@ -22,18 +22,7 @@ export default async function WithdrawPage() {
           {AUTH_TEXT.withdrawWarn}
         </p>
         <form action="/auth/withdraw" method="post" className="settings">
-          <label className="auth-check">
-            <input type="checkbox" name="confirm" value="withdraw" required aria-describedby="wd-warn" />
-            {AUTH_TEXT.withdrawCheck}
-          </label>
-          <div className="row">
-            <button type="submit" className="btn-ghost auth-danger">
-              {AUTH_TEXT.withdrawSubmit}
-            </button>
-            <Link className="text-btn" href="/settings">
-              {AUTH_TEXT.cancel}
-            </Link>
-          </div>
+          <WithdrawConfirm />
         </form>
       </section>
     </>
