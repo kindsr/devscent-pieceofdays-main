@@ -211,3 +211,23 @@ html[data-record-font="hand"] { --font-record: var(--font-hand); }
 .notice p { color: var(--muted); }
 .smoke { display: grid; gap: var(--s-2); }
 .smoke-stage { border: var(--border); border-radius: 4px; background: var(--surface); width: max-content; max-width: 100%; touch-action: none; }
+
+/* F4 B4 인증 화면(D 인증 아트보드 auth.css의 제품 규칙). 새 색은 없다. 공급자 버튼 내부만 공식 에셋 그대로다. */
+.notice .auth-msg { color: var(--ink); font-weight: 700; }
+.notice.is-error { border-style: solid; border-color: #8E2A12; }
+.notice.is-error .auth-msg { color: #8E2A12; }
+.auth-body { display: grid; gap: var(--s-3); max-width: 640px; }
+.auth-providers { display: grid; gap: var(--s-2); justify-items: start; }
+.auth-status { min-height: 1.6em; font-weight: 700; }
+.auth-pbtn { display: block; width: fit-content; padding: 0; margin: 0; border: 0; background: none; cursor: pointer; line-height: 0; }
+.auth-pbtn img { display: block; height: 46px; width: auto; max-width: 100%; }
+.auth-google { border-radius: 4px; }
+.auth-kakao { border-radius: 8px; }
+.auth-pbtn[aria-disabled="true"] { cursor: progress; }
+.auth-check { display: flex; align-items: center; gap: var(--s-1); min-height: 44px; font-weight: 700; cursor: pointer; }
+.auth-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+.auth-danger { color: #8E2A12; border-color: #8E2A12; }
+.auth-warn { font-weight: 700; }
+.auth-trial { display: grid; gap: var(--s-1); max-width: 640px; margin-top: var(--s-3); }
+.row a.text-btn, .row .text-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
+.top-login { grid-area: add; justify-self: end; }
