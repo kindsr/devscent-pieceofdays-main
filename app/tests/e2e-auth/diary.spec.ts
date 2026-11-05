@@ -1,0 +1,609 @@
+// F5 S3b RED — 실제 계정 기록 화면(PLAN_dev-diary-actions §4). auth E2E harness 그대로:
+// next dev(127.0.0.1:3300) + 실제 mock OIDC 로그인 + 실제 B2·S3a·F3 + 일회용 PG18(globalSetup).
+// - 계정·세션은 실제 로그인으로만 만든다. 기록은 실제 화면과 실제 Server Action으로만 만든다.
+// - DB 직접 쓰기는 diary-support의 날짜 fixture(과거 날로 옮김)와 SELECT 권한 잠시 회수(finally 복원)뿐이다.
+// - Server Action은 fetch라 보류 중에도 화면을 볼 수 있다. 보류·중단은 page.route로 실제 요청에 건다(Next 내부 ID를 적지 않는다).
+import { expect, test, type Browser, type Page } from "@playwright/test";
+import { AUTH_BASE, TEXT, WIDTHS, expectLayoutOk } from "./support";
+import {
+  DIARY_TEXT,
+  FIXTURE_TEXT,
+  addDays,
+  collectBodies,
+  dateLabel,
+  escapeRe,
+  fontOf,
+  momentsOf,
+  moveMomentToPreviousDay,
+  replayAction,
+  seoulDate,
+  serverSeoulToday,
+  signIn,
+  statusWith,
+  summariesOf,
+  tapActions,
+  topAdd,
+  withRevokedSelect,
+  type Account,
+  type ActionTap,
+} from "./diary-support";
+
+// ---------------------------------------------------------------- 화면 조작(공개 문구·역할만 쓴다)
+
+const composer = (page: Page) => page.getByRole("dialog");
+const memo = (page: Page) => composer(page).getByRole("textbox", { name: "메모" });
+const item = (page: Page, text: string) => page.getByRole("listitem").filter({ hasText: text });
+const boardHeading = (page: Page, date: string) => page.getByRole("heading", { level: 1, name: new RegExp(escapeRe(dateLabel(date))) });
+
+async function openComposer(page: Page): Promise<void> {
+  await topAdd(page).click();
+  await expect(composer(page)).toBeVisible();
+  await expect(memo(page)).toBeVisible();
+}
+
+/** 오늘 화면에서 조각 하나를 실제 화면으로 저장하고 목록에 보일 때까지 기다린다. */
+async function createPiece(page: Page, tap: ActionTap, text: string): Promise<void> {
+  const before = tap.calls.length;
+  await openComposer(page);
+  await memo(page).fill(text);
+  await composer(page).getByRole("button", { name: "저장" }).click();
+  await expect(composer(page)).toHaveCount(0);
+  await expect(item(page, text)).toHaveCount(1);
+  expect(tap.calls.length, `one action POST for "${text}"`).toBe(before + 1);
+}
+
+/** 같은 계정으로 새 browser context에서 다시 실제 로그인한다. */
+async function sameAccountContext(browser: Browser, a: Account): Promise<{ page: Page; close: () => Promise<void> }> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const again = await signIn(page, a.provider, a.subject);
+  expect(again.userId, "same account").toBe(a.userId);
+  return { page, close: () => context.close() };
+}
+
+// ================================================================= 첫 화면
+
+test("first real login lands on an empty account board for the Seoul today: memo-only composer without sample images or a client time, write entry in the top bar", async ({ page }) => {
+  const a = await signIn(page);
+  const today = await serverSeoulToday();
+  await expect(boardHeading(page, today)).toBeVisible();
+  await expect(page.getByText(DIARY_TEXT.empty, { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: TEXT.signedIn })).toHaveCount(0);
+  for (const t of FIXTURE_TEXT) await expect(page.getByText(t)).toHaveCount(0);
+  await expect(page.locator("main img")).toHaveCount(0);
+
+  // 키보드로 상단 진입점을 열면 메모 칸에 초점이 간다. 예시 이미지 선택·업로드·client 시각이 없다.
+  await page.clock.setFixedTime(new Date("2031-03-04T00:13:00Z")); // 브라우저만 09:13(서울)
+  await page.reload();
+  await topAdd(page).focus();
+  await page.keyboard.press("Enter");
+  await expect(memo(page)).toBeFocused();
+  await expect(composer(page).getByRole("radio")).toHaveCount(0);
+  await expect(composer(page).locator('input[type="file"], img')).toHaveCount(0);
+  await expect(composer(page).getByText(/예시 이미지/)).toHaveCount(0);
+  await expect(composer(page), "no client-clock time in the add dialog").not.toContainText("09:13");
+  await expect(memo(page), "no UTF-16 maxlength on the account memo").not.toHaveAttribute("maxlength", /.*/);
+  for (const w of WIDTHS) {
+    await page.setViewportSize({ width: w, height: 900 });
+    await expectLayoutOk(page, `empty board + composer ${w}`);
+  }
+  await page.keyboard.press("Escape");
+  await expect(composer(page)).toHaveCount(0);
+  expect(await momentsOf(a.userId)).toEqual([]);
+});
+
+// ================================================================= 작성·보류·유지
+
+test("create: trimmed 1..300 code points; one held action shows 저장 중… and blocks duplicates, input and closing; the canonical piece appears only after commit and survives reload and a second context", async ({ page, browser }) => {
+  const a = await signIn(page);
+  const tap = await tapActions(page);
+  await openComposer(page);
+
+  await memo(page).fill("   \n\t ");
+  await composer(page).getByRole("button", { name: "저장" }).click();
+  await expect(composer(page).getByText(DIARY_TEXT.blank, { exact: true })).toBeVisible();
+  const emoji301 = "😀".repeat(301);
+  await memo(page).fill(emoji301);
+  await expect(memo(page), "not truncated by UTF-16 length").toHaveValue(emoji301);
+  await composer(page).getByRole("button", { name: "저장" }).click();
+  await expect(composer(page).getByText(DIARY_TEXT.tooLong, { exact: true })).toBeVisible();
+  expect(await momentsOf(a.userId), "rejected bodies write nothing").toEqual([]);
+
+  const emoji300 = "😀".repeat(300);
+  await memo(page).fill(`  ${emoji300}  `);
+  const held = tap.next("hold");
+  const calls = tap.calls.length;
+  await composer(page).getByRole("button", { name: "저장" }).click();
+  await held.reached;
+  await expect(statusWith(page, DIARY_TEXT.saving)).toBeVisible();
+  await expect(memo(page), "input blocked while pending").not.toBeEditable();
+  await composer(page).getByRole("button", { name: "저장" }).dispatchEvent("click");
+  await page.keyboard.press("Escape");
+  await composer(page).getByRole("button", { name: "닫기" }).dispatchEvent("click");
+  await expect(composer(page), "Esc/닫기 cannot hide a pending save").toBeVisible();
+  await expect(page.getByText(DIARY_TEXT.created, { exact: true })).toHaveCount(0);
+  expect(await momentsOf(a.userId), "nothing written while the request is held").toEqual([]);
+  expect(tap.calls.length, "duplicate submit refused").toBe(calls + 1);
+
+  held.release();
+  await expect(page.getByText(DIARY_TEXT.created, { exact: true })).toBeAttached();
+  await expect(composer(page)).toHaveCount(0);
+  const rows = await momentsOf(a.userId);
+  expect(rows.map((r) => [r.body, r.version, r.localDate]), "trimmed, server date").toEqual([[emoji300, 1, await serverSeoulToday()]]);
+  await expect(item(page, emoji300)).toContainText(rows[0]!.time);
+  expect(tap.calls.length, "no retry").toBe(calls + 1);
+
+  await page.reload();
+  await expect(item(page, emoji300)).toHaveCount(1);
+  const second = await sameAccountContext(browser, a);
+  try {
+    await expect(item(second.page, emoji300)).toContainText(rows[0]!.time);
+  } finally {
+    await second.close();
+  }
+});
+
+// ================================================================= 수정·삭제·과거 날
+
+test("edit keeps the server time and order (today and a past day via a date fixture); delete asks in the D dialog — 취소/Esc write nothing, 지우기 removes it and focuses the board heading", async ({ page }) => {
+  const a = await signIn(page);
+  const tap = await tapActions(page);
+  await createPiece(page, tap, "첫 번째 조각");
+  await createPiece(page, tap, "두 번째 조각");
+  const [p1, p2] = await momentsOf(a.userId);
+  const order = async () => (await page.getByRole("listitem").filter({ hasText: /번째 조각/ }).allTextContents()).map((t) => (t.includes("첫") ? 1 : 2));
+  expect(await order()).toEqual([1, 2]);
+
+  await item(page, "첫 번째 조각").getByRole("button", { name: /조각 수정$/ }).click();
+  await expect(composer(page), "edit shows the stored server time").toContainText(p1!.time);
+  await expect(memo(page)).toHaveValue("첫 번째 조각");
+  await memo(page).fill("첫 번째 조각 고침");
+  await composer(page).getByRole("button", { name: "고치기" }).click();
+  await expect(page.getByText(DIARY_TEXT.edited, { exact: true })).toBeAttached();
+  await expect(item(page, "첫 번째 조각 고침")).toContainText(p1!.time);
+  expect(await order()).toEqual([1, 2]);
+  const afterEdit = await momentsOf(a.userId);
+  expect(afterEdit.map((r) => [r.id, r.body, r.version, r.occurredAt])).toEqual([
+    [p1!.id, "첫 번째 조각 고침", 2, p1!.occurredAt],
+    [p2!.id, "두 번째 조각", 1, p2!.occurredAt],
+  ]);
+
+  const callsBefore = tap.calls.length;
+  const openDelete = async () => {
+    await item(page, "두 번째 조각").getByRole("button", { name: /조각 삭제/ }).click();
+    const dlg = page.getByRole("dialog", { name: DIARY_TEXT.deleteTitle });
+    await expect(dlg).toBeVisible();
+    await expect(dlg.getByText(DIARY_TEXT.deleteBody, { exact: true })).toBeVisible();
+    return dlg;
+  };
+  await (await openDelete()).getByRole("button", { name: "취소" }).click();
+  await expect(page.getByRole("dialog", { name: DIARY_TEXT.deleteTitle })).toHaveCount(0);
+  await openDelete();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: DIARY_TEXT.deleteTitle })).toHaveCount(0);
+  expect(tap.calls.length, "취소·Esc send nothing").toBe(callsBefore);
+  expect(await momentsOf(a.userId)).toHaveLength(2);
+
+  const dlg = await openDelete();
+  const held = tap.next("hold");
+  await dlg.getByRole("button", { name: "지우기" }).click();
+  await held.reached;
+  await expect(statusWith(page, DIARY_TEXT.saving)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dlg, "a pending delete cannot be dismissed").toBeVisible();
+  expect(await momentsOf(a.userId), "not deleted while held").toHaveLength(2);
+  held.release();
+  await expect(page.getByText(DIARY_TEXT.deleted, { exact: true })).toBeAttached();
+  await expect(item(page, "두 번째 조각")).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 }), "focus returns to the board heading").toBeFocused();
+  expect((await momentsOf(a.userId)).map((r) => r.id)).toEqual([p1!.id]);
+  expect(tap.calls.length, "one delete POST").toBe(callsBefore + 1);
+
+  // 과거 날: 날짜 fixture로 하루 전으로 옮긴 조각을 그 날 화면에서 고친다.
+  await moveMomentToPreviousDay(p1!.id);
+  const yesterday = addDays(await serverSeoulToday(), -1);
+  await page.goto(`/days/${yesterday}`);
+  await item(page, "첫 번째 조각 고침").getByRole("button", { name: /조각 수정$/ }).click();
+  await memo(page).fill("어제로 옮긴 조각 고침");
+  await composer(page).getByRole("button", { name: "고치기" }).click();
+  await expect(item(page, "어제로 옮긴 조각 고침")).toContainText(p1!.time);
+  const past = await momentsOf(a.userId);
+  expect(past.map((r) => [r.body, r.version, r.localDate, r.time])).toEqual([["어제로 옮긴 조각 고침", 3, yesterday, p1!.time]]);
+});
+
+// ================================================================= 하루 한 줄·달력
+
+test("one-line summary: writable with 0 pieces, empty text deletes, a past day with pieces can create one; the calendar links summary-only days as `<date> 하루 한 줄` and keeps the pieces label", async ({ page }) => {
+  const a = await signIn(page);
+  const tap = await tapActions(page);
+  const today = await serverSeoulToday();
+  const yesterday = addDays(today, -1);
+
+  await expect(page.getByText(DIARY_TEXT.empty, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "한 줄 쓰기" }).click();
+  await expect(page.getByRole("textbox")).toHaveCount(1);
+  await page.getByRole("textbox").fill("조각 없는 날의 한 줄");
+  const held = tap.next("hold");
+  await page.getByRole("button", { name: "저장" }).click();
+  await held.reached;
+  await expect(statusWith(page, DIARY_TEXT.saving)).toBeVisible();
+  await expect(page.getByRole("textbox")).not.toBeEditable();
+  expect(await summariesOf(a.userId), "nothing written while held").toEqual([]);
+  held.release();
+  await expect(page.getByText(DIARY_TEXT.summarySaved, { exact: true })).toBeAttached();
+  expect(await summariesOf(a.userId)).toEqual([{ localDate: today, body: "조각 없는 날의 한 줄", version: 1 }]);
+
+  await page.getByRole("button", { name: "고쳐 쓰기" }).click();
+  await page.getByRole("textbox").fill("");
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(page.getByText(DIARY_TEXT.summaryDeleted, { exact: true })).toBeAttached();
+  expect(await summariesOf(a.userId), "empty text deletes").toEqual([]);
+  await page.getByRole("button", { name: "한 줄 쓰기" }).click();
+  await page.getByRole("textbox").fill("다시 쓴 한 줄");
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(page.getByText("다시 쓴 한 줄", { exact: true })).toBeVisible();
+
+  await createPiece(page, tap, "어제가 될 조각");
+  await moveMomentToPreviousDay((await momentsOf(a.userId))[0]!.id);
+  await page.goto("/days");
+  await expect(page.getByRole("link", { name: `${dateLabel(today)} 하루 한 줄`, exact: true }), "summary-only day").toBeVisible();
+  await expect(page.getByRole("link", { name: `${dateLabel(yesterday)}, 조각 1개`, exact: true }), "pieces label unchanged").toBeVisible();
+
+  await page.getByRole("link", { name: `${dateLabel(today)} 하루 한 줄`, exact: true }).click();
+  await expect(page).toHaveURL(`${AUTH_BASE}/days/${today}`);
+  await expect(page.getByText("다시 쓴 한 줄", { exact: true })).toBeVisible();
+
+  await page.goto(`/days/${yesterday}`);
+  await page.getByRole("button", { name: "한 줄 쓰기" }).click();
+  await page.getByRole("textbox").fill("어제의 한 줄");
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(page.getByText(DIARY_TEXT.summarySaved, { exact: true })).toBeAttached();
+  expect(await summariesOf(a.userId)).toEqual([
+    { localDate: yesterday, body: "어제의 한 줄", version: 1 },
+    { localDate: today, body: "다시 쓴 한 줄", version: 1 },
+  ]);
+  await page.goto("/days");
+  await expect(page.getByRole("link", { name: `${dateLabel(yesterday)}, 조각 1개`, exact: true })).toBeVisible();
+});
+
+// ================================================================= 충돌·삭제된 대상
+
+test("conflict between two contexts of the same account: a stale save keeps the draft, only an explicit 다시 불러오기 shows 서버의 최신 글 and lets the draft be saved; a deleted target cannot be resubmitted but the draft stays", async ({ page, browser }) => {
+  test.setTimeout(180_000);
+  const a = await signIn(page);
+  const tapA = await tapActions(page);
+  await createPiece(page, tapA, "처음 글");
+  const b = await sameAccountContext(browser, a);
+  try {
+    const tapB = await tapActions(b.page);
+    await page.reload();
+    await item(page, "처음 글").getByRole("button", { name: /조각 수정$/ }).click();
+    await memo(page).fill("A의 초안");
+
+    await item(b.page, "처음 글").getByRole("button", { name: /조각 수정$/ }).click();
+    await memo(b.page).fill("B가 먼저 고침");
+    await composer(b.page).getByRole("button", { name: "고치기" }).click();
+    await expect(b.page.getByText(DIARY_TEXT.edited, { exact: true })).toBeAttached();
+
+    const callsA = tapA.calls.length;
+    await composer(page).getByRole("button", { name: "고치기" }).click();
+    await expect(page.getByText(DIARY_TEXT.conflict, { exact: true })).toBeVisible();
+    await expect(memo(page), "draft kept after conflict").toHaveValue("A의 초안");
+    expect((await momentsOf(a.userId)).map((r) => [r.body, r.version])).toEqual([["B가 먼저 고침", 2]]);
+    await page.getByRole("button", { name: DIARY_TEXT.reload }).click();
+    await expect(composer(page).getByText(DIARY_TEXT.serverLatest)).toBeVisible();
+    await expect(composer(page)).toContainText("B가 먼저 고침");
+    await expect(memo(page), "draft kept after reload").toHaveValue("A의 초안");
+    expect(tapA.calls.length, "다시 불러오기 only reads").toBe(callsA + 1);
+    await composer(page).getByRole("button", { name: "고치기" }).click();
+    await expect(page.getByText(DIARY_TEXT.edited, { exact: true })).toBeAttached();
+    expect((await momentsOf(a.userId)).map((r) => [r.body, r.version])).toEqual([["A의 초안", 3]]);
+
+    // 삭제된 대상: B가 지운 뒤 A의 오래된 화면에서 고치기
+    await b.page.reload();
+    await item(b.page, "A의 초안").getByRole("button", { name: /조각 삭제/ }).click();
+    await b.page.getByRole("dialog", { name: DIARY_TEXT.deleteTitle }).getByRole("button", { name: "지우기" }).click();
+    await expect(b.page.getByText(DIARY_TEXT.deleted, { exact: true })).toBeAttached();
+    expect(await momentsOf(a.userId)).toEqual([]);
+    expect(tapB.calls.length, "B: one edit + one delete").toBe(2);
+
+    await item(page, "A의 초안").getByRole("button", { name: /조각 수정$/ }).click();
+    await memo(page).fill("지운 뒤의 초안");
+    await composer(page).getByRole("button", { name: "고치기" }).click();
+    await expect(page.getByText(DIARY_TEXT.notFound, { exact: true })).toBeVisible();
+    await expect(memo(page)).toHaveValue("지운 뒤의 초안");
+    const callsDeleted = tapA.calls.length;
+    await page.getByRole("button", { name: DIARY_TEXT.reload }).click();
+    await expect(memo(page), "the draft stays copyable").toHaveValue("지운 뒤의 초안");
+    const resubmit = composer(page).getByRole("button", { name: "고치기" });
+    expect((await resubmit.count()) === 0 || (await resubmit.isDisabled()), "no resubmit for a deleted target").toBe(true);
+    expect(tapA.calls.length).toBe(callsDeleted);
+    expect(await momentsOf(a.userId), "nothing recreated").toEqual([]);
+  } finally {
+    await b.close();
+  }
+});
+
+// ================================================================= 통신 실패
+
+test("transport: aborted before the server → 0 rows; response lost after commit → exactly 1 row; both show the unavailable text, keep the draft, never retry, and 다시 불러오기 only reads", async ({ page }) => {
+  const a = await signIn(page);
+  const tap = await tapActions(page);
+
+  const lost = tap.next("abort-before");
+  await openComposer(page);
+  await memo(page).fill("보내지 못한 조각");
+  await composer(page).getByRole("button", { name: "저장" }).click();
+  await lost.reached;
+  await expect(page.getByText(DIARY_TEXT.unavailable, { exact: true })).toBeVisible();
+  await expect(memo(page)).toHaveValue("보내지 못한 조각");
+  await page.waitForTimeout(1500); // 자동 재시도가 없는지 지켜본다(상한 있는 대기)
+  expect(tap.calls.length, "no automatic retry").toBe(1);
+  expect(await momentsOf(a.userId), "server never saw the request").toEqual([]);
+  await page.getByRole("button", { name: DIARY_TEXT.reload }).click();
+  await expect(memo(page)).toHaveValue("보내지 못한 조각");
+  expect(tap.calls.length, "reload sends no action").toBe(1);
+  await page.keyboard.press("Escape");
+
+  await page.reload();
+  const cut = tap.next("lose-response");
+  await openComposer(page);
+  await memo(page).fill("응답만 끊긴 조각");
+  await composer(page).getByRole("button", { name: "저장" }).click();
+  await cut.reached;
+  await expect(page.getByText(DIARY_TEXT.unavailable, { exact: true })).toBeVisible();
+  await expect(memo(page)).toHaveValue("응답만 끊긴 조각");
+  await expect(page.getByText(DIARY_TEXT.created, { exact: true }), "no success claimed").toHaveCount(0);
+  await page.waitForTimeout(1500);
+  expect(tap.calls.length, "no automatic retry").toBe(2);
+  expect((await momentsOf(a.userId)).map((r) => r.body), "committed exactly once").toEqual(["응답만 끊긴 조각"]);
+  await page.getByRole("button", { name: DIARY_TEXT.reload }).click();
+  await expect(item(page, "응답만 끊긴 조각")).toHaveCount(1);
+  await expect(memo(page), "draft kept for the user to decide").toHaveValue("응답만 끊긴 조각");
+  expect(tap.calls.length).toBe(2);
+});
+
+// ================================================================= 계정 분리·Origin
+
+test("accounts are isolated: B never sees A's records, A's id replayed through B's captured action is refused, extra userId arguments are ignored, and a foreign/\"null\"/missing Origin on a captured action writes nothing", async ({ page, browser }) => {
+  test.setTimeout(180_000);
+  const a = await signIn(page);
+  const tapA = await tapActions(page);
+  await createPiece(page, tapA, "A만의 조각");
+  await page.getByRole("button", { name: "한 줄 쓰기" }).click();
+  await page.getByRole("textbox").fill("A만의 한 줄");
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(page.getByText(DIARY_TEXT.summarySaved, { exact: true })).toBeAttached();
+  const [aPiece] = await momentsOf(a.userId);
+  const today = await serverSeoulToday();
+
+  const ctxB = await browser.newContext();
+  try {
+    const pb = await ctxB.newPage();
+    const b = await signIn(pb, "kakao");
+    await expect(pb.getByText(DIARY_TEXT.empty, { exact: true })).toBeVisible();
+    for (const path of ["/", "/days", `/days/${today}`]) {
+      await pb.goto(path);
+      await expect(pb.getByText("A만의 조각")).toHaveCount(0);
+      await expect(pb.getByText("A만의 한 줄")).toHaveCount(0);
+    }
+    await pb.goto("/days");
+    await expect(pb.getByRole("link", { name: new RegExp(`^${escapeRe(dateLabel(today))}`) }), "no calendar link from A's day").toHaveCount(0);
+
+    await pb.goto("/");
+    const tapB = await tapActions(pb);
+    await createPiece(pb, tapB, "B의 조각");
+    const createCall = tapB.calls[0]!;
+    const [bPiece] = await momentsOf(b.userId);
+    await item(pb, "B의 조각").getByRole("button", { name: /조각 수정$/ }).click();
+    await memo(pb).fill("B의 조각 고침");
+    await composer(pb).getByRole("button", { name: "고치기" }).click();
+    await expect(item(pb, "B의 조각 고침")).toHaveCount(1);
+    const updateCall = tapB.calls[1]!;
+    expect(updateCall.body, "the captured update carries B's piece id").toContain(bPiece!.id);
+
+    // B 세션으로 A의 id를 넣어 보낸다 → A는 그대로
+    const tampered = await replayAction(pb, updateCall, updateCall.body.split(bPiece!.id).join(aPiece!.id).replace("B의 조각 고침", "B가 A를 바꿈"));
+    expect(tampered.status(), "replayed action answered").toBeLessThan(500);
+    expect((await momentsOf(a.userId)).map((r) => [r.id, r.body, r.version])).toEqual([[aPiece!.id, "A만의 조각", 1]]);
+
+    // 여분 인자로 A의 userId를 붙여도 B의 조각이 된다
+    const args = JSON.parse(createCall.body) as unknown[];
+    expect(Array.isArray(args), "captured create body is the action argument list").toBe(true);
+    const extra = await replayAction(pb, createCall, JSON.stringify(["여분 인자 조각", a.userId, { userId: a.userId }]));
+    expect(extra.status()).toBeLessThan(500);
+    expect((await momentsOf(a.userId)).map((r) => r.body), "A unchanged").toEqual(["A만의 조각"]);
+    expect((await momentsOf(b.userId)).map((r) => r.body).sort()).toEqual(["B의 조각 고침", "여분 인자 조각"].sort());
+
+    // Origin이 다르거나 "null"이거나 없으면 쓰기 0(프레임워크가 먼저 막아도 된다)
+    const before = await momentsOf(b.userId);
+    for (const origin of ["https://evil.example", "null", undefined]) {
+      await replayAction(pb, createCall, JSON.stringify([`origin ${String(origin)}`]), origin);
+    }
+    expect(await momentsOf(b.userId), "no write without the same Origin").toEqual(before);
+  } finally {
+    await ctxB.close();
+  }
+});
+
+// ================================================================= 읽기 실패
+
+test("read failures (SELECT revoked on a diary table or preferences, restored in finally) show the fixed failure notice under the page h1 — no empty board, no partial calendar, no font editor", async ({ page }) => {
+  const a = await signIn(page);
+  const tap = await tapActions(page);
+  await createPiece(page, tap, "읽기 실패 전 조각");
+  const today = await serverSeoulToday();
+  const pages: [string, string][] = [
+    ["/", "오늘"],
+    ["/days", "모아보기"],
+    [`/days/${today}`, "모아보기"],
+  ];
+  for (const table of ["pod.day_summaries", "pod.diary_moments"]) {
+    await withRevokedSelect([table], async () => {
+      for (const [path, h1] of pages) {
+        await page.goto(path);
+        const l = `${table} revoked: ${path}`;
+        await expect(page.getByRole("heading", { level: 1, name: h1, exact: true }), l).toBeVisible();
+        await expect(page.getByRole("heading", { level: 2, name: DIARY_TEXT.readFailed, exact: true }), l).toBeVisible();
+        await expect(page.getByText(DIARY_TEXT.readFailedBody, { exact: true }), l).toBeVisible();
+        await expect(page.getByText(DIARY_TEXT.empty), `${l}: not an empty board`).toHaveCount(0);
+        await expect(page.getByText("읽기 실패 전 조각"), `${l}: no partial data`).toHaveCount(0);
+        await expect(page.getByRole("region", { name: /^\d{4}년 \d{1,2}월$/ }), `${l}: no calendar`).toHaveCount(0);
+        for (const t of FIXTURE_TEXT) await expect(page.getByText(t), `${l}: no fixture fallback`).toHaveCount(0);
+      }
+    });
+  }
+  await page.goto("/");
+  await expect(item(page, "읽기 실패 전 조각"), "reads work again after restoring").toHaveCount(1);
+
+  await withRevokedSelect(["pod.preferences"], async () => {
+    await page.goto("/settings");
+    await expect(page.getByRole("heading", { level: 1, name: "설정", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: DIARY_TEXT.fontReadFailed, exact: true })).toBeVisible();
+    await expect(page.getByText(DIARY_TEXT.readFailedBody, { exact: true })).toBeVisible();
+    await expect(page.getByRole("radio"), "no editable default").toHaveCount(0);
+    await page.goto("/");
+    await expect(item(page, "읽기 실패 전 조각"), "layout font failure only falls back for display").toHaveCount(1);
+  });
+  expect(await momentsOf(a.userId)).toHaveLength(1);
+});
+
+// ================================================================= 기록 글꼴
+
+test("record font is saved to the account before the UI changes: serif/hand in the SSR html attribute, none for gothic, kept across reload and a new context; a failed save keeps the previous font; signed-out has no editor", async ({ page, browser }) => {
+  const a = await signIn(page);
+  const tap = await tapActions(page);
+  await page.goto("/settings");
+  await expect(page.getByText(DIARY_TEXT.fontHint, { exact: true })).toBeVisible();
+  const radio = (name: string) => page.getByRole("radio", { name: new RegExp(`^${name}`) });
+  await expect(radio("고딕")).toBeChecked();
+  await expect(page.locator("html")).not.toHaveAttribute("data-record-font", /.*/);
+
+  const held = tap.next("hold");
+  await radio("명조").click();
+  await held.reached;
+  await expect(statusWith(page, DIARY_TEXT.saving)).toBeVisible();
+  await expect(radio("고딕"), "unchanged until the server saved it").toBeChecked();
+  await expect(page.locator("html")).not.toHaveAttribute("data-record-font", /.*/);
+  expect(await fontOf(a.userId)).toBeNull();
+  held.release();
+  await expect(page.getByText(DIARY_TEXT.fontSaved, { exact: true })).toBeAttached();
+  await expect(radio("명조")).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-record-font", "serif");
+  expect(await fontOf(a.userId)).toBe("serif");
+  const ssr = await page.request.get("/");
+  expect(await ssr.text(), "server-rendered attribute").toMatch(/<html[^>]*data-record-font="serif"/);
+
+  const failed = tap.next("abort-before");
+  await radio("손글씨").click();
+  await failed.reached;
+  await expect(page.getByText(DIARY_TEXT.unavailable, { exact: true })).toBeVisible();
+  await expect(radio("명조"), "previous font kept").toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-record-font", "serif");
+  expect(await fontOf(a.userId)).toBe("serif");
+
+  await page.reload();
+  await expect(radio("명조")).toBeChecked();
+  const other = await sameAccountContext(browser, a);
+  try {
+    await other.page.goto("/settings");
+    await expect(other.page.getByRole("radio", { name: /^명조/ })).toBeChecked();
+    await expect(other.page.locator("html")).toHaveAttribute("data-record-font", "serif");
+  } finally {
+    await other.close();
+  }
+
+  await radio("손글씨").click();
+  await expect(page.locator("html")).toHaveAttribute("data-record-font", "hand");
+  expect(await fontOf(a.userId)).toBe("hand");
+  await page.getByRole("button", { name: DIARY_TEXT.fontReset }).click();
+  await expect(radio("고딕")).toBeChecked();
+  await expect(page.locator("html")).not.toHaveAttribute("data-record-font", /.*/);
+  expect(await fontOf(a.userId)).toBe("gothic");
+  expect(await (await page.request.get("/")).text()).not.toMatch(/<html[^>]*data-record-font=/);
+  expect(tap.calls.length, "serif, failed hand, hand, reset").toBe(4);
+
+  const anon = await browser.newContext();
+  try {
+    const p = await anon.newPage();
+    await p.goto("/settings");
+    await expect(p.getByRole("heading", { level: 1, name: "설정" })).toBeVisible();
+    await expect(p.getByRole("radio"), "signed-out sees no font editor").toHaveCount(0);
+    await expect(p.getByText(DIARY_TEXT.fontHint)).toHaveCount(0);
+  } finally {
+    await anon.close();
+  }
+});
+
+// ================================================================= 서버 날짜·시각
+
+test("the browser clock does not decide the record date or time: with a far-future browser clock the piece is stored on the server's Seoul today at the server time", async ({ page }) => {
+  const a = await signIn(page);
+  await page.clock.setFixedTime(new Date("2031-03-04T00:13:00Z")); // 브라우저만 2031-03-04 09:13(서울)
+  await page.reload();
+  const tap = await tapActions(page);
+  await createPiece(page, tap, "시계와 무관한 조각");
+  const today = await serverSeoulToday();
+  const [row] = await momentsOf(a.userId);
+  expect(row!.localDate, "server Seoul date").toBe(today);
+  expect(row!.localDate).not.toBe("2031-03-04");
+  await expect(item(page, "시계와 무관한 조각")).toContainText(row!.time);
+  await expect(boardHeading(page, today)).toBeVisible();
+  expect(seoulDate(new Date(row!.occurredAt)), "occurred_at is the server instant").toBe(today);
+});
+
+// ================================================================= 식별자 비직렬화·화면
+
+test("the account UUID never reaches document HTML, RSC or action responses; board, dialog, calendar and settings have no overflow and ≥44px targets at 375/768/1440; keyboard-only create", async ({ page }) => {
+  test.setTimeout(180_000);
+  const bodies = collectBodies(page);
+  const a = await signIn(page);
+  const tap = await tapActions(page);
+  const today = await serverSeoulToday();
+
+  // 키보드만으로 작성
+  await topAdd(page).focus();
+  await page.keyboard.press("Enter");
+  await expect(memo(page)).toBeFocused();
+  await page.keyboard.type("키보드로 쓴 조각");
+  const save = composer(page).getByRole("button", { name: "저장" });
+  for (let i = 0; i < 12 && !(await save.evaluate((e) => e === document.activeElement)); i++) await page.keyboard.press("Tab");
+  await expect(save, "reached by Tab").toBeFocused();
+  expect(await save.evaluate((e) => getComputedStyle(e).outlineStyle), "visible focus ring").not.toBe("none");
+  await page.keyboard.press("Enter");
+  await expect(item(page, "키보드로 쓴 조각")).toHaveCount(1);
+  expect(tap.calls.length).toBe(1);
+
+  for (const w of WIDTHS) {
+    await page.setViewportSize({ width: w, height: 900 });
+    await expectLayoutOk(page, `board ${w}`);
+    await item(page, "키보드로 쓴 조각").getByRole("button", { name: /조각 수정$/ }).click();
+    await expectLayoutOk(page, `edit dialog ${w}`);
+    await page.keyboard.press("Escape");
+    await expect(composer(page)).toHaveCount(0);
+  }
+  await page.getByRole("link", { name: "모아보기" }).click(); // 클라이언트 이동(RSC)
+  await expect(page.getByRole("heading", { level: 1, name: "모아보기" })).toBeVisible();
+  await page.goto(`/days/${today}`);
+  await page.goto("/settings");
+  for (const w of WIDTHS) {
+    await page.setViewportSize({ width: w, height: 900 });
+    await expectLayoutOk(page, `settings ${w}`);
+  }
+  await page.getByRole("radio", { name: /^명조/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-record-font", "serif");
+  await page.goto("/days");
+  for (const w of WIDTHS) {
+    await page.setViewportSize({ width: w, height: 900 });
+    await expectLayoutOk(page, `calendar ${w}`);
+  }
+
+  const seen = await bodies.bodies();
+  expect(seen.some((b) => b.type.includes("text/html")), "document HTML collected").toBe(true);
+  expect(seen.some((b) => b.type.includes("text/x-component")), "RSC/action responses collected").toBe(true);
+  for (const b of seen) expect(b.text.toLowerCase().includes(a.userId.toLowerCase()), `${b.url} (${b.type}) must not contain the account id`).toBe(false);
+  for (const path of ["/", "/days", `/days/${today}`, "/settings"]) {
+    const res = await page.request.get(path, { headers: { RSC: "1" } });
+    expect((await res.text()).toLowerCase(), `RSC ${path}`).not.toContain(a.userId.toLowerCase());
+  }
+});
