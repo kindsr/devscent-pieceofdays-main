@@ -123,7 +123,7 @@ CMD ["node", "runtime-startup.mjs"]
 - **health route(서버 전용, 쓰기 없음):**
   - `app/src/app/healthz/route.ts`: GET → 200 `ok`. DB·env를 읽지 않는다(liveness).
   - `app/src/app/healthz/ready/route.ts`: GET → **앱 Pool을 쓰지 않는** 단발 `pg.Client`(`POD_DATABASE_URL`, `connectionTimeoutMillis: 2000`, `query_timeout: 2000`)로 `SELECT 1` → 200. 실패·미설정·요청 시작부터 전체 2초 deadline이면 503이다. connect와 query의 직렬 timeout 합계를 전체 deadline으로 세지 않는다.
-    - 전체 2초 타이머와 connect/query 작업을 경합시키고 만료 시 즉시 고정 503을 반환한다. 모든 경로에서 타이머를 해제하고 client 종료를 시작한다. `client.end()` 대기로 응답 deadline을 늘리지 않으며 종료 거부·late rejection은 처리해 원문 로그·unhandled rejection을 남기지 않는다. 연결/쿼리 정리와 남은 소켓 0을 격리 시험한다.
+    - `setTimeout`으로 전체 2초 타이머와 connect/query 작업을 경합시키고 만료 시 즉시 고정 503을 반환한다. 모든 경로에서 타이머를 해제하고 client 종료를 시작한다. `client.end()` 대기로 응답 deadline을 늘리지 않으며 종료 거부·late rejection은 처리해 원문 로그·unhandled rejection을 남기지 않는다. 연결/쿼리 정리와 남은 소켓 0을 격리 시험한다.
     - 본문은 고정 문자열이다. 계정·원장·metadata를 쓰지 않는다.
     - Pool과 분리하는 이유: Pool이 고갈되거나 연결 대기가 길어도 readiness가 멈추지 않게 하기 위해서다.
   - **readiness 200은 migration 완료의 증거가 아니다.** migration은 §9의 메인 gate가 따로 확인한다.
@@ -272,9 +272,9 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 ## 7. workflow (F6a·F6c)
 
-**`app-validation.yml` — `app-image` job 추가(F6a)**
+**`app-image-validation.yml` — 전용 `app-image` job 추가(F6a)**
 
-- PR·push 모두에서 실행한다. 권한은 `contents: read`, Secrets·environment 없음, push 없음.
+- app 경로·해당 workflow를 바꾸는 PR 및 dev/main push에서 실행한다. 기존 `app-validation.yml`의 auth-e2e job과 파일 소유가 겹치지 않도록 전용 workflow로 둔다. 권한은 `contents: read`, Secrets·environment 없음, 이미지 push 없음.
 - 단계:
   1. BuildKit 빌드
   2. `validate_app_image`와 같은 조건 단언(RepoDigests 제외)
@@ -342,7 +342,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 | slice | 파일 | 선행 | 병행 |
 |---|---|---|---|
-| **F6a1 앱 이미지** | RED: `app/tests/unit/runtime-health.test.ts`·`app/tests/unit/db-pool.test.ts`·`app/tests/image-contract.test.mjs`(실제 이미지 검사). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/runtime-startup.mjs`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-validation.yml`(`app-image` job 1~6단계) | 없음 | S1·S2·S3·F6b |
+| **F6a1 앱 이미지** | RED: `app/tests/unit/runtime-health.test.ts`·`app/tests/unit/db-pool.test.ts`·`app/tests/image-contract.test.mjs`(실제 이미지 검사). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/runtime-startup.mjs`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-image-validation.yml`(`app-image` job 1~6단계) | 없음 | S1·S2·S3·F6b |
 | **F6a2 프록시 조합** | §8의 프런트+앱 E2E 시험·app-image job 확장. 정확 시험 파일은 S2/F6b 통합 SHA의 helper 상수를 읽고 RED 전에 main이 고정 | S2·F6b·F6a1 통합 | S3b |
 | **F6b helper** | RED: `tests/test_deploy_app.py`·`app/tests/deploy-env-parity.test.mjs`. GREEN: `scripts/ops/deploy.py`(기존 static·production 동작 불변, §6.5 거부 추가)·`.github/workflows/deploy-app-validation.yml`(Node env 대조 전용) | 없음 | F6a |
 | **F6c 배포 전환** | `.github/workflows/deploy.yml`(dev job 분리, production 불변). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6a1·F6a2·F6b·S2 통합, §9 1~7 | — |
