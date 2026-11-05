@@ -25,6 +25,7 @@ export default defineConfig({
     video: "off",
     screenshot: "off",
     navigationTimeout: 60_000,
+    actionTimeout: 15_000,
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });
