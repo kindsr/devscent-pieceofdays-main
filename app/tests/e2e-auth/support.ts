@@ -113,7 +113,31 @@ export async function holdStart(page: Page, opts: AuthorizeOptions = {}, autoRel
       body: "<!doctype html><title>e2e provider hold</title>",
     });
   });
-  return { result: () => result, release: () => releaseGate(), count: () => n, dispose: () => page.unroute(matcher) };
+  return {
+    result: async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          result,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("[e2e-auth] start response was not observed within 30 seconds")), 30_000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    release: () => releaseGate(),
+    count: () => n,
+    dispose: async () => {
+      if (page.isClosed()) return;
+      try {
+        await page.unroute(matcher);
+      } catch (err) {
+        if (!page.isClosed()) throw err;
+      }
+    },
+  };
 }
 
 export const providerButton = (page: Page, p: Provider) => page.getByRole("button", { name: PROVIDER_BUTTON[p].name, exact: true });
