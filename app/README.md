@@ -1,5 +1,7 @@
 # pieceofdays app (F1 화면·F2 DB·F3 도메인·F4 인증 기반)
 
+2026-11-05 S3a: `src/app/actions/diary.ts`의 기록 작성·수정·삭제·하루 한 줄·글꼴 저장 액션을 검증했다. config → 명시 Origin → `getViewer()` → 입력 형태 → 기존 F3 순서이며, 예상 밖 오류는 원문 없이 `unavailable`이다. 화면에서 아직 호출하지 않아 실제 저장 UI가 켜진 것은 아니다. [PR52](https://github.com/kindsr/devscent-pieceofdays-main/pull/52) exact `24721ae`의 CI·독립 PASS: Node24/26 단위223·빌드 경계4·운영 경계6·E2E12, PG18 DB178(신규8), 배포 계약42. [연결 계약](../docs/plans/PLAN_dev-diary-actions.md)을 따른다.
+
 Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기, 첫 로그인 지급·기록 CRUD·개인 꾸미기 버전·기록 글꼴 저장 코어를 검증했다. **실제 로그인·화면의 PG 저장 연결·이미지 저장소는 아직 구현 전**이다. 지급 함수를 실제 인증 성공 사건에 연결하는 것은 F4다. MVP 완료가 아니다.
 루트 `frontend/`(정적 nginx 이미지)와 별개이며, **현재 dev 정적 배포(`dev.pieceofdays.com`)에 자동으로 포함되지 않는다**.
 앱 배포 전환은 PLAN_mvp-foundation F6(메인 주도)에서 따로 정한다.
@@ -12,6 +14,7 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 | 경로 | 내용 |
 |---|---|
 | `src/app/` | 경로: `/` 오늘, `/days` 모아보기, `/days/[date]` 특정 날, `/settings` 기록 글꼴, `/dev/konva-smoke` 시험 fixture |
+| `src/app/actions/diary.ts` | S3a Server Actions 5개: config·Origin·요청 사용자 확인 뒤 기존 F3 쓰기 호출. 아직 Client Component에서 호출하지 않는다 |
 | `src/ui/d/` | D 화면 컴포넌트(상단, 조각 보드·하루 한 줄·작성/수정 팝업, 달력, 글꼴 설정). 스타일은 `src/app/globals.css`(D `style.css`에서 옮김) |
 | `src/ui/decorate/` | Konva 클라이언트 전용 모듈. 지금은 호환 스모크만 있고 꾸미기 편집기 UI는 없다(별도 아트보드 필요) |
 | `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부, 고정 사용자+실제 인증 동시 사용·운영 단계 mock issuer 거부(순수 Node, `next.config.ts`가 호출) |
