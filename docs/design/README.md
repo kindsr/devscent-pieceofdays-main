@@ -1,9 +1,11 @@
-# 디자인 핸드오프 — 시안 D 따뜻한 조각 모음 (선택 완료, 앱 미구현)
+# 디자인 핸드오프 — 시안 D 따뜻한 조각 모음 (선택 완료, 앱 미배포)
 
 - **선택 완료:** 2026-11-02 사용자가 시안 D를 기본 UI/UX·테마로 골랐다.
   이유: C(조각 모음)의 화면 구성·가벼운 조각 입력·달력 모아보기 + A(따뜻한 기록장)의 따뜻한 종이·테라코타 색.
-- **앱은 미완료:** 이 문서는 정적 HTML 시안(`concepts/d-warm-pieces/`)을 기준으로 한 핸드오프다. 실제 앱·저장·로그인·스택은 아직 없다(PRD §10).
-  아래 "동작 아트보드"는 선택안의 화면 동작을 보여 주는 프로토타입이며 출시·MVP 완료가 아니다.
+- **현재 상태(2026-11-05):** 이 문서는 정적 HTML 시안(`concepts/d-warm-pieces/`)을 기준으로 한 핸드오프다.
+  - Next 앱 소스와 저장·계정·인증 도메인은 [app/](../../app/README.md)에 있지만 **개발 도메인에 배포되지 않았다.** 실제 로그인·서버 저장은 아직 쓸 수 없다([PLAN_dev-usable-app](../plans/PLAN_dev-usable-app.md)).
+  - 개발 도메인의 `/try/`는 별도 브라우저 저장 체험판이다([PLAN_dev-local-preview](../plans/PLAN_dev-local-preview.md)). 이 시안이나 Next 앱이 아니다.
+  - 아래 "동작 아트보드"는 화면 동작을 보여 주는 프로토타입이며 출시·MVP 완료가 아니다.
 - 정본: [`concepts/d-warm-pieces/`](concepts/d-warm-pieces/) · 게시 사본 `frontend/public/design/d-warm-pieces/` · 계획 [PLAN_d-preferences-edit](../plans/PLAN_d-preferences-edit.md).
 - A/B/C 원본은 비교 기록으로 [concepts/](concepts/README.md)에 그대로 둔다.
 
@@ -21,7 +23,10 @@
 | 토큰 카드 | `#tokens` | 아트보드 있음 |
 | 조각 삭제 | — | **없음.** PRD 수용 기준이지만 별도 요청·계획 전 |
 | 하루 꾸미기: 간단한 그리기·안전 영역 배치 | — | **없음.** MVP 확정 요건, 후속 계획에서 설계 |
-| 로그인·감정 덩어리·디자인 구매·마켓 | — | **없음.** 계획 요건/후속(PRD §6). 시안에서 흉내 내지 않음 |
+| **로그인·결과 안내**(Google·Kakao, Google만, 이동 중, 준비 중, 취소·실패·시간 지남·복구 불가, 로그아웃·탈퇴 완료) | `auth.html#login` 등 상태별 hash | 인증 아트보드 있음(§9). **실제 로그인·요청 없음** |
+| **설정 › 계정 · 탈퇴 확인** | `auth.html#settings`, `#withdraw` | 인증 아트보드 있음(§9). 실제 탈퇴 없음 |
+| **복구 확인 · 복구 시간 지남** | `auth.html#restore`, `#recovery_expired` | 인증 아트보드 있음(§9). 실제 복구 없음 |
+| 감정 덩어리·디자인 구매·마켓 | — | **없음.** 계획 요건/후속(PRD §6). 시안에서 흉내 내지 않음 |
 | AI 스토리·공유 | — | **없음.** 미정(PRD §8) |
 
 ## 2. 색 (semantic, A 팔레트 값만 사용)
@@ -91,3 +96,16 @@
 - 조각 삭제(확인 단계 포함), 실제 저장·계정 설정 저장.
 - 하루 꾸미기 기본: 간단한 그리기 편집기, 안전 영역 안 배치 규칙 — 별도 설계·계획 필요.
 - 감정 덩어리·디자인 구매·마켓·제작자 정산(PRD), AI 스토리·공유(미정).
+
+## 9. 인증 상태 아트보드 (B4-d, 2026-11-05)
+
+- **source:** [`concepts/d-warm-pieces/auth.html`](concepts/d-warm-pieces/auth.html)(`auth.css`·`auth.js`, D `style.css` 재사용). 게시 사본은 `frontend/public/design/d-warm-pieces/auth.html`이고, 개발 도메인 주소는 `/design/d-warm-pieces/auth.html`이다.
+- **대표 캡처:** [`screenshots/auth/`](screenshots/auth/)에 login·withdraw·restore × 375/768/1440, 9장. 메인이 직접 확인해 수락했다.
+- **검토:** PR47 독립 검토 PASS(P0·P1 없음). P2 2건(복구하지 않기의 결과, 복구 시간 지남 화면)은 이 아트보드에 반영했다.
+- **동작 범위:** 화면 상태만 바뀐다. 실제 로그인·계정·기록·네트워크 요청은 없다. 상단의 작은 도구 영역(상태 선택)은 아트보드 전용이며 실제 화면에 옮기지 않는다.
+- **공급자 버튼(메인 수락):**
+  - Google: 공식 승인 이미지 "Sign in with Google"(영문)에 한국어 접근성 이름을 더한다(207×46).
+  - Kakao: 공식 SVG "카카오 로그인"을 그대로 쓴다(224×46, 파일의 radius 8 유지).
+  - 출처·hash는 [`auth-assets/SOURCES.md`](concepts/d-warm-pieces/auth-assets/SOURCES.md)에 있다.
+  - Google HTML 한국어 후보(`?g=html`)는 규정 적합성을 확인하지 못해 실제 화면에 쓰지 않는다.
+- **상태 기준:** 문구·구조는 [OIDC 계획](../plans/PLAN_mvp-oidc-integration.md) §8을 따른다.

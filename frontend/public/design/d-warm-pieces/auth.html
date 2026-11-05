@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>시안 D 인증 상태 아트보드 — pieceofdays</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="auth.css">
+</head>
+<body>
+  <aside class="auth-tool" aria-label="아트보드 도구">
+    <p class="auth-tool-note">정적 아트보드 · 실제 로그인·계정·기록·네트워크 요청 없음</p>
+    <label>상태
+      <select id="tool-state">
+        <option value="login">로그인 (Google·카카오)</option>
+        <option value="login-google-only">로그인 (Google만)</option>
+        <option value="login-loading">로그인 · 이동 중</option>
+        <option value="unavailable">준비 중</option>
+        <option value="cancelled">취소</option>
+        <option value="failed">실패</option>
+        <option value="expired">시간 지남</option>
+        <option value="purge_due">복구 불가</option>
+        <option value="signed_out">로그아웃 완료</option>
+        <option value="withdrawn">탈퇴 완료</option>
+        <option value="withdraw">탈퇴 확인</option>
+        <option value="restore">복구 확인</option>
+        <option value="recovery_expired">복구 시간 지남</option>
+        <option value="signed_in">로그인됨 · 기록 연결 전</option>
+        <option value="settings">설정 › 계정</option>
+      </select>
+    </label>
+    <label>Google 버튼
+      <select id="tool-google">
+        <option value="image">공식 승인 이미지 (영문)</option>
+        <option value="html">HTML 한국어 후보</option>
+      </select>
+    </label>
+  </aside>
+
+  <header class="top">
+    <div class="top-in">
+      <a class="brand" href="#signed_in">pieceofdays
+        <svg class="squiggle" viewBox="0 0 120 10" aria-hidden="true" focusable="false"><path d="M2 6 C 14 1, 22 9, 34 5 S 56 1, 68 6 S 92 9, 118 3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+      </a>
+      <nav class="seg" aria-label="주 메뉴">
+        <a href="#signed_in">오늘</a>
+        <a href="#signed_in">모아보기</a>
+      </nav>
+    </div>
+  </header>
+  <main id="view" tabindex="-1"></main>
+
+  <script src="auth.js"></script>
+</body>
+</html>
