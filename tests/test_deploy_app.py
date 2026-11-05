@@ -13,6 +13,7 @@
 import contextlib
 import copy
 import hashlib
+import http.client
 import importlib.util
 import io
 import json
@@ -24,6 +25,8 @@ import stat
 import sys
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from unittest import mock
 
@@ -175,6 +178,17 @@ def app_inspect(sha=SHA, tree=TREE, manifest=MANIFEST, engine_id=APP_ENGINE_ID):
             "Healthcheck": None,
         },
     }
+
+
+def flag_values(args, name):
+    """`name X`와 `name=X` 형태의 옵션 값을 모두 모은다."""
+    values = []
+    for index, arg in enumerate(args):
+        if arg == name and index + 1 < len(args):
+            values.append(args[index + 1])
+        elif arg.startswith(name + "="):
+            values.append(arg.split("=", 1)[1])
+    return values
 
 
 def assert_no_secret(test, text, label=""):
@@ -799,10 +813,17 @@ class AppFlowBase(unittest.TestCase):
         self.fail_compose_paths = set()
         self.fail_verify = set()  # "new-app" | "prev-app" | "static"
         self.networks = {}  # 이미 있는 Docker 네트워크: 이름 → subnet(기본: 전용 네트워크 없음)
+        self.calls = []  # (args, docker config dir, 그 시점 존재·비어 있음) — 외부 명령 경계 관찰
+        self.container_states = {}  # 컨테이너 이름 → State 덮어쓰기(기본 running·healthy)
+        self.ready_fails = False  # 앱 컨테이너 안 /healthz/ready 명령이 0이 아닌 종료로 끝난다
+        self.front_try_override = None  # 프런트 컨테이너 안 /try/ 본문 덮어쓰기
+        self.trusted_calls = []  # trusted_file 호출 경로(spy)
+        self.reject_trusted = lambda path: False  # 특정 경로에서 신뢰 거부를 주입한다
 
         patches = {
             "STATE": self.state,
-            "trusted_file": mock.Mock(side_effect=lambda p: Path(p)),
+            # /tmp(1777) 부모 때문에 실제 신뢰 규칙은 쓰지 않는다. 대신 호출 경로를 기록하고 거부를 주입할 수 있는 spy다.
+            "trusted_file": mock.Mock(side_effect=self.fake_trusted_file),
             "assert_latest": mock.Mock(return_value=None),
             "sync_dev_clone": mock.Mock(return_value=None),
             "validate_record": mock.Mock(side_effect=lambda record, env: record),
@@ -922,10 +943,43 @@ class AppFlowBase(unittest.TestCase):
             return DEV_INDEX
         return b""
 
-    def fake_run(self, args, cwd=None, timeout=300, binary=False):
+    def fake_trusted_file(self, path):
+        path = Path(path)
+        self.trusted_calls.append(path)
+        if self.reject_trusted(path):
+            raise ValueError("unsafe trusted path permissions")
+        return path
+
+    def trusted(self, path):
+        return Path(path) in self.trusted_calls
+
+    @staticmethod
+    def docker_core(args):
+        """`docker --config DIR …` 전역 옵션을 걷어 낸 명령(분기용)과 그 DIR."""
+        args = list(args)
+        config = None
+        while len(args) > 2 and (args[1] == "--config" or args[1].startswith("--config=")):
+            if args[1] == "--config":
+                config = args[2]
+                del args[1:3]
+            else:
+                config = args[1].split("=", 1)[1]
+                del args[1]
+        return args, config
+
+    def fake_run(self, args, cwd=None, timeout=300, binary=False, **kwargs):
         args = [str(a) for a in args]
         self.runs.append(args)
-        out = self._answer(args)
+        core, config = self.docker_core(args) if os.path.basename(args[0]) == "docker" else (args, None)
+        env = kwargs.get("env")
+        if config is None and isinstance(env, dict):
+            config = env.get("DOCKER_CONFIG")
+        if config is not None:
+            directory = Path(config)
+            self.calls.append((core, config, directory.is_dir(), directory.is_dir() and not any(directory.iterdir())))
+        else:
+            self.calls.append((core, None, False, False))
+        out = self._answer(core)
         if isinstance(out, (dict, list)):
             out = json.dumps(out)
         if binary:
@@ -963,13 +1017,20 @@ class AppFlowBase(unittest.TestCase):
         if args[1] == "inspect":
             name = args[-1]
             image = self.containers.get(name, self.known_image(args))
-            return [{"Id": "c" * 64, "Name": "/" + name, "Image": image, "State": {"Status": "running", "Running": True, "Health": {"Status": "healthy"}}}]
+            state = {"Status": "running", "Running": True, "Health": {"Status": "healthy"}}
+            state.update(self.container_states.get(name, {}))
+            return [{"Id": "c" * 64, "Name": "/" + name, "Image": image, "State": state}]
         if args[1] == "run":
             if "--name" in args:
                 self.containers[args[args.index("--name") + 1]] = self.known_image(args)
             return self.output(args, self.known_image(args)) if "--rm" in args else "c" * 64
         if args[1] == "exec":
             name = next((a for a in args[2:] if a in self.containers), None)
+            joined = " ".join(args)
+            if "healthz/ready" in joined and self.ready_fails:
+                raise RuntimeError("command failed: docker exec")  # 0이 아닌 종료(503)
+            if "/try/" in joined and self.front_try_override is not None:
+                return self.front_try_override
             return self.output(args, self.containers.get(name))
         if args[1] == "network":
             return self.network_answer(args)
@@ -1085,6 +1146,56 @@ class DeployAppTransitionTests(AppFlowBase):
         self.assertTrue(pulls and all(any(f"{APP_REPO}@{MANIFEST}" in x for x in a) for a in pulls), "pull by the fixed repository and digest")
         assert_no_secret(self, self.stdout + self.stderr, "output")
         self.assertEqual(self.network_mutations(), [], "the helper never creates, removes or reconnects networks itself")
+
+    def test_candidates_run_hardened_without_env_and_the_pull_is_anonymous_platform_pinned_after_manifest_check(self):
+        previous = self.static_record()
+        self.write_json(self.current, previous)
+        self.deploy_app()
+        docker = [(c, cfg, is_dir, empty) for c, cfg, is_dir, empty in self.calls if os.path.basename(c[0]) == "docker"]
+
+        def first(pred):
+            return next((i for i, item in enumerate(docker) if pred(item[0])), None)
+
+        manifest_at = first(lambda c: c[1:3] == ["manifest", "inspect"])
+        pull_at = first(lambda c: c[1] == "pull")
+        compose_at = first(lambda c: "compose" in c and "up" in c)
+        self.assertIsNotNone(manifest_at, "docker manifest inspect of the fixed digest")
+        self.assertIsNotNone(pull_at, "docker pull of the fixed digest")
+        self.assertLess(manifest_at, pull_at, "the manifest is validated before pulling")
+        for at in (manifest_at, pull_at):
+            core, config, is_dir, empty = docker[at]
+            with self.subTest(command=core[1:3]):
+                self.assertIn(f"{APP_REPO}@{MANIFEST}", core)
+                self.assertIsNotNone(config, "an explicit DOCKER_CONFIG (env or --config)")
+                self.assertTrue(is_dir and empty, "anonymous registry access: the Docker config directory exists and is empty")
+        self.assertEqual(flag_values(docker[pull_at][0], "--platform"), ["linux/amd64"])
+
+        before_switch = [c for c, _, _, _ in docker[:compose_at]]
+        runs = [c for c in before_switch if c[1] == "run"]
+        app_runs = [c for c in runs if self.known_image(c[2:]) == APP_ENGINE_ID]
+        front_runs = [c for c in runs if self.known_image(c[2:]) == FRONT_IMAGE]
+        previous_runs = [c for c in runs if self.known_image(c[2:]) == OLD_FRONT_IMAGE]
+        self.assertTrue(app_runs, "an app candidate container before switching")
+        self.assertTrue(front_runs, "a front candidate container before switching")
+        self.assertTrue(previous_runs, "the previous record is checked as a candidate (rollback possible)")
+        for c in app_runs:
+            with self.subTest(candidate="app"):
+                self.assertEqual(flag_values(c, "--network"), ["none"])
+                self.assertIn("--read-only", c)
+                self.assertTrue(any(v.startswith("/tmp") for v in flag_values(c, "--tmpfs")), "tmpfs /tmp")
+                self.assertEqual(flag_values(c, "--cap-drop"), ["ALL"])
+                self.assertTrue(any(v.startswith("no-new-privileges") for v in flag_values(c, "--security-opt")))
+                self.assertEqual(flag_values(c, "--user"), [f"{self.user.uid}:{self.user.gid}"])
+                for forbidden in ("-e", "--env", "--env-file", "-v", "--volume", "--mount", "--privileged", "-p", "--publish", "--cap-add", "--device"):
+                    self.assertFalse(any(a == forbidden or a.startswith(forbidden + "=") for a in c), f"app candidate must not use {forbidden}")
+                self.assertFalse(any("app.env" in a or "pod_app_env" in a or str(self.live_env) in a for a in c), "no env or secret for the candidate")
+        for c in front_runs + previous_runs:
+            with self.subTest(candidate="front"):
+                self.assertEqual(flag_values(c, "--network"), ["none"])
+                self.assertIn("--read-only", c)
+        joined = [" ".join(c) for c in before_switch]
+        self.assertTrue(any("http://127.0.0.1:3000/healthz" in j and "ready" not in j for j in joined), "app candidate /healthz check")
+        self.assertTrue(any("/try/" in j for j in joined), "front candidate /try/ check")
 
     def test_existing_dedicated_networks_with_the_same_ipam_are_reused(self):
         previous = self.static_record()
@@ -1265,6 +1376,11 @@ class DeployAppRecoveryAndRefusalTests(AppFlowBase):
                 self.assertFalse(any((self.state / "releases" / "dev" / d / "app.env").exists() for d in self.release_dirs()), "no frozen env written")
 
     def test_invalid_or_unsafe_live_env_is_refused_before_switching_and_values_are_not_printed(self):
+        """시험 경계: live env의 regular file·0600·배포 사용자 소유 검사는 env 전용 검사(PLAN §6.2)다.
+
+        trusted_file(경로 신뢰 규칙)은 이 시험에서 spy라 통과시키므로, 0640·0644 거부는 trusted_file 밖의
+        env 전용 검사로 나와야 한다. 경로 신뢰 거부 자체는 TrustedPathTests가 따로 확인한다.
+        """
         previous = self.static_record()
         self.write_json(self.current, previous)
         cases = {
@@ -1312,6 +1428,19 @@ class RevertStaticTests(AppFlowBase):
         self.assertEqual(self.read_json(self.current), static)
         self.assertFalse(self.pending.exists())
         self.assertFalse(any("pull" in a or "manifest" in a for a in self.runs), "no registry access")
+
+    def test_revert_static_reads_the_static_record_through_trusted_file_and_a_rejection_changes_nothing(self):
+        static = self.static_record()
+        self.write_json(self.static_last, static)
+        app = self.app_record()
+        self.write_json(self.current, app)
+        self.reject_trusted = lambda p: p == self.static_last
+        with self.assertRaises(ValueError):
+            deploy.revert_static(self.settings)
+        self.assertIn(self.static_last, self.trusted_calls)
+        self.assertEqual(self.compose_events(), [])
+        self.assertEqual(self.read_json(self.current), app)
+        self.assertFalse(self.pending.exists())
 
     def test_revert_static_without_a_static_record_or_with_failed_verification_keeps_the_app_record_current(self):
         app = self.app_record()
@@ -1431,6 +1560,19 @@ class ValidateAppRecordTests(AppFlowBase):
                     self.validate(record)
                 restore()
 
+    def test_release_dir_frozen_env_and_compose_paths_go_through_trusted_file_and_a_rejection_fails(self):
+        self.assertEqual(self.validate(copy.deepcopy(self.record)), self.record)
+        paths = (self.release_dir, self.release_dir / "app.env", self.release_dir / "compose.json")
+        for path in paths:
+            with self.subTest(trusted=str(path.relative_to(self.state))):
+                self.assertTrue(self.trusted(path), "validate_app_record must apply trusted_file to this path")
+        for path in paths:
+            with self.subTest(reject=str(path.relative_to(self.state))):
+                self.reject_trusted = lambda p, target=path: p == target
+                with self.assertRaises(ValueError):
+                    self.validate(copy.deepcopy(self.record))
+        self.reject_trusted = lambda p: False
+
     def test_missing_local_image_is_rejected(self):
         original = self.fake_run
 
@@ -1442,6 +1584,202 @@ class ValidateAppRecordTests(AppFlowBase):
         deploy.run.side_effect = run
         with self.assertRaises(Exception):
             self.validate(copy.deepcopy(self.record))
+
+
+# ================================================================= 신뢰 경로 spy §6.2·§6.4
+
+
+class TrustedPathTests(AppFlowBase):
+    """deploy_app이 live env·새 릴리스 폴더·current·pending에 trusted_file을 적용하고, 거부되면 아무것도 바꾸지 않는다.
+
+    /tmp(1777) 부모 때문에 실제 trusted_file 규칙은 쓰지 않는다. spy가 호출 경로를 기록하고 지정 경로에서 ValueError를 낸다.
+    """
+
+    def new_release_dir(self, path):
+        return path.parent == self.state / "releases" / "dev" and path.name.startswith(SHA + "-")
+
+    def frozen_envs(self):
+        return [d for d in self.release_dirs() if d.startswith(SHA + "-") and (self.state / "releases" / "dev" / d / "app.env").exists()]
+
+    def test_successful_deploy_applies_trusted_file_to_live_env_new_release_dir_and_current(self):
+        self.write_json(self.current, self.static_record())
+        self.deploy_app()
+        self.assertTrue(self.trusted(self.live_env), "live env file")
+        self.assertTrue(self.trusted(self.current), "current record")
+        self.assertTrue(any(self.new_release_dir(p) for p in self.trusted_calls), "new release directory")
+
+    def test_interrupted_pending_is_read_through_trusted_file(self):
+        self.write_json(self.current, self.app_record())
+        self.write_json(self.pending, self.static_record())
+        self.mocks["assert_latest"].side_effect = ValueError("stop after recovery")
+        with self.assertRaises(ValueError):
+            self.deploy_app()
+        self.assertTrue(self.trusted(self.pending))
+
+    def test_rejection_at_each_path_leaves_services_and_records_unchanged(self):
+        previous = self.static_record()
+        cases = {
+            "live env": lambda p: p == self.live_env,
+            "new release directory": self.new_release_dir,
+            "current record": lambda p: p == self.current,
+        }
+        for label, reject in cases.items():
+            with self.subTest(reject=label):
+                self.events.clear()
+                self.write_json(self.current, previous)
+                self.reject_trusted = reject
+                with self.assertRaises(ValueError):
+                    self.deploy_app()
+                self.assert_no_switch(previous)
+                self.assertEqual(self.frozen_envs(), [], "no frozen env written")
+        self.reject_trusted = lambda p: False
+
+    def test_rejected_pending_is_neither_recovered_nor_deleted(self):
+        current = self.app_record()
+        pending = self.static_record()
+        self.write_json(self.current, current)
+        self.write_json(self.pending, pending)
+        self.reject_trusted = lambda p: p == self.pending
+        with self.assertRaises(ValueError):
+            self.deploy_app()
+        self.assertEqual(self.compose_events(), [])
+        self.assertEqual(self.read_json(self.pending), pending)
+        self.assertEqual(self.read_json(self.current), current)
+
+
+# ================================================================= 실제 verify_app_release §6.7 8단계
+
+
+class FakeResponse(io.BytesIO):
+    def __init__(self, url, status, headers, body):
+        super().__init__(body)
+        self.url, self.status, self.code = url, status, status
+        self.headers = http.client.HTTPMessage()
+        for key, value in headers.items():
+            self.headers[key] = value
+
+    def getcode(self):
+        return self.status
+
+    def geturl(self):
+        return self.url
+
+    def info(self):
+        return self.headers
+
+    def getheader(self, name, default=None):
+        return self.headers.get(name, default)
+
+
+class VerifyAppReleaseTests(AppFlowBase):
+    """실제 verify_app_release를 fake run(docker)·fake HTTPS opener 경계로 부른다.
+
+    시험 경계:
+    - 컨테이너 상태는 `docker inspect <이름>`의 Image·State.Running·State.Health.Status로 답한다.
+    - 컨테이너 안 요청은 `docker exec <이름> …`이다. 앱 안 /healthz/ready는 명령의 종료 상태로 판정한다(0이 아니면 실패, 이미지에 wget이 없으므로 node fetch 종료 코드 등).
+      프런트 안 /try/는 exec 출력 본문의 sha256이다.
+    - 공개 HTTPS는 urllib.request.build_opener/urlopen 경계다. fake opener는 실제 urllib처럼 redirect를 처리한다:
+      넘겨받은 HTTPRedirectHandler의 redirect_request가 None이면 따라가지 않고 HTTPError, 아니면(기본 처리기 포함) 따라간다.
+      4xx·5xx는 HTTPError다.
+    """
+
+    LOGIN = "https://dev.pieceofdays.com/login"
+
+    def setUp(self):
+        require(self, "verify_app_release")
+        self.real_verify = deploy.verify_app_release
+        super().setUp()
+        self.http_requests = []
+        for name, side_effect in (("build_opener", self.fake_build_opener), ("urlopen", self.fake_urlopen)):
+            patcher = mock.patch.object(deploy.urllib.request, name, side_effect=side_effect)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.record = self.app_record(sha=SHA, tree=TREE, release=SHA + "-" + "3" * 32, manifest=MANIFEST, config=CONFIG, app_id=APP_ENGINE_ID, front=FRONT_IMAGE)
+        self.reset_world()
+
+    def reset_world(self):
+        self.containers = {"pieceofdays-frontend-dev": FRONT_IMAGE, "pieceofdays-app-dev": APP_ENGINE_ID}
+        self.container_states = {}
+        self.ready_fails = False
+        self.front_try_override = None
+        self.http = {
+            self.settings["app_health_url"]: (200, {"Content-Type": "text/html"}, TRY_HTML),
+            self.LOGIN: (200, {"Cache-Control": "private, no-cache, no-store, max-age=0, must-revalidate"}, b"<!doctype html><title>login</title>"),
+        }
+
+    # --- fake HTTPS ---
+    def fake_build_opener(self, *handlers):
+        test = self
+
+        class Opener:
+            def open(self, request, data=None, timeout=None):
+                return test.open_url(request, handlers)
+
+        return Opener()
+
+    def fake_urlopen(self, request, data=None, timeout=None, **kwargs):
+        return self.open_url(request, ())
+
+    def open_url(self, request, handlers):
+        url = getattr(request, "full_url", request)
+        self.http_requests.append(url)
+        status, headers, body = self.http.get(url, (404, {}, b""))
+        message = http.client.HTTPMessage()
+        for key, value in headers.items():
+            message[key] = value
+        if status in (301, 302, 303, 307, 308):
+            location = headers["Location"]
+            req = request if isinstance(request, urllib.request.Request) else urllib.request.Request(url)
+            redirectors = [h for h in handlers if isinstance(h, urllib.request.HTTPRedirectHandler)] or [urllib.request.HTTPRedirectHandler()]
+            if all(h.redirect_request(req, io.BytesIO(body), status, "redirect", message, location) is not None for h in redirectors):
+                return self.open_url(location, handlers)
+            raise urllib.error.HTTPError(url, status, "redirect", message, io.BytesIO(body))
+        if status >= 400:
+            raise urllib.error.HTTPError(url, status, "error", message, io.BytesIO(body))
+        return FakeResponse(url, status, headers, body)
+
+    def verify(self):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return self.real_verify(copy.deepcopy(self.record), self.settings)
+
+    def test_healthy_release_passes_and_every_check_is_performed(self):
+        self.assertIsNone(self.verify())
+        docker = [c for c, _, _, _ in self.calls if os.path.basename(c[0]) == "docker"]
+        for name in ("pieceofdays-frontend-dev", "pieceofdays-app-dev"):
+            with self.subTest(container=name):
+                self.assertTrue(any("inspect" in c and name in c for c in docker), "container state inspected")
+        self.assertTrue(any(c[1] == "exec" and "pieceofdays-app-dev" in c and "healthz/ready" in " ".join(c) for c in docker), "app internal readiness")
+        self.assertTrue(any(c[1] == "exec" and "pieceofdays-frontend-dev" in c and "/try/" in " ".join(c) for c in docker), "front internal /try/")
+        self.assertIn(self.settings["app_health_url"], self.http_requests)
+        self.assertIn(self.LOGIN, self.http_requests)
+
+    def test_each_mismatch_fails_verification(self):
+        cases = {
+            "app container image": lambda: self.containers.__setitem__("pieceofdays-app-dev", OLD_APP_ENGINE_ID),
+            "front container image": lambda: self.containers.__setitem__("pieceofdays-frontend-dev", OLD_FRONT_IMAGE),
+            "app not running": lambda: self.container_states.__setitem__("pieceofdays-app-dev", {"Running": False, "Status": "exited"}),
+            "front not running": lambda: self.container_states.__setitem__("pieceofdays-frontend-dev", {"Running": False, "Status": "exited"}),
+            "app unhealthy": lambda: self.container_states.__setitem__("pieceofdays-app-dev", {"Health": {"Status": "unhealthy"}}),
+            "app never healthy": lambda: self.container_states.__setitem__("pieceofdays-app-dev", {"Health": {"Status": "starting"}}),
+            "front unhealthy": lambda: self.container_states.__setitem__("pieceofdays-frontend-dev", {"Health": {"Status": "unhealthy"}}),
+            "app readiness 503": lambda: setattr(self, "ready_fails", True),
+            "front /try/ hash": lambda: setattr(self, "front_try_override", b"<!doctype html><title>other</title>\n"),
+            "public /try/ hash": lambda: self.http.__setitem__(self.settings["app_health_url"], (200, {}, b"other")),
+            "public /try/ 503": lambda: self.http.__setitem__(self.settings["app_health_url"], (503, {}, b"")),
+            "/login redirect is not followed": lambda: self.http.update(
+                {self.LOGIN: (302, {"Location": self.LOGIN + "/next"}, b""), self.LOGIN + "/next": (200, {"Cache-Control": "no-store"}, b"")}
+            ),
+            "/login without Cache-Control": lambda: self.http.__setitem__(self.LOGIN, (200, {}, b"login")),
+            "/login cacheable": lambda: self.http.__setitem__(self.LOGIN, (200, {"Cache-Control": "public, max-age=60"}, b"login")),
+            "/login 500": lambda: self.http.__setitem__(self.LOGIN, (500, {"Cache-Control": "no-store"}, b"")),
+        }
+        for label, mutate in cases.items():
+            with self.subTest(case=label):
+                self.reset_world()
+                mutate()
+                with self.assertRaises(Exception):
+                    self.verify()
+        self.reset_world()
 
 
 # ================================================================= 운영 승격 경계 §6.5
