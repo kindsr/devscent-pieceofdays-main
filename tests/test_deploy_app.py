@@ -86,7 +86,12 @@ APP_SETTINGS_KEYS = {
     "db_host": "ci-only-pg18",
     "dev_db": "pod_dev",
     "server_arch": "amd64",
+    # main 추가 계약(2026-11-05): 전용 front/egress bridge의 고정 IPAM(가짜 RFC1918 /24, 실제 값은 비공개 설정).
+    "front_subnet": "10.231.17.0/24",
+    "egress_subnet": "10.231.18.0/24",
 }
+FRONT_SUBNET = APP_SETTINGS_KEYS["front_subnet"]
+EGRESS_SUBNET = APP_SETTINGS_KEYS["egress_subnet"]
 
 
 def env_lines(**changes):
@@ -677,6 +682,38 @@ class RuntimeComposeAppTests(unittest.TestCase):
         egress = [n for n in app_nets if not n.get("external") and not n.get("internal")]
         self.assertEqual(len(egress), 1, "a dedicated app egress bridge")
         self.assertNotIn(egress[0], front_nets)
+        # 전용 두 네트워크만 고정 IPAM을 갖고, 외부 참조(edge·DB)에는 IPAM이 없다.
+        self.assertEqual(internal[0].get("ipam"), {"config": [{"subnet": FRONT_SUBNET}]})
+        self.assertEqual(egress[0].get("ipam"), {"config": [{"subnet": EGRESS_SUBNET}]})
+        for entry in top.values():
+            if entry.get("external"):
+                self.assertNotIn("ipam", entry, "external networks are referenced as-is")
+
+    def test_dedicated_subnets_must_be_normalized_non_overlapping_rfc1918_ipv4_slash_24(self):
+        bad = {
+            "public range": ("8.8.8.0/24", EGRESS_SUBNET),
+            "outside 172.16/12": ("172.32.5.0/24", EGRESS_SUBNET),
+            "/16": ("10.231.0.0/16", EGRESS_SUBNET),
+            "/25": ("192.168.40.0/25", EGRESS_SUBNET),
+            "host bits set": ("10.231.17.5/24", EGRESS_SUBNET),
+            "no prefix": ("10.231.17.0", EGRESS_SUBNET),
+            "IPv6": ("fd00:231:17::/64", EGRESS_SUBNET),
+            "leading zero": ("10.231.017.0/24", EGRESS_SUBNET),
+            "whitespace": (" 10.231.17.0/24", EGRESS_SUBNET),
+            "same subnet": (FRONT_SUBNET, FRONT_SUBNET),
+            "egress public": (FRONT_SUBNET, "100.64.0.0/24"),
+            "egress missing": (FRONT_SUBNET, None),
+            "front not a string": (None, EGRESS_SUBNET),
+        }
+        for label, (front, egress) in bad.items():
+            with self.subTest(label=label):
+                settings = {**self.settings, "front_subnet": front, "egress_subnet": egress}
+                with self.assertRaises(ValueError):
+                    deploy.runtime_compose_app(FRONT_IMAGE, APP_ENGINE_ID, self.release, self.UID, self.GID, settings)
+        for front, egress in (("172.16.9.0/24", "192.168.9.0/24"), ("172.31.255.0/24", "10.0.0.0/24")):
+            with self.subTest(front=front, egress=egress):
+                settings = {**self.settings, "front_subnet": front, "egress_subnet": egress}
+                deploy.runtime_compose_app(FRONT_IMAGE, APP_ENGINE_ID, self.release, self.UID, self.GID, settings)
 
     def test_invalid_release_id_ids_and_root_uid_gid_are_rejected(self):
         for release in ("../" + self.release, SHA, SHA + "-" + "E" * 32, SHA + "-" + "e" * 31, "/abs/" + self.release, self.release + "/x"):
@@ -761,6 +798,7 @@ class AppFlowBase(unittest.TestCase):
         self.containers = {}
         self.fail_compose_paths = set()
         self.fail_verify = set()  # "new-app" | "prev-app" | "static"
+        self.networks = {}  # 이미 있는 Docker 네트워크: 이름 → subnet(기본: 전용 네트워크 없음)
 
         patches = {
             "STATE": self.state,
@@ -933,9 +971,32 @@ class AppFlowBase(unittest.TestCase):
         if args[1] == "exec":
             name = next((a for a in args[2:] if a in self.containers), None)
             return self.output(args, self.containers.get(name))
-        if args[1] in {"pull", "build", "rm", "stop", "kill", "create", "start", "wait", "logs", "network"} or verb == ["image", "rm"]:
+        if args[1] == "network":
+            return self.network_answer(args)
+        if args[1] in {"pull", "build", "rm", "stop", "kill", "create", "start", "wait", "logs"} or verb == ["image", "rm"]:
             return ""
         return ""
+
+    def network_answer(self, args):
+        """읽기(inspect·ls)만 답한다. 없는 네트워크 inspect는 docker처럼 실패한다. 변경 명령은 기록만 한다."""
+        sub = args[2] if len(args) > 2 else ""
+        if sub == "inspect":
+            names = [a for a in args[3:] if not a.startswith("-") and "{{" not in a]
+            missing = [n for n in names if n not in self.networks]
+            if missing:
+                raise RuntimeError("command failed: docker network")
+            items = [{"Name": n, "Driver": "bridge", "IPAM": {"Driver": "default", "Config": [{"Subnet": self.networks[n]}]}} for n in names]
+            if "{{json .}}" in " ".join(args):
+                return "\n".join(json.dumps(i) for i in items)
+            return items
+        if sub == "ls":
+            if "{{json .}}" in " ".join(args) or "json" in args:
+                return "\n".join(json.dumps({"Name": n, "Driver": "bridge"}) for n in self.networks)
+            return "\n".join(self.networks)
+        return ""
+
+    def network_mutations(self):
+        return [a for a in self.runs if os.path.basename(a[0]) == "docker" and len(a) > 2 and a[1] == "network" and a[2] in {"rm", "create", "prune", "disconnect", "connect"}]
 
     # --- 가짜 공개 검증 ---
     def fake_verify_static(self, record, env, settings):
@@ -1023,6 +1084,28 @@ class DeployAppTransitionTests(AppFlowBase):
         pulls = [a for a in self.runs if os.path.basename(a[0]) == "docker" and "pull" in a]
         self.assertTrue(pulls and all(any(f"{APP_REPO}@{MANIFEST}" in x for x in a) for a in pulls), "pull by the fixed repository and digest")
         assert_no_secret(self, self.stdout + self.stderr, "output")
+        self.assertEqual(self.network_mutations(), [], "the helper never creates, removes or reconnects networks itself")
+
+    def test_existing_dedicated_networks_with_the_same_ipam_are_reused(self):
+        previous = self.static_record()
+        self.write_json(self.current, previous)
+        self.networks = {"pieceofdays-dev-front": FRONT_SUBNET, "pieceofdays-dev-egress": EGRESS_SUBNET, "edge": "172.18.0.0/16", "ci-only-db-network": "172.19.0.0/16"}
+        self.deploy_app()
+        self.assertEqual(self.read_json(self.current)["sha"], SHA)
+        self.assertEqual(self.network_mutations(), [])
+
+    def test_existing_dedicated_network_with_a_different_ipam_is_refused_without_modifying_it(self):
+        previous = self.static_record()
+        for name, subnet in (("pieceofdays-dev-front", "10.231.99.0/24"), ("pieceofdays-dev-egress", "192.168.77.0/24")):
+            with self.subTest(network=name):
+                self.events.clear()
+                self.runs.clear()
+                self.write_json(self.current, previous)
+                self.networks = {"pieceofdays-dev-front": FRONT_SUBNET, "pieceofdays-dev-egress": EGRESS_SUBNET, name: subnet}
+                with self.assertRaises(Exception):
+                    self.deploy_app()
+                self.assert_no_switch(previous)
+                self.assertEqual(self.network_mutations(), [], "an existing network is never modified or removed")
 
     def test_first_app_release_failure_returns_to_the_static_compose_with_remove_orphans(self):
         previous = self.static_record()

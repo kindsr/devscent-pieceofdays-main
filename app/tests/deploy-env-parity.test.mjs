@@ -30,6 +30,8 @@ const SETTINGS = {
   db_host: "ci-only-pg18",
   dev_db: "pod_dev",
   server_arch: "amd64",
+  front_subnet: "10.231.17.0/24",
+  egress_subnet: "10.231.18.0/24",
 };
 const SESSION = JSON.stringify({ 1: "ci-only-parity-session-key-1-".padEnd(40, "x") });
 const BASE_ENTRIES = [
