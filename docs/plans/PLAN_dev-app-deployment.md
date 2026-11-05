@@ -104,23 +104,26 @@ COPY --from=build /app/public ./public
 # migrate CLI는 원래 상대 배치를 그대로 둔다 → 기본 경로 ../../../migrations = /app/migrations
 COPY --from=build /app/src/server/db/migrate-cli.ts /app/src/server/db/migrate.ts /app/src/server/db/sql-policy.ts ./src/server/db/
 COPY --from=build /app/migrations ./migrations
+COPY --from=build /app/runtime-startup.mjs ./runtime-startup.mjs
+COPY --from=build /app/src/server/runtime-mode.ts ./src/server/runtime-mode.ts
 ARG POD_SHA POD_TREE POD_MIGRATIONS_LATEST
 LABEL org.opencontainers.image.source="https://github.com/kindsr/devscent-pieceofdays-main" \
       org.opencontainers.image.revision="${POD_SHA}" pod.tree="${POD_TREE}" pod.migrations.latest="${POD_MIGRATIONS_LATEST}"
 USER node
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "runtime-startup.mjs"]
 ```
 
 - **`pg` 의존성:** standalone trace에는 앱이 import하는 `pg`가 들어간다고 예상하지만 [미확인], migrate CLI 경로까지 들어간다는 보장은 없다. CI가 이미지 안에서 `node src/server/db/migrate-cli.ts status`를 실제 PG18에 대해 실행해 확인한다. 실패하면 `node_modules/pg`와 그 의존 패키지를 build 단계에서 명시 `COPY`한다(정확한 목록은 lock에서 계산해 F6a에서 고정).
 - **migrate 명령(고정):** 작업 디렉터리 `/app`, `node --env-file=/run/secrets/migrator.env src/server/db/migrate-cli.ts status` / `… up`. `--migrations-dir`는 쓰지 않는다(기본 `/app/migrations`).
 - **`app/next.config.ts`:** `output: "standalone"` 1줄을 추가한다. 기존 모드 거부 호출은 그대로 둔다.
+- **`app/runtime-startup.mjs`:** standalone의 직렬화된 nextConfig만으로는 원래 production-server 시작 검사가 다시 실행된다고 가정하지 않는다. wrapper가 원본 `src/server/runtime-mode.ts`의 `assertFixtureModeAllowed("phase-production-server", process.env)`·`assertAuthModeAllowed("phase-production-server", process.env)`를 먼저 호출하고 `await import("./server.js")`한다. Node26의 erasable TS를 그대로 사용하며 새 모드/의존성은 없다. 이미지의 실제 기본 기동으로 fixture/mock 시작 거부를 검증한다. migration CLI는 별도로 실행한다.
 - **`app/.dockerignore`:** `node_modules`, `.next`, `tests`, `.env*`, `test-results`, `playwright-report`를 제외한다. 이미지에 `.env*`가 없음을 CI로 단언한다.
 - **`server/db/pool.ts` 명시 설정 [메인, F6a 코드 변경]:** `new pg.Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 10000 })`. 지금은 기본값이라 최대 10이고 연결 대기 timeout이 없다. app role limit 6 안에서 Pool 5 + readiness 1을 유지한다.
 - **health route(서버 전용, 쓰기 없음):**
   - `app/src/app/healthz/route.ts`: GET → 200 `ok`. DB·env를 읽지 않는다(liveness).
   - `app/src/app/healthz/ready/route.ts`: GET → **앱 Pool을 쓰지 않는** 단발 `pg.Client`(`POD_DATABASE_URL`, `connectionTimeoutMillis: 2000`, `query_timeout: 2000`)로 `SELECT 1` → 200. 실패·미설정·요청 시작부터 전체 2초 deadline이면 503이다. connect와 query의 직렬 timeout 합계를 전체 deadline으로 세지 않는다.
-    - 전체 2초 타이머와 connect/query 작업을 경합시키고 만료 시 즉시 고정 503을 반환한다. 모든 경로에서 타이머를 해제하고 client 종료를 시작한다. `client.end()` 대기로 응답 deadline을 늘리지 않으며 종료 거부·late rejection은 처리해 원문 로그·unhandled rejection을 남기지 않는다. 연결/쿼리 정리와 남은 소켓 0을 격리 시험한다.
+    - `setTimeout`으로 전체 2초 타이머와 connect/query 작업을 경합시키고 만료 시 즉시 고정 503을 반환한다. 모든 경로에서 타이머를 해제하고 client 종료를 시작한다. `client.end()` 대기로 응답 deadline을 늘리지 않으며 종료 거부·late rejection은 처리해 원문 로그·unhandled rejection을 남기지 않는다. 연결/쿼리 정리와 남은 소켓 0을 격리 시험한다.
     - 본문은 고정 문자열이다. 계정·원장·metadata를 쓰지 않는다.
     - Pool과 분리하는 이유: Pool이 고갈되거나 연결 대기가 길어도 readiness가 멈추지 않게 하기 위해서다.
   - **readiness 200은 migration 완료의 증거가 아니다.** migration은 §9의 메인 gate가 따로 확인한다.
@@ -160,7 +163,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 ### 6.2 설정 (신뢰 config의 dev 항목에만)
 
-- 키: `app_mode_enabled`, `app_env_file`(‹app_env_file›, live 원본), `db_network`(‹db_network›), `app_health_url`(`https://dev.pieceofdays.com/try/`), `app_role`·`db_host`·`dev_db`(URL 검사의 기대값), `server_arch`(정확히 `amd64`). uid:gid는 요청/config에서 받지 않고 실행 사용자의 `os.getuid()/getgid()`만 쓰며 0이면 거부한다.
+- 키: `app_mode_enabled`, `app_env_file`(‹app_env_file›, live 원본), `db_network`(‹db_network›), `app_health_url`(`https://dev.pieceofdays.com/try/`), `app_role`·`db_host`·`dev_db`(URL 검사의 기대값), `server_arch`(정확히 `amd64`), `front_subnet`·`egress_subnet`(비공개 고정값). uid:gid는 요청/config에서 받지 않고 실행 사용자의 `os.getuid()/getgid()`만 쓰며 0이면 거부한다.
 - production 항목에 이 키가 있으면 거부한다.
 - 모든 경로에 기존 `trusted_file` 규칙(부모까지 root 또는 배포 사용자 소유, group·other 쓰기 없음)을 적용한다. env 파일은 regular file, 0600, 배포 사용자 소유.
 - 이미지 저장소는 helper 상수 `APP_IMAGE_REPOSITORY = "ghcr.io/kindsr/devscent-pieceofdays-main-app"`다. 요청 입력으로 바꿀 수 없다.
@@ -201,7 +204,8 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 **`runtime_compose_app(front_id, app_image_id, release_id, uid, gid, settings) -> dict`**
 
 - §3 그대로의 정확한 dict다: 서비스 2개, 네트워크 4개, `secrets.pod_app_env.file`은 **해당 릴리스의 동결 env 경로**. `services`의 image 값 2개는 모두 기록한 로컬 엔진 image ID다. registry 참조를 런타임에 재해석하지 않는다.
-- 앱: `entrypoint: ["node"]`, `command: ["--env-file=/run/secrets/pod_app_env", "server.js"]`, `user: "<uid>:<gid>"`.
+- 전용 front·egress 네트워크에는 각각 `ipam:{config:[{subnet:settings의 고정값}]}`을 둔다. 두 값은 정규화된 RFC1918 IPv4 /24이고 서로 겹치지 않는다. 기본 주소 풀 소진에 의존하지 않으며 기존 이름의 전용 네트워크가 있으면 IPAM 불일치 시 수정하지 않고 거부한다. 공용 edge·DB망은 외부 참조를 유지한다. 실제 값은 메인이 호스트/다른 네트워크와의 비중첩을 확인해 비공개 설정에만 넣고 적용 직전에 재확인한다.
+- 앱: `entrypoint: ["node"]`, `command: ["--env-file=/run/secrets/pod_app_env", "runtime-startup.mjs"]`, `user: "<uid>:<gid>"`. 후보 기동도 같은 wrapper를 쓰며 env 없이 liveness를 확인한다.
 - 앱 health: `["CMD","node","-e","fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]`, 30s / 5s / 3, start_period 20s.
 - 프런트 health: `wget -q -O /dev/null http://127.0.0.1:80/try/`.
 
@@ -268,9 +272,9 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 ## 7. workflow (F6a·F6c)
 
-**`app-validation.yml` — `app-image` job 추가(F6a)**
+**`app-image-validation.yml` — 전용 `app-image` job 추가(F6a)**
 
-- PR·push 모두에서 실행한다. 권한은 `contents: read`, Secrets·environment 없음, push 없음.
+- app 경로·해당 workflow를 바꾸는 PR 및 dev/main push에서 실행한다. 기존 `app-validation.yml`의 auth-e2e job과 파일 소유가 겹치지 않도록 전용 workflow로 둔다. 권한은 `contents: read`, Secrets·environment 없음, 이미지 push 없음.
 - 단계:
   1. BuildKit 빌드
   2. `validate_app_image`와 같은 조건 단언(RepoDigests 제외)
@@ -338,7 +342,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 | slice | 파일 | 선행 | 병행 |
 |---|---|---|---|
-| **F6a1 앱 이미지** | RED: `app/tests/unit/runtime-health.test.ts`·`app/tests/unit/db-pool.test.ts`·`app/tests/image-contract.test.mjs`(실제 이미지 검사). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-validation.yml`(`app-image` job 1~6단계) | 없음 | S1·S2·S3·F6b |
+| **F6a1 앱 이미지** | RED: `app/tests/unit/runtime-health.test.ts`·`app/tests/unit/db-pool.test.ts`·`app/tests/image-contract.test.mjs`(실제 이미지 검사). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/runtime-startup.mjs`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-image-validation.yml`(`app-image` job 1~6단계) | 없음 | S1·S2·S3·F6b |
 | **F6a2 프록시 조합** | §8의 프런트+앱 E2E 시험·app-image job 확장. 정확 시험 파일은 S2/F6b 통합 SHA의 helper 상수를 읽고 RED 전에 main이 고정 | S2·F6b·F6a1 통합 | S3b |
 | **F6b helper** | RED: `tests/test_deploy_app.py`·`app/tests/deploy-env-parity.test.mjs`. GREEN: `scripts/ops/deploy.py`(기존 static·production 동작 불변, §6.5 거부 추가)·`.github/workflows/deploy-app-validation.yml`(Node env 대조 전용) | 없음 | F6a |
 | **F6c 배포 전환** | `.github/workflows/deploy.yml`(dev job 분리, production 불변). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6a1·F6a2·F6b·S2 통합, §9 1~7 | — |
