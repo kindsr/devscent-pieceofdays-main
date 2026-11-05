@@ -163,7 +163,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 ### 6.2 설정 (신뢰 config의 dev 항목에만)
 
-- 키: `app_mode_enabled`, `app_env_file`(‹app_env_file›, live 원본), `db_network`(‹db_network›), `app_health_url`(`https://dev.pieceofdays.com/try/`), `app_role`·`db_host`·`dev_db`(URL 검사의 기대값), `server_arch`(정확히 `amd64`). uid:gid는 요청/config에서 받지 않고 실행 사용자의 `os.getuid()/getgid()`만 쓰며 0이면 거부한다.
+- 키: `app_mode_enabled`, `app_env_file`(‹app_env_file›, live 원본), `db_network`(‹db_network›), `app_health_url`(`https://dev.pieceofdays.com/try/`), `app_role`·`db_host`·`dev_db`(URL 검사의 기대값), `server_arch`(정확히 `amd64`), `front_subnet`·`egress_subnet`(비공개 고정값). uid:gid는 요청/config에서 받지 않고 실행 사용자의 `os.getuid()/getgid()`만 쓰며 0이면 거부한다.
 - production 항목에 이 키가 있으면 거부한다.
 - 모든 경로에 기존 `trusted_file` 규칙(부모까지 root 또는 배포 사용자 소유, group·other 쓰기 없음)을 적용한다. env 파일은 regular file, 0600, 배포 사용자 소유.
 - 이미지 저장소는 helper 상수 `APP_IMAGE_REPOSITORY = "ghcr.io/kindsr/devscent-pieceofdays-main-app"`다. 요청 입력으로 바꿀 수 없다.
@@ -204,6 +204,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 **`runtime_compose_app(front_id, app_image_id, release_id, uid, gid, settings) -> dict`**
 
 - §3 그대로의 정확한 dict다: 서비스 2개, 네트워크 4개, `secrets.pod_app_env.file`은 **해당 릴리스의 동결 env 경로**. `services`의 image 값 2개는 모두 기록한 로컬 엔진 image ID다. registry 참조를 런타임에 재해석하지 않는다.
+- 전용 front·egress 네트워크에는 각각 `ipam:{config:[{subnet:settings의 고정값}]}`을 둔다. 두 값은 정규화된 RFC1918 IPv4 /24이고 서로 겹치지 않는다. 기본 주소 풀 소진에 의존하지 않으며 기존 이름의 전용 네트워크가 있으면 IPAM 불일치 시 수정하지 않고 거부한다. 공용 edge·DB망은 외부 참조를 유지한다. 실제 값은 메인이 호스트/다른 네트워크와의 비중첩을 확인해 비공개 설정에만 넣고 적용 직전에 재확인한다.
 - 앱: `entrypoint: ["node"]`, `command: ["--env-file=/run/secrets/pod_app_env", "runtime-startup.mjs"]`, `user: "<uid>:<gid>"`. 후보 기동도 같은 wrapper를 쓰며 env 없이 liveness를 확인한다.
 - 앱 health: `["CMD","node","-e","fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]`, 30s / 5s / 3, start_period 20s.
 - 프런트 health: `wget -q -O /dev/null http://127.0.0.1:80/try/`.
