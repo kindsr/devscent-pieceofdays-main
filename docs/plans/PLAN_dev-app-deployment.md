@@ -200,7 +200,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 **`runtime_compose_app(front_id, app_image_id, release_id, uid, gid, settings) -> dict`**
 
-- §3 그대로의 정확한 dict다: 서비스 2개、네트워크 4개、`secrets.pod_app_env.file`은 **해당 릴리스의 동결 env 경로**. `services`의 image 값 2개는 모두 기록한 로컬 엔진 image ID다. registry 참조를 런타임에 재해석하지 않는다.
+- §3 그대로의 정확한 dict다: 서비스 2개, 네트워크 4개, `secrets.pod_app_env.file`은 **해당 릴리스의 동결 env 경로**. `services`의 image 값 2개는 모두 기록한 로컬 엔진 image ID다. registry 참조를 런타임에 재해석하지 않는다.
 - 앱: `entrypoint: ["node"]`, `command: ["--env-file=/run/secrets/pod_app_env", "server.js"]`, `user: "<uid>:<gid>"`.
 - 앱 health: `["CMD","node","-e","fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]`, 30s / 5s / 3, start_period 20s.
 - 프런트 health: `wget -q -O /dev/null http://127.0.0.1:80/try/`.
@@ -239,7 +239,9 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - **출력:** raw stdout·경로·비밀값을 내보내지 않는다.
 - 이 형식을 CI에서 고정하지 못하면 A는 채택하지 않는다. "load 후 inspect로 충분하다"는 주장도 하지 않는다.
 
-### 6.7 흐름 `deploy_app(...)` (기존 `deploy()`의 lock·phase·pending 구조를 따른다)
+### 6.7 흐름 `deploy_app(sha, tree, manifest_digest, config_digest, settings)`
+
+기존 `deploy()`의 lock·phase·pending 구조를 따른다. 새 공개 함수 `validate_app_record(record, settings) -> dict`는 §6.4의 로컬 검증 후 같은 record를 반환하고, `verify_app_release(record, settings) -> None`은 아래 8단계의 실제 상태를 검증한다. `revert_static(settings) -> None`은 dev 잠금 안에서 마지막 정적 성공 기록을 검증·복귀·검증한 뒤 현재 기록을 바꾼다. 기존 `validate_record(record,env)`·`verify_release(record,env,settings)`의 정적 계약은 유지한다. 앱 흐름만 record.mode로 정적/앱 함수를 분기하며 모르는 mode는 거부한다. 두 형식 복귀의 compose 호출에는 `--remove-orphans`를 써서 앱→정적 복귀 때 앱 컨테이너를 남기지 않는다.
 
 1. 인자 형식 확인 → `assert_latest("dev", sha)`
 2. 기존 방식의 고정 source clone으로 tree를 계산하고 요청 tree와 같은지 확인
@@ -276,7 +278,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
   4. network-none·read-only 후보로 `/healthz` 200, `/healthz/ready` 503
   5. PG18 서비스 + 가짜 env로 `/healthz/ready` 200
   6. 이미지 안 `migrate-cli.ts status`·`up`을 실제 PG18에 실행
-  7. 프런트+앱 조합 E2E(§8)
+  7. 프런트+앱 조합 E2E는 F6a2로, S2·F6b 통합 뒤 이 job을 확장해 검증한다(§8). F6a1의 독립 이미지 검증은 1~6단계이며 이 단계에서 미구현 auth 화면을 요구하지 않는다.
 
 **`deploy.yml` (F6c, dev만 바꾸고 production job은 불변)**
 
@@ -336,9 +338,10 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 | slice | 파일 | 선행 | 병행 |
 |---|---|---|---|
-| **F6a 앱 이미지** | RED: `app/tests/*`(health·pool 설정 단위). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-validation.yml`(`app-image` job) | 없음 | S1·S2·S3·F6b |
+| **F6a1 앱 이미지** | RED: `app/tests/unit/runtime-health.test.ts`·`app/tests/unit/db-pool.test.ts`·`app/tests/image-contract.test.mjs`(실제 이미지 검사). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-validation.yml`(`app-image` job 1~6단계) | 없음 | S1·S2·S3·F6b |
+| **F6a2 프록시 조합** | §8의 프런트+앱 E2E 시험·app-image job 확장. 정확 시험 파일은 S2/F6b 통합 SHA의 helper 상수를 읽고 RED 전에 main이 고정 | S2·F6b·F6a1 통합 | S3b |
 | **F6b helper** | RED: `tests/test_deploy_app.py`·`app/tests/deploy-env-parity.test.mjs`. GREEN: `scripts/ops/deploy.py`(기존 static·production 동작 불변, §6.5 거부 추가)·`.github/workflows/deploy-app-validation.yml`(Node env 대조 전용) | 없음 | F6a |
-| **F6c 배포 전환** | `.github/workflows/deploy.yml`(dev job 분리, production 불변). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6a·F6b·S2 통합, §9 1~7 | — |
+| **F6c 배포 전환** | `.github/workflows/deploy.yml`(dev job 분리, production 불변). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6a1·F6a2·F6b·S2 통합, §9 1~7 | — |
 | **G2** | — | F6c, S2(B4) 통합, B5 Google, 사용자 콘솔 | — |
 
 - 상태 문서 갱신 대상은 `README.md`·`app/README.md`·`deploy/README.md`·`CHANGELOG.md`·관련 계획이다. 통합 단계에서 메인·문서 담당이 한다.
