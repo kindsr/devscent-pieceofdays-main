@@ -1,5 +1,7 @@
 # pieceofdays app (F1 화면·F2 DB·F3 도메인·F4 인증 기반)
 
+2026-11-05 F6a1: 격리 CI에서 빌드하는 standalone 앱 이미지와 기동 시 모드 검사 wrapper, `/healthz`·`/healthz/ready`, 최대 5개·연결 대기 5초·idle 10초의 앱 Pool 설정을 추가했다([PR58](https://github.com/kindsr/devscent-pieceofdays-main/pull/58)). 원본 제품 `dbaf8c2`는 [실제 이미지 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41960545128) 6/6과 독립 검토 PASS를 통과했다. 같은 이미지의 PG18 migration·app role readiness도 확인했다. 이미지는 CI 로컬에서만 만들며 아직 registry 게시·프런트 조합·서버 설치·앱 배포는 하지 않았다. B4 통합 뒤 최종 CI 결과는 PR58에 기록한다.
+
 2026-11-05 B4: 인증 route 5개와 D 로그인·탈퇴·복구 화면, 설정의 계정 영역을 구현했다([PR57](https://github.com/kindsr/devscent-pieceofdays-main/pull/57), 제품 `cdf4edd`). route는 기존 B2 처리 함수와 쿠키 설정을 그대로 사용한다. `POD_WITHDRAWAL_ENABLED=1`일 때만 탈퇴 요청을 허용하며 기본은 닫힘이다. 복구는 이 설정과 독립이다. JS 없이도 공급자 form은 POST·303으로 동작한다. 계정 사용자는 아직 기록 연결 전 안내를 보며 S3b에서 저장 화면을 연결한다. 실제 공급자 자격·서비스 DB·개발 앱 배포는 미설정이다. 최종 통합 SHA의 CI·독립 검토 결과는 PR57에 기록한다.
 
 2026-11-05 S3a: `src/app/actions/diary.ts`의 기록 작성·수정·삭제·하루 한 줄·글꼴 저장 액션을 검증했다. config → 명시 Origin → `getViewer()` → 입력 형태 → 기존 F3 순서이며, 예상 밖 오류는 원문 없이 `unavailable`이다. 화면에서 아직 호출하지 않아 실제 저장 UI가 켜진 것은 아니다. [PR52](https://github.com/kindsr/devscent-pieceofdays-main/pull/52) exact `24721ae`의 CI·독립 PASS: Node24/26 단위223·빌드 경계4·운영 경계6·E2E12, PG18 DB178(신규8), 배포 계약42. [연결 계약](../docs/plans/PLAN_dev-diary-actions.md)을 따른다.
@@ -19,7 +21,7 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 | `src/app/actions/diary.ts` | S3a Server Actions 5개: config·Origin·요청 사용자 확인 뒤 기존 F3 쓰기 호출. 아직 Client Component에서 호출하지 않는다 |
 | `src/ui/d/` | D 화면 컴포넌트(상단, 조각 보드·하루 한 줄·작성/수정 팝업, 달력, 글꼴 설정). 스타일은 `src/app/globals.css`(D `style.css`에서 옮김) |
 | `src/ui/decorate/` | Konva 클라이언트 전용 모듈. 지금은 호환 스모크만 있고 꾸미기 편집기 UI는 없다(별도 아트보드 필요) |
-| `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부, 고정 사용자+실제 인증 동시 사용·운영 단계 mock issuer 거부(순수 Node, `next.config.ts`가 호출) |
+| `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부, 고정 사용자+실제 인증 동시 사용·운영 단계 mock issuer 거부. 원본 순수 검사를 `next.config.ts`와 standalone `runtime-startup.mjs`가 호출 |
 | `src/server/auth/` | 세션 codec(F4a), 인증 설정·공급자 목록(`config.ts`), 로그인 진행·복구 쿠키 codec, returnTo 허용 목록(F4 B1), OIDC 어댑터·처리 함수(B2), HTTP 응답·쿠키 변환(`http.ts`, B4). 인증 route에서 호출한다 |
 | `src/server/context.ts` | 요청별 viewer·async 기록 문맥(B3). 세션 쿠키와 계정 활성 상태·세대를 확인하고 실제 계정에는 F5 전까지 기록 저장소를 주지 않는다 |
 | `src/server/diary/` | 읽기·쓰기 port(`store.ts`)와 PG CRUD 구현, 메모리 구현·예시 기록(로컬·시험 전용) |
@@ -28,6 +30,7 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 | `src/server/db/`, `migrations/` | 앱 Pool·트랜잭션, SQL 정책 검사·migration 실행기와 8개 테이블·권한·원장 보호 |
 | `src/shared/` | UI 공유 타입, 글꼴 허용 목록, 날짜 파싱·서울 날짜/시각, 꾸미기 manifest 검증·렌더용 필터 |
 | `tests/unit/`, `tests/db/`, `tests/e2e/`, `tests/e2e-auth/`, `tests/prod/` | Vitest 단위·일회용 PG18 통합 시험 / fixture E2E / 실제 mock OIDC·PG18 인증 E2E / 운영 모드 경계 smoke |
+| `Dockerfile`, `runtime-startup.mjs`, `tests/image-contract.test.mjs` | F6a1 앱 이미지·기동 wrapper·실제 이미지 6개 검사. 전용 일회용 PG18과 Docker가 있는 격리 CI에서만 실행 |
 | `tests/unit/dev-preview.test.ts`, `tests/e2e-preview/`, `playwright.preview.config.ts` | `app/` 밖 정적 체험판(`frontend/public/try/`)의 저장 모듈·브라우저 시험. 이 앱의 코드가 아니다(아래 체험판 절) |
 | `docs/screenshots/` | F1 확인 스크린샷(로컬 고정 사용자 모드, 375/768/1440) |
 

@@ -16,7 +16,8 @@ export function getAppDb(): Db {
   if (appDb) return appDb;
   const url = process.env.POD_DATABASE_URL;
   if (!url) throw new Error("POD_DATABASE_URL is not set");
-  appDb = new pg.Pool({ connectionString: url });
+  // 연결 예산(PLAN_dev-app-deployment §3·§4): app role limit 6 = Pool max 5 + 단발 readiness 1.
+  appDb = new pg.Pool({ connectionString: url, max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 10000 });
   return appDb;
 }
 

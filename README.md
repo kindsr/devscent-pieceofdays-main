@@ -21,7 +21,7 @@
 
 홍보영상은 예시 기록으로 서비스를 사용하는 모습을 보여 주는 콘셉트 영상이다. 제품 진행과 작업 경계는 [AGENTS.md](AGENTS.md)를 따른다.
 
-DB 기반(F2), 첫 로그인 지급·기록·꾸미기 저장 코어(F3), 세션 봉인·검증과 서버 전용 경계(F4a), 계정 수명주기(L1·L2), 인증 설정·OIDC 처리·요청별 DAL(B1~B3), 기록·한 줄·글꼴 Server Actions 5개(S3a)를 검증했다. B4는 처리 함수를 호출하는 인증 route 5개와 D 로그인·탈퇴·복구 화면을 추가했다([PR57](https://github.com/kindsr/devscent-pieceofdays-main/pull/57)). 실제 공급자 자격·서비스 DB·Next 배포는 아직 연결하지 않아 사용자는 계속 정적 체험판을 쓴다. 검증 SHA·시험 수·통합 결과는 [앱 문서](app/README.md)와 PR에 기록한다.
+DB 기반(F2), 첫 로그인 지급·기록·꾸미기 저장 코어(F3), 세션 봉인·검증과 서버 전용 경계(F4a), 계정 수명주기(L1·L2), 인증 설정·OIDC 처리·요청별 DAL(B1~B3), 기록·한 줄·글꼴 Server Actions 5개(S3a)를 검증했다. B4는 처리 함수를 호출하는 인증 route 5개와 D 로그인·탈퇴·복구 화면을 추가했다([PR57](https://github.com/kindsr/devscent-pieceofdays-main/pull/57)). F6a1은 standalone 앱 이미지·기동 검사·health와 연결 수 제한을 추가했다([PR58](https://github.com/kindsr/devscent-pieceofdays-main/pull/58)). 실제 공급자 자격·서비스 DB·Next 배포는 아직 연결하지 않아 사용자는 계속 정적 체험판을 쓴다. 검증 SHA·시험 수·통합 결과는 [앱 문서](app/README.md)와 PR에 기록한다.
 
 로그인은 **Google·카카오 둘 다**, 계정 탈퇴는 **30일 복구 기간 후 삭제**로 정했다(2026-11-03 사용자 선택). [인증 계획](docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](docs/plans/PLAN_account-lifecycle.md)에 구현 순서를 정리한다. 공급자 간 계정 연결은 결정 대기다. B4의 HTTP·화면은 구현했지만 실제 로그인·탈퇴·복구 기능은 아직 사용자에게 제공되지 않는다. 탈퇴 요청은 삭제 운영 검증 전까지 실행 설정으로 닫고 복구는 유지한다. 개발 도메인은 정적 D 시안과 브라우저 저장 체험판을 제공한다.
 

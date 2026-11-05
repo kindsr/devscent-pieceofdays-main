@@ -1,0 +1,88 @@
+name: Validate pieceofdays app image (F6a)
+
+# 앱 이미지 전용 검사(PLAN_dev-app-deployment §7 app-image 1~6단계). 이미지를 만들어 같은 runner에서만 시험한다.
+# registry 게시·배포·배포 키·Secrets·environment를 쓰지 않는다. app-validation.yml·deploy.yml과 별개다.
+on:
+  pull_request:
+    paths: ["app/**", ".github/workflows/app-image-validation.yml"]
+  push:
+    branches: [dev]
+    paths: ["app/**", ".github/workflows/app-image-validation.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-image-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: app
+    # 이 job 전용 일회용 PostgreSQL 18 서비스(기존 db job과 같은 digest·가짜 비밀번호, loopback 게시만).
+    services:
+      postgres:
+        # postgres:18.6 official image, OCI image index digest (same as app-validation.yml db job)
+        image: postgres:18.6@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      POD_FULL_CHECK_ISOLATED: "1"
+      POD_TEST_DB_DISPOSABLE: "1"
+      POD_TEST_ADMIN_URL: postgres://postgres:ci-only-not-a-secret@127.0.0.1:5432/postgres
+    steps:
+      # actions/checkout v6.1.0 (official tag commit, resolved with git ls-remote 2026-11-02)
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      # actions/setup-node v6.5.0 (official tag commit, resolved with git ls-remote 2026-11-02)
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install (lockfile only)
+        run: npm ci
+      - name: Unit
+        run: npm test
+      - name: Build the app image (linux/amd64, labels from this checkout, local only)
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          latest="$(ls migrations | sed -nE 's/^([0-9]{4})_.+\.up\.sql$/\1/p' | sort -n | tail -1 | sed -E 's/^0+//')"
+          test -n "$latest"
+          docker build --platform linux/amd64 \
+            --build-arg "POD_SHA=${sha}" --build-arg "POD_TREE=${tree}" --build-arg "POD_MIGRATIONS_LATEST=${latest}" \
+            -t "pod-app-ci:${sha}" .
+          echo "POD_IMAGE_TEST_IMAGE=pod-app-ci:${sha}" >> "$GITHUB_ENV"
+      - name: Resolve the service network ID
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          set -euo pipefail
+          test -n "$SERVICE_NETWORK"
+          id="$(docker network inspect --format '{{.Id}}' "$SERVICE_NETWORK")"
+          [[ "$id" =~ ^[0-9a-f]{12,64}$ ]]
+          echo "POD_IMAGE_TEST_NETWORK=${id}" >> "$GITHUB_ENV"
+      - name: Image contract (six real image tests, no skip)
+        env:
+          POD_IMAGE_TEST_DB_HOST: postgres
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap tests/image-contract.test.mjs | tee image-contract.tap
+          for line in "# tests 6" "# pass 6" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+            grep -qx -- "$line" image-contract.tap || { echo "image contract summary mismatch: expected '$line'"; exit 1; }
+          done
