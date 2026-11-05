@@ -307,6 +307,8 @@ def nginx_locations(conf):
 class DevFrontNginxConfTests(unittest.TestCase):
     PROXY = {("=", "/"), ("=", "/login"), ("=", "/days"), ("^~", "/days/"), ("=", "/settings"), ("^~", "/auth/"), ("^~", "/account/"), ("^~", "/_next/")}
     STATIC = {"/try/", "/design/", "/promo/", "/status/"}
+    # main 추가 계약(GREEN60 독립 검토 5779565104 P1): OIDC callback은 exact 위치에서 로그 없이 같은 upstream으로 보낸다.
+    CALLBACKS = {("=", "/auth/google/callback"), ("=", "/auth/kakao/callback")}
 
     def conf(self):
         require(self, "DEV_FRONT_NGINX_CONF")
@@ -318,12 +320,40 @@ class DevFrontNginxConfTests(unittest.TestCase):
         conf = self.conf()
         locations = nginx_locations(conf)
         proxied = {(mod, path) for mod, path, body in locations if "proxy_pass" in body}
-        self.assertEqual(proxied, self.PROXY)
+        self.assertEqual(proxied, self.PROXY | self.CALLBACKS)
         for mod, path, body in locations:
             for target in re.findall(r"proxy_pass\s+([^;]+);", body):
                 with self.subTest(location=(mod, path)):
                     self.assertEqual(target.strip(), "http://pieceofdays-app-dev:3000")
-        self.assertEqual(len(re.findall(r"proxy_pass\s", conf)), len(self.PROXY), "proxy_pass only inside the allowlisted locations")
+        self.assertEqual(
+            len(re.findall(r"proxy_pass\s", conf)), len(self.PROXY) + len(self.CALLBACKS), "proxy_pass only inside the allowlisted locations"
+        )
+
+    def test_oidc_callback_locations_proxy_to_the_same_app_without_access_or_error_logs(self):
+        """callback query(code·state)와 referrer가 프런트 nginx 기본 access·error 로그에 남지 않게 한다.
+
+        exact 위치는 query와 무관하게 path만으로 매칭되고 `^~ /auth/`보다 먼저 선택된다. 본문은 로그만 끄고
+        헤더·캐시를 재정의하지 않아 server 수준의 고정 Host·X-Forwarded-*와 그대로 전달되는 Origin·Cookie를 상속한다.
+        `error_log off`는 "off"라는 파일 이름이라 쓰지 않는다(/dev/null).
+        """
+        conf = self.conf()
+        locations = nginx_locations(conf)
+        self.assertIn(("^~", "/auth/"), {(mod, path) for mod, path, _ in locations}, "the existing /auth/ allowlist entry stays")
+        for mod, path in sorted(self.CALLBACKS):
+            with self.subTest(callback=path):
+                same_path = [(m, body) for m, p, body in locations if p == path]
+                self.assertEqual([m for m, _ in same_path], ["="], "exactly one exact-match location for the callback path")
+                body = same_path[0][1]
+                self.assertEqual(re.findall(r"proxy_pass\s+([^;]+);", body), ["http://pieceofdays-app-dev:3000"])
+                self.assertRegex(body, r"(^|[\s;{])access_log\s+off\s*;")
+                self.assertRegex(body, r"(^|[\s;{])error_log\s+/dev/null(\s+(debug|info|notice|warn|error|crit|alert|emerg))?\s*;")
+                self.assertEqual(len(re.findall(r"access_log\s", body)), 1)
+                self.assertEqual(len(re.findall(r"error_log\s", body)), 1)
+                for directive in ("proxy_set_header", "add_header", "proxy_hide_header", "proxy_pass_request_headers", "proxy_cache", "more_set_headers", "proxy_set_body", "return", "rewrite"):
+                    self.assertNotRegex(body, r"(^|[\s;{])" + directive + r"\s", f"{directive} would change the inherited request/response handling")
+        self.assertNotRegex(conf, r"error_log\s+off\s*;", "`error_log off` writes to a file named off")
+        for match in re.finditer(r"log_format\s[^;]*;", conf):
+            self.assertNotRegex(match.group(0), r"\$(request|request_uri|args|query_string|arg_\w+|http_referer)\b", "no raw request/query/referrer log format")
 
     def test_static_paths_stay_static_and_everything_else_is_404(self):
         conf = self.conf()
