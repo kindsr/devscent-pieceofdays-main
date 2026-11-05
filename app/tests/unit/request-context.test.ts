@@ -365,21 +365,34 @@ describe("getDiaryContext (async, §7 DiaryContext)", () => {
     expect(await r).toEqual({ kind: "unavailable" });
   });
 
-  it("maps user → { kind: \"signed_in\" } only (no userId, store or fixture data), signed_out → signed_out, db/config errors → unavailable, fixture → fixture store", async () => {
+  // F5 S3b 전환(PLAN_dev-diary-actions §4.1): 실제 계정은 { kind: "account", userId, store, today }다. 서버 문맥은 검증된
+  // userId를 의도적으로 가진다(Client Component 비직렬화는 tests/e2e-auth/diary.spec.ts가 응답 본문으로 확인한다).
+  // DB 오류는 reason "db_unavailable"을 가진 unavailable, 설정 오류는 기존 그대로 { kind: "unavailable" }이다.
+  it("maps user → { kind: \"account\", userId, store, today(Seoul) } per request, signed_out → signed_out, DB error → unavailable/db_unavailable, config error → bare unavailable, fixture → fixture store", async () => {
     const ctx = await loadContext();
     setEnv(AUTH_ENV());
-    h.db = () => fakeDb([{ userId: UID_A, gen: 1 }]).db;
+    h.db = () => fakeDb([{ userId: UID_A, gen: 1 }, { userId: UID_B, gen: 1 }]).db;
+    const seoulToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const before = seoulToday();
     newRequest({ "__Host-pod_session": await seal({ userId: UID_A, gen: 1 }) });
-    const signedIn = await ctx.getDiaryContext();
-    expect(signedIn).toEqual({ kind: "signed_in" });
-    expect(JSON.stringify(signedIn)).not.toContain(UID_A);
+    const account = await ctx.getDiaryContext();
+    const after = seoulToday();
+    expect(Object.keys(account).sort(), "exact account context keys (no gen)").toEqual(["kind", "store", "today", "userId"]);
+    expect(account).toMatchObject({ kind: "account", userId: UID_A });
+    expect([before, after], "server Seoul today").toContain(account.today);
+    const store = account.store as { getDay?: unknown; listMonth?: unknown };
+    expect([typeof store.getDay, typeof store.listMonth], "PG read store").toEqual(["function", "function"]);
+
+    // 다음 요청은 그 요청의 세션 사용자로만 만든다(요청 사이에 사용자가 섞이지 않는다)
+    newRequest({ "__Host-pod_session": await seal({ userId: UID_B, gen: 1 }) });
+    expect(await ctx.getDiaryContext(), "request B").toMatchObject({ kind: "account", userId: UID_B });
 
     newRequest({});
     expect(await ctx.getDiaryContext()).toEqual({ kind: "signed_out" });
 
     h.db = null;
     newRequest({ "__Host-pod_session": await seal({ userId: UID_A, gen: 1 }) });
-    expect(await ctx.getDiaryContext(), "db_unavailable").toEqual({ kind: "unavailable" });
+    expect(await ctx.getDiaryContext(), "db_unavailable").toEqual({ kind: "unavailable", reason: "db_unavailable" });
 
     setEnv({ ...AUTH_ENV(), POD_AUTH_GOOGLE_CLIENT_ID: "" });
     newRequest({});
