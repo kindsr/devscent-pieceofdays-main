@@ -15,11 +15,11 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // layout은 이동마다 다시 렌더되지 않으므로 상단 표시에만 쓴다. 접근 확인은 각 page가 한다(PLAN §7).
-  const canWrite = (await getDiaryContext()).kind === "fixture";
+  const viewer = (await getDiaryContext()).kind;
   return (
     <html lang="ko">
       <body>
-        <TopBar canWrite={canWrite} />
+        <TopBar canWrite={viewer === "fixture"} viewer={viewer} />
         <main id="view" tabIndex={-1}>
           {children}
         </main>

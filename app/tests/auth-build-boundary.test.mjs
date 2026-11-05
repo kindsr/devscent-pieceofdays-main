@@ -198,3 +198,93 @@ test("④ client component importing the auth module through a shared module fai
     cleanup();
   }
 });
+
+// ---------------------------------------------------------------- F4 B4: 처리 함수·요청 context 경계(PLAN_mvp-oidc-integration §9 B1)
+// B4 route·page가 쓰는 server/auth/handlers·server/auth/config·server/context를 fixture가 실제로 사용한다.
+// 이 모듈들은 B2·B3에서 이미 있으므로 RED 단계에서도 통과할 수 있다(새 위험: route/page 연결 뒤 client 그래프로 새는 것을 막는 회귀).
+// CI 시간을 위해 B4 사례는 서버 positive 1개 + client 거부 2개만 추가한다(기존 ①~④와 같은 사본 방식).
+
+const B4_MODULES = [
+  path.join("src", "server", "auth", "handlers.ts"),
+  path.join("src", "server", "auth", "config.ts"),
+  path.join("src", "server", "context.ts"),
+];
+
+function requireB4Modules() {
+  for (const rel of B4_MODULES) {
+    assert.ok(existsSync(path.join(APP_DIR, rel)), `F4 module ${rel} is missing. No build was started for this case.`);
+  }
+}
+
+const SERVER_PAGE_B4 = `import { loadAuthConfig } from "@/server/auth/config";
+import { handleLogout } from "@/server/auth/handlers";
+import { getViewer } from "@/server/context";
+
+export const dynamic = "force-dynamic";
+
+export default async function AuthB4ServerProbe() {
+  const r = handleLogout(loadAuthConfig({}, "production"), null);
+  const v = await getViewer();
+  return <p data-probe="server-b4">{r.status}:{v.kind}</p>;
+}
+`;
+
+const CLIENT_DIRECT_B4 = `"use client";
+import { handleLogout } from "@/server/auth/handlers";
+
+export default function AuthB4ClientDirect() {
+  return <p data-probe="client-direct-b4">{typeof handleLogout}</p>;
+}
+`;
+
+const SHARED_BRIDGE_B4 = `import { getViewer } from "@/server/context";
+
+export const viewerReader = getViewer;
+`;
+
+const CLIENT_TRANSITIVE_B4 = `"use client";
+import { viewerReader } from "@/shared/auth-b4-bridge";
+
+export default function AuthB4ClientTransitive() {
+  return <p data-probe="client-transitive-b4">{typeof viewerReader}</p>;
+}
+`;
+
+test("⑤ server page using the real handlers, auth config and request context builds (B4 server positive)", () => {
+  requireIsolated();
+  requireB4Modules();
+  try {
+    const dir = makeCopy("b4server");
+    writeFixture(dir, "src/app/auth-b4-server/page.tsx", SERVER_PAGE_B4);
+    expectBuildOk(build(dir), "B4 server positive");
+  } finally {
+    cleanup();
+  }
+});
+
+test("⑥ client component importing the auth handlers directly fails next build because of server-only", () => {
+  requireIsolated();
+  requireB4Modules();
+  try {
+    const dir = makeCopy("b4client");
+    writeFixture(dir, "src/app/auth-b4-client/AuthB4ClientDirect.tsx", CLIENT_DIRECT_B4);
+    writeFixture(dir, "src/app/auth-b4-client/page.tsx", pageRendering("AuthB4ClientDirect"));
+    expectServerOnlyRejection(build(dir), "B4 client direct", "AuthB4ClientDirect");
+  } finally {
+    cleanup();
+  }
+});
+
+test("⑦ client component reaching the request context through a shared module fails next build because of server-only", () => {
+  requireIsolated();
+  requireB4Modules();
+  try {
+    const dir = makeCopy("b4transitive");
+    writeFixture(dir, "src/shared/auth-b4-bridge.ts", SHARED_BRIDGE_B4);
+    writeFixture(dir, "src/app/auth-b4-transitive/AuthB4ClientTransitive.tsx", CLIENT_TRANSITIVE_B4);
+    writeFixture(dir, "src/app/auth-b4-transitive/page.tsx", pageRendering("AuthB4ClientTransitive"));
+    expectServerOnlyRejection(build(dir), "B4 client transitive", "AuthB4ClientTransitive");
+  } finally {
+    cleanup();
+  }
+});
