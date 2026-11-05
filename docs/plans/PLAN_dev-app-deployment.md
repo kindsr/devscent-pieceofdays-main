@@ -116,7 +116,7 @@ CMD ["node", "server.js"]
 - **migrate 명령(고정):** 작업 디렉터리 `/app`, `node --env-file=/run/secrets/migrator.env src/server/db/migrate-cli.ts status` / `… up`. `--migrations-dir`는 쓰지 않는다(기본 `/app/migrations`).
 - **`app/next.config.ts`:** `output: "standalone"` 1줄을 추가한다. 기존 모드 거부 호출은 그대로 둔다.
 - **`app/.dockerignore`:** `node_modules`, `.next`, `tests`, `.env*`, `test-results`, `playwright-report`를 제외한다. 이미지에 `.env*`가 없음을 CI로 단언한다.
-- **`server/db/pool.ts` 명시 설정 [제안, F6a 코드 변경]:** `new pg.Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 10000 })`. 지금은 기본값이라 최대 10이고 연결 대기 timeout이 없다. app role connection limit 5와 맞추려면 이 변경이 필요하다. 수치는 메인 예산 계산에 따른다.
+- **`server/db/pool.ts` 명시 설정 [메인, F6a 코드 변경]:** `new pg.Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 10000 })`. 지금은 기본값이라 최대 10이고 연결 대기 timeout이 없다. app role limit 6 안에서 Pool 5 + readiness 1을 유지한다.
 - **health route(서버 전용, 쓰기 없음):**
   - `app/src/app/healthz/route.ts`: GET → 200 `ok`. DB·env를 읽지 않는다(liveness).
   - `app/src/app/healthz/ready/route.ts`: GET → **앱 Pool을 쓰지 않는** 단발 `pg.Client`(`POD_DATABASE_URL`, `connectionTimeoutMillis: 2000`, `query_timeout: 2000`)로 `SELECT 1` → 200. 실패·미설정·요청 시작부터 전체 2초 deadline이면 503이다. connect와 query의 직렬 timeout 합계를 전체 deadline으로 세지 않는다.
@@ -285,7 +285,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 - **같은 run 연결:** deploy job은 `needs.build-dev-app.outputs`만 쓴다. 다른 run·다른 branch의 artifact나 이름 기반 선택은 없다.
   - `sha`가 `github.sha`와 다르면 job이 실패한다.
-  - 서버 helper는 tree·digest·config id를 다시 대조한다.
+  - 서버 helper는 tree·manifest/config digest 연결을 다시 대조한다. 엔진 image ID는 서버에서 얻는다.
 - **actions:** 새 marketplace action 없이 runner의 docker CLI·`docker login --password-stdin`을 쓴다. A안을 택하면 `actions/upload-artifact`·`download-artifact`를 공식 tag의 commit SHA로 고정하고, 같은 run의 artifact ID와 sha·tree·image ID를 연결해야 한다.
 - **PR:** 배포 secret 0, `packages: write` 없음(`app-image` job만 실행).
 - **메인 범위 결정:** 사용자 요청의 이 서비스 dev 앱 전환과 기존 dev 자동배포 범위에서 위 단일 build job의 `packages: write`와 공개 소스에 대응하는 앱 이미지 패키지 하나만 준비한다. 새 PAT·서버 registry 자격·다른 서비스/production 권한은 추가하지 않는다. 코드·CI·이미지 검증 뒤 F6c 전환을 수락한다. 공개 설정을 현재 인증으로 수행할 수 없으면 그 구체 항목만 사용자에게 전달하며 인증 범위를 임의로 넓히지 않는다.
