@@ -1,7 +1,7 @@
 # PLAN — F6-dev: 개발 도메인에 Next 앱 배포 (S4) — R2
 
 - **상태:** R2 계획이다(2026-11-05). R1(`4c3fb8a`) 독립 검토의 P1 2건과 운영 예산·deadline을 메인이 보완했다(§14).
-  - **R3 초안(F6c 부트스트랩·같은 SHA 검증):** §7·§9·§11·§15를 고쳤다. F6c를 F6c1(게시만)·F6c2(dev 앱 전환)로 나눈다. **독립 검토·메인 수락 전이며 구현은 없다.** F6a1·F6b 고정 계약(§4~§6)은 바꾸지 않았다.
+  - **R3 초안(F6c 부트스트랩·같은 SHA 검증):** §7·§9·§11·§15를 고쳤다. F6c를 F6c1(게시만)·F6c2(dev 앱 전환)로 나눈다. **R3는 메인 결정 Q1~Q4(2026-11-05)를 반영했다.** 독립 검토 전이며 구현은 없다. F6a1·F6b 고정 계약(§4~§6: 모드·helper·env)은 바꾸지 않았다.
   - 이 문서는 코드·CI·Compose·배포 프로그램·서버를 바꾸지 않았고 권한을 늘리지 않는다.
 - **BASE:** `dev` `e49b0c3ad79a32f16f8f33ca003aef9b57f43540`.
   - 함께 읽은 것: PR46 HEAD `6034fdf209ed716cb0079971beb327b8d019786d`의 [실사용 전환 계획](https://github.com/kindsr/devscent-pieceofdays-main/blob/6034fdf209ed716cb0079971beb327b8d019786d/docs/plans/PLAN_dev-usable-app.md) §6·§8과 `PLAN_dev-diary-actions.md`.
@@ -285,130 +285,148 @@ COPY default.conf /etc/nginx/conf.d/default.conf
   6. 이미지 안 `migrate-cli.ts status`·`up`을 실제 PG18에 실행
   7. 프런트+앱 조합 E2E는 F6a2로, S2·F6b 통합 뒤 이 job을 확장해 검증한다(§8). F6a1의 독립 이미지 검증은 1~6단계이며 이 단계에서 미구현 auth 화면을 요구하지 않는다.
 
-**F6c: 게시(F6c1)와 전환(F6c2)을 나눈다 [R3 제안]**
+**F6c: 게시(F6c1)와 전환(F6c2)을 나눈다 [R3, 메인 결정 반영]**
 
 나누는 이유:
 - §9의 migration gate는 **게시된 앱 이미지(digest)**로 먼저 실행해야 한다.
 - R2처럼 같은 push에서 게시와 dev 배포를 함께 하면, migration을 실행할 이미지가 배포 순간에야 생긴다(순환).
 - 그래서 먼저 게시만 하는 단계를 두고, 메인 준비가 끝난 뒤 전환한다.
 
-#### 7.1 F6c1 — dev push에서 이미지 게시만 (기존 정적 dev 자동배포 유지)
+#### 7.0 공통 job `workflow-contracts` (F6c1부터)
 
-`deploy.yml`에 job 하나를 더한다. 기존 `validate`·`deploy`(dev·main 정적)는 **그대로** 둔다.
+`deploy.yml`에 workflow 구조 계약 시험 job을 둔다(§7.3).
+
+| job | 조건 | 권한·secret | 하는 일 |
+|---|---|---|---|
+| `workflow-contracts`(신규) | push·PR | `contents: read`. secret·`packages` 권한·environment 없음 | 고정 commit의 checkout(`persist-credentials: false`)·setup-node 26.13.0 → `npm ci --ignore-scripts`(app) → `node --test tests/deploy-workflow.test.mjs`. tap 요약에서 0건·skip이면 실패 |
+
+기존 정적 `deploy` job은 `needs: validate` 그대로 둔다. production 경로는 이 job을 기다리지 않는다.
+
+#### 7.1 F6c1 — dev push에서 이미지 게시만 (기존 정적 dev 자동배포 유지)
 
 | job | 조건 | 권한·secret | 하는 일 | 하지 않는 일 |
 |---|---|---|---|---|
-| `build-dev-app`(신규) | `github.event_name == 'push' && github.ref == 'refs/heads/dev'`, `needs: [validate]` | job 수준 `permissions: {contents: read, packages: write}`. workflow 수준은 `contents: read` 그대로. environment·배포 secret 없음. 쓰는 token은 `GITHUB_TOKEN`뿐 | 아래 단계 | SSH·배포·PR 실행 |
+| `build-dev-app`(신규) | `github.event_name == 'push' && github.ref == 'refs/heads/dev'`, `needs: [validate, workflow-contracts]` | job 수준 `permissions: {contents: read, packages: write}`(R2에서 승인한 단일 publisher 권한). workflow 수준은 `contents: read` 그대로. environment·배포 SSH secret 없음 | 아래 단계 | SSH·배포 |
 
 **`build-dev-app` 단계 (순서 고정)**
 
-1. **checkout·SHA 확인:** 고정 commit의 `actions/checkout`, `persist-credentials: false`. `git rev-parse HEAD`가 `github.sha`와 같아야 한다.
-2. **준비:** 고정 commit의 `actions/setup-node`로 Node 26.13.0을 쓴다. 그다음 `npm ci --ignore-scripts`(시험 harness용).
+1. **checkout·SHA 확인:** 고정 commit의 checkout, `persist-credentials: false`. `git rev-parse HEAD`가 `github.sha`와 같아야 한다.
+2. **준비:** setup-node 26.13.0, `npm ci --ignore-scripts`.
 3. **로컬 빌드(registry 접근 없음):**
    - 명령: `docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load --metadata-file <tmp>/meta.json`
    - 라벨은 이 checkout의 `sha`·`tree`·latest migration이다.
-   - `meta.json`의 `containerimage.config.digest`를 **시험한 config digest**로 기록한다. 엔진 image store 방식과 무관하다.
-4. **실제 이미지 시험 6건:**
-   - F6a1의 `tests/image-contract.test.mjs`를 이 job의 PG18 서비스로 실행한다. `app-image-validation.yml`과 같은 입력·network ID 변환을 쓴다.
-   - tap 요약이 정확히 6/6/0/0/0/0이 아니면 실패한다.
-   - **이 단계까지만 저장소 코드가 실행된다.**
-5. **게시(저장소 코드 실행 없음):**
-   - `docker login ghcr.io --password-stdin`(`GITHUB_TOKEN`)으로 로그인한다.
-   - 3에서 만든 이미지를 `ghcr.io/kindsr/devscent-pieceofdays-main-app:dev-<sha>`로 태그해 `docker push`한다.
-   - `docker buildx imagetools inspect --raw <repo>@<push된 digest>`로 원문 manifest를 읽어 다음을 확인한다.
-     - 단일 manifest다(index·list 거부).
-     - `.config.digest`가 4에서 시험한 config digest와 같다.
-     - 원문 바이트의 sha256이 manifest digest와 같다.
-   - `docker logout ghcr.io`.
+   - `containerimage.config.digest`를 **시험한 config digest**로 기록한다.
+4. **필수 이미지 검사(같은 SHA·같은 로컬 artifact, registry login 전):**
+   - **(a) F6a1 실제 이미지 시험 6건:** `tests/image-contract.test.mjs`, PG18 서비스. tap 요약이 6/6/0/0/0/0이어야 한다.
+   - **(b) F6a2 존재 뒤: 실제 front+app 조합 검사 전부.**
+     - 실제 프록시 HTTP 사례와 `/try/` 기록 보존 사례(§8 조합 E2E)
+     - 기존 preview E2E 10건을 **변경 없이** nginx 경유로 실행
+   - (b)의 정확한 스크립트·config 경로는 F6a2를 고정한 뒤 메인이 정한다.
+   - 지금 고정하는 것은 이름 붙은 필수 계약이다. **"게시 job은 F6a2의 조합 검사 명령을 하나도 빼지 않고 같은 artifact로 실행한다."**
+5. **게시:**
+   - token은 `docker login ghcr.io --password-stdin` 단계의 env에만 명시해 넘긴다.
+   - 3의 이미지를 `ghcr.io/kindsr/devscent-pieceofdays-main-app:dev-<sha>`로 태그해 push한다.
+   - `docker buildx imagetools inspect --raw <repo>@<digest>`로 다음을 확인한다.
+     - 단일 manifest다.
+     - `.config.digest`가 4에서 시험한 값과 같다.
+     - 원문 바이트 sha256이 manifest digest와 같다.
+   - 정리: `docker logout ghcr.io`를 하고 runner의 docker 설정 파일을 지운다.
 6. **outputs:**
    - `sha`, `tree`, `manifest_digest`, `config_digest`, `migrations_latest`를 내보낸다.
    - 마지막 단계에서만 쓰고, 모두 정규식을 통과해야 한다.
-   - run summary에 digest를 적는다(비밀값 없음).
+   - run summary에 digest를 적는다.
 
-**권한·노출**
-- token이 쓰이는 단계(5)에서는 npm·node·저장소 스크립트를 실행하지 않는다.
-- 시험한 config digest와 게시한 manifest의 config digest가 같아야 하므로, 시험하지 않은 이미지가 게시 결과로 나오지 않는다.
-- 가능하면 태그를 덮어쓰지 않는다(sha별 태그). 서버는 digest로만 pull한다.
+**권한 경계(정직한 범위)**
+- 이 job은 `npm ci`·시험으로 저장소 코드를 실행한다. 같은 job에 `packages: write` `GITHUB_TOKEN`이 있다.
+- **단계 순서만으로 저장소 코드가 job token과 완전히 격리된다고 주장하지 않는다.**
+- 이 계획이 보장하는 것:
+  - 배포 SSH secret은 이 job에 없다(environment 없음).
+  - token은 login 단계 env에만 명시하고 `persist-credentials: false`로 둔다.
+  - logout·설정 파일 삭제를 한다.
+  - 시험한 config digest와 게시 manifest의 config digest가 같아야 한다.
+- 권한은 R2에서 승인한 단일 publisher 범위(이 서비스 패키지 1개)를 넘지 않는다. 더 넓은 격리 설계는 범위 밖이다.
 
 **F6c1에서 같은 SHA 검증 범위**
-- `validate`(root 시험)와 위 이미지 시험 6건만 자동으로 묶인다.
-- `app-validation.yml`은 아직 별도 workflow라 기다리지 않는다.
-- 게시만 하고 활성화하지 않으므로 안전하다. 다만 메인은 §9-B의 수동 migration 전에 **같은 SHA의 `app-validation` push run이 성공했는지** Actions에서 확인한다.
+- 자동으로 묶이는 것: `validate`·`workflow-contracts`와 4의 이미지 검사.
+- `app-validation.yml`은 아직 별도 workflow다. 게시만 하고 활성화하지 않으므로 안전하다.
+- 메인은 §9-B 2의 수동 migration 전에 같은 SHA의 `app-validation` push run 성공을 확인한다.
 
-**중복 정리 [메인 결정 Q2]**
-- F6c1 병합과 함께 `app-image-validation.yml`의 dev push 트리거를 빼고 PR 트리거만 남기는 안을 권장한다.
-- 이유: dev push의 이미지 시험은 게시 job이 대신한다.
+**`app-image-validation.yml`의 dev push 트리거(Q2)**
+- F6c1에서 제거할 수 있는 조건: 게시 job이 그 workflow의 **모든 명령**을 같은 artifact로 실행할 때. F6a2 존재 뒤라면 조합·프록시·preview 10까지 포함한다.
+- 하나라도 빠지면 dev push 트리거를 유지한다. PR 트리거는 항상 유지한다.
+- `preview-validation.yml`은 따로 호출하지 않는다(Q4). F6a2가 같은 10건을 실제 front에서 더 엄격하게 실행하기 때문이다.
 
 #### 7.2 F6c2 — 같은 SHA의 필수 검증을 모두 기다린 뒤 dev 앱 전환
 
-**선택: 재사용 workflow(`workflow_call`) [R3 제안]**
-
-대안 비교:
+**선택: 재사용 workflow(`workflow_call`)**
 
 | 기준 | 재사용 workflow(선택) | Actions API 조회 gate |
 |---|---|---|
-| 같은 SHA | 같은 run 안에서 caller의 `github.sha`·checkout으로 실행된다 | `head_sha`·event·workflow를 조회해 맞춰야 한다. PR·merge ref와 혼동할 위험이 있다 |
-| path filter | `workflow_call`에는 path filter가 없다. 그래서 문서만 바뀐 push에서도 항상 실행·판정된다 | 문서 push에서는 대상 run이 없다. 무한 대기하거나 "없음=성공"으로 처리하게 된다 |
-| 권한·secret | 호출 job은 `contents: read`이고 secret을 넘기지 않는다 | 배포 쪽 job에 `actions: read`와 polling 코드가 필요하다 |
-| 외부 action | 없음 | 없음(직접 API 호출) |
-
-API gate는 path filter 때문에 "run 없음"의 의미를 정할 수 없어 채택하지 않는다.
+| 같은 SHA | 같은 run 안에서 caller의 `github.sha`·checkout으로 실행 | `head_sha`·event·workflow 조회. PR·merge ref와 혼동할 위험 |
+| path filter | `workflow_call`에는 path filter가 없다. 문서만 바뀐 push도 항상 실행·판정 | 문서 push에는 대상 run이 없다. 무한 대기하거나 "없음=성공"이 된다 |
+| 권한·secret | 호출 job은 `contents: read`, secret 전달 없음 | 배포 쪽에 `actions: read`와 polling이 필요 |
+| 외부 action | 없음 | 없음 |
 
 **`deploy.yml`(F6c2)**
 
 | job | 조건 | 권한·secret | 하는 일 | 하지 않는 일 |
 |---|---|---|---|---|
-| `validate`(기존) | push·PR | `contents: read` | 계약 시험·Compose 문법 | — |
-| `app-checks`(신규) | push to `dev`만 | `permissions: {contents: read}`, `uses: ./.github/workflows/app-validation.yml`, `secrets` 없음 | 기존 app 검사 전부를 같은 SHA로 1회 실행: Node 24/26 lint·typecheck·unit·build·빌드 경계·fixture 거부·prod smoke·E2E, DB | 배포 |
-| `build-dev-app` | push to `dev`, **`needs: [validate, app-checks]`** | 7.1과 같다 | 7.1과 같다(게시 + 이미지 시험 6건) | SSH |
-| `deploy-dev-app`(신규) | push to `dev`, `needs: [validate, app-checks, build-dev-app]` | `environment: dev`, 기존 dev SSH secret, `concurrency: {group: pieceofdays-deployment, cancel-in-progress: false}` | outputs 정규식 검사 → `sha == github.sha` → (Q1) migration 확인 → SSH `probe dev` → `deploy-app dev <sha> <tree> <manifest_digest> <config_digest>` | checkout, 저장소 Dockerfile·스크립트·npm·docker build 실행 |
-| `deploy`(기존 정적) | **push to `main`만**(dev 조건 제거) | `environment: production` | 정적 `deploy production <sha>` | 단계·secret·명령 불변 |
+| `validate`·`workflow-contracts` | push·PR | `contents: read` | 7.0과 같다 | — |
+| `app-checks`(신규) | push to `dev`만 | `permissions: {contents: read}`, `uses: ./.github/workflows/app-validation.yml`, `secrets` 없음 | `app-validation.yml`의 **필수 job 전부**를 같은 SHA로 1회: Node 24/26 `app`(lint·typecheck·unit·build·빌드 경계·fixture 거부·prod smoke·E2E), `db`, **`auth-e2e`(현재 20건, 이후 S3b 기록 사례 포함)**, 그때 파일에 있는 그 밖의 모든 job | 배포 |
+| `build-dev-app` | push to `dev`, **`needs: [validate, workflow-contracts, app-checks]`** | 7.1과 같다 | 7.1과 같다(게시 + 4의 필수 이미지 검사 전부) | SSH |
+| `deploy-dev-app`(신규) | push to `dev`, `needs: [validate, workflow-contracts, app-checks, build-dev-app]` | `environment: dev`, 기존 dev SSH secret, `concurrency: {group: pieceofdays-deployment, cancel-in-progress: false}` | 아래 migration 확인 → outputs 정규식·`sha == github.sha` → SSH `probe dev` → `deploy-app dev <sha> <tree> <manifest_digest> <config_digest>` | checkout, 저장소 Dockerfile·스크립트·npm·docker build 실행 |
+| `deploy`(기존 정적) | **push to `main`만**(dev 조건 제거), `needs: validate` 그대로 | `environment: production` | 정적 `deploy production <sha>` | 단계·secret·명령 불변 |
+
+**migration 승인 gate (Q1, 메인 결정)**
+- 저장소 변수(secret 아님) `POD_DEV_APPROVED_MIGRATIONS`가 승인된 최대 migration 버전이다.
+- `deploy-dev-app`는 SSH 전에 다음을 검사한다.
+  - 값이 `^[1-9][0-9]*$`가 아니거나 미설정이면 실패한다.
+  - `migrations_latest`(같은 run 게시 job output, 양의 정수)가 그 값보다 크면 실패한다.
+- 메인은 그 SHA의 게시 digest로 `status → up → status`를 끝낸 뒤에만 이 변수를 처음 만들거나 올린다. DB 변경은 확장(additive)만이다. 자동 migration·down은 없다.
+- **표준 절차:** 변수를 올린 뒤 tree가 같은 새 dev push(필요하면 빈 commit)를 만든다. 그 새 run에서 모든 검사·outputs·변수 평가가 처음부터 이뤄진다.
+- **실패 job 재실행:** 재실행 때 `vars` 재평가가 실제로 증명된 뒤에만 허용한다. 첫 활성화의 조건은 아니다.
+- 변수 조회에 Actions API·추가 권한은 쓰지 않는다(`vars` 문맥).
 
 **`app-validation.yml`(F6c2, 같은 PR에서 함께 바꾼다)**
 - `on.workflow_call: {}`을 추가한다(inputs·secrets 없음).
-- `push.branches`는 `[dev, main]`에서 **`[main]`**으로 바꾼다. `pull_request`는 그대로다.
+- `push.branches`를 **`[main]`**으로 줄인다. `pull_request`는 그대로다.
 - 이 파일은 B4(auth-e2e) 담당과 겹친다. F6c2 착수 전에 메인이 소유를 조정한다.
 
 **concurrency·cancel**
-- `app-validation.yml`의 workflow 수준 group `app-validation-${{ github.ref }}`(cancel true)는 호출될 때도 같은 ref로 평가된다.
-- dev push 트리거를 같은 PR에서 없애므로, 같은 dev ref에서 독립 run과 호출 run이 서로 취소하는 일은 없다.
+- 호출된 workflow의 group `app-validation-${{ github.ref }}`(cancel true)는 caller의 dev ref로 평가된다.
+- dev push 독립 트리거를 같은 PR에서 없애므로, 같은 group끼리 서로 취소하지 않는다.
 - 더 새 dev push는 이전 run의 `app-checks`를 취소한다. 그러면 이전 run의 게시·배포는 `needs` 실패로 실행되지 않는다. helper `assert_latest`도 오래된 SHA를 거부한다.
-- caller(`deploy.yml`)에는 workflow 수준 concurrency가 없어 caller·callee group 교착이 없다.
-- 배포 job은 기존 `pieceofdays-deployment` group(cancel false)으로 production과 직렬이다.
+- caller에는 workflow 수준 concurrency가 없어 caller·callee group 교착이 없다.
+- 배포는 기존 `pieceofdays-deployment`(cancel false)로 production과 직렬이다.
 
 **path filter·중복**
-- `deploy.yml`은 path filter가 없다. 그래서 문서만 바뀐 dev push에서도 검사 → 게시 → 배포가 항상 실행되고 성공·실패가 정해진다. 건너뛴 것을 성공으로 세지 않는다.
-- dev push에서 app 검사는 호출 1회뿐이고, 이미지 시험은 게시 job 1회뿐이다.
-- 재사용 workflow의 job은 caller run 안에 표시된다.
+- `deploy.yml`은 path filter가 없다. 문서만 바뀐 dev push에서도 검사 → 게시 → 배포가 항상 판정된다. 건너뜀을 성공으로 세지 않는다.
+- dev push에서 app 검사는 호출 1회, 이미지·조합 검사는 게시 job 1회다.
 
 **바뀌지 않는 것**
-- PR 검사: `validate`, `app-validation` PR, `app-image-validation` PR, `preview-validation`
-- main push: `app-validation` 독립 run, 정적 production `deploy`
-- 새 marketplace action, `workflow_dispatch`, `pull_request_target`, PAT, 서버 registry 자격은 없다.
+- PR 검사(`validate`·`workflow-contracts`·`app-validation` PR·`app-image-validation` PR·`preview-validation`)
+- main push(`app-validation` 독립 run, 정적 production `deploy`, `needs: validate`)
+- 없음: 새 marketplace action, `workflow_dispatch`, `pull_request_target`, PAT, 서버 registry 자격
 
-**(Q1) 이후 migration이 있는 push [메인 결정]**
-- 문제: F6c2 뒤 새 migration을 담은 dev push는 같은 run에서 바로 배포된다. 메인의 수동 gate(§9-B 2)보다 앞서게 된다.
-- 권장안: 저장소 변수(secret 아님) `POD_DEV_APPROVED_MIGRATIONS`를 둔다.
-  - `deploy-dev-app`가 `migrations_latest > vars.POD_DEV_APPROVED_MIGRATIONS`이면 SSH 전에 실패한다.
-  - 메인은 그 run의 게시 digest로 migration한 뒤 변수를 올리고 실패한 job만 다시 실행한다.
-  - [미확인]: 재실행 때 `vars`가 새 값으로 평가되는지. F6c2 RED 전에 메인이 GitHub 문서·시험 run으로 확인한다.
-- 대안: helper에서 막는 안은 F6b 고정 계약을 바꾸므로 지금은 택하지 않는다.
+#### 7.3 workflow 구조 시험 (Q3, 메인 결정)
 
-#### 7.3 workflow 구조 시험 (RED/GREEN 소유 — 정확 범위는 메인이 검토 뒤 고정)
-
-- **RED:** 신규 `tests/test_deploy_workflow.py`(TEST_PATTERNS 안)가 `deploy.yml`·`app-validation.yml`을 파싱해 위 표를 단언한다.
-  - 트리거, workflow·job 권한 집합, `if` 조건, `needs` 집합, `environment`.
-  - secret 참조 위치: SSH secret은 `deploy-dev-app`·`deploy`에만 있다.
-  - `deploy-dev-app`에 checkout·`npm`·`node`·`docker build`가 없다.
-  - `build-dev-app`에서 token을 쓰는 단계 이후 저장소 코드 실행이 없다.
-  - action은 고정 commit 두 개뿐이고 `workflow_dispatch`·`pull_request_target`이 없다.
-  - production `deploy` job은 `if` 외에는 이전과 같다.
+- **RED:** 신규 `app/tests/deploy-workflow.test.mjs` 파일 하나만(node:test).
+  - app lock에 이미 있는 `js-yaml`(4.3.2, `@eslint/eslintrc`의 dev 의존, 경로 `app/node_modules/js-yaml`, ESM export `dist/js-yaml.mjs`)으로 `deploy.yml`·`app-validation.yml`(·Q2 조건에 따라 `app-image-validation.yml`)을 파싱한다.
+  - js-yaml 4는 YAML 1.2라서 `on:` 키를 문자열로 읽는다.
+  - **새 dependency는 없다.** `js-yaml`을 못 불러오면 실패한다(skip 없음).
+  - 기존 root stdlib 시험(`unittest discover`)에 PyYAML import를 넣지 않는다. 전역 패키지가 있다고 가정하지 않는다.
+- **단언:**
+  - 트리거, workflow·job 권한 집합, `if`, `needs` 집합, `environment`.
+  - SSH secret은 `deploy-dev-app`·`deploy`에만 있다.
+  - token 참조는 게시 job의 login 단계 env에만 있다.
+  - `deploy-dev-app`에 checkout·npm·node·docker build가 없다.
+  - `workflow-contracts`·`build-dev-app`의 checkout은 `persist-credentials: false`다.
+  - action은 기존 고정 commit만이다. `workflow_dispatch`·`pull_request_target`이 없다.
+  - production `deploy`는 F6c2의 `if` 외에는 이전과 같고 `needs: validate`다.
   - `app-validation`에는 `workflow_call`(secrets 없음)이 있고, push branch는 F6c1에서 `[dev, main]`, F6c2에서 `[main]`이다.
-- **파서 [메인 결정 Q3]:** 표준 라이브러리에는 YAML 파서가 없다.
-  - Cloud에는 PyYAML 6.0.3이 있다. GitHub runner의 시스템 python에 있는지는 [미확인]이다.
-  - 후보는 둘이다. (a) PyYAML이 없으면 실패하는 시험(skip 없음)과 runner 존재 확인. (b) app lock에 있는 `js-yaml`을 쓰는 Node 시험. 다만 `js-yaml`은 transitive dev 의존이라 고정 근거가 약하다.
-  - 새 dependency는 추가하지 않는다.
-- **GREEN:** F6c1은 `deploy.yml`(+Q2면 `app-image-validation.yml`)이고, F6c2는 `deploy.yml`·`app-validation.yml`이다. 구현은 실제 CI run(F6c1 게시 1회, F6c2는 dev 전환 run)으로 확인한다.
+  - migration gate의 정규식·비교가 SSH 단계보다 앞에 있다.
+- **GREEN:** F6c1은 `deploy.yml`(+Q2 조건 충족 시 `app-image-validation.yml`), F6c2는 `deploy.yml`·`app-validation.yml`. 구현은 실제 CI run으로 확인한다.
+- 이 계획 작업은 병행 중인 S3b UI 작업을 막지 않는다(파일 겹침 없음).
 
 ## 8. 게시 기준
 
@@ -434,11 +452,11 @@ API gate는 path filter 때문에 "run 없음"의 의미를 정할 수 없어 �
 | 단계 | 내용 | 완료 판정 |
 |---|---|---|
 | 0 | F6a1(PR58)·F6b GREEN 통합 | 각 독립 검토 수락 |
-| 1 | **F6c1 병합** → 첫 dev push가 `dev-<sha>` 이미지를 게시한다. 정적 dev 배포는 그대로다 | run summary의 manifest·config digest. 같은 SHA의 `app-validation` push run 성공을 메인이 확인 |
+| 1 | **F6c1 병합** → 첫 dev push가 `dev-<sha>` 이미지를 게시한다(§7.1 4의 필수 검사 통과 뒤). 정적 dev 배포는 그대로다 | run summary의 manifest·config digest. 같은 SHA의 `app-validation` push run 성공을 메인이 확인 |
 | 2 | 저장소 소유자가 패키지 1개를 **public**으로 바꾼다. 현재 인증으로 할 수 없으면 그 항목만 사용자에게 요청한다 | 서버에서 빈 `DOCKER_CONFIG`로 `docker pull <repo>@<digest>` 익명 성공(PAT·서버 registry 자격 없음) |
-| 3 | 아래 9-B 1~7(DB·migration·env·helper 설치·네트워크) | 9-B 각 항목 |
+| 3 | 아래 9-B 1~7(DB·migration·env·helper 설치·네트워크). migration 뒤 저장소 변수 `POD_DEV_APPROVED_MIGRATIONS`를 그 latest로 만든다 | 9-B 각 항목, 변수 = 적용 버전 |
 | 4 | OAuth dev 클라이언트 준비(사용자 콘솔, 값은 서버 env 파일로만). S2(B4) 통합 | §6.3 env 검사 통과, `/login` route 존재(§6.7 8단계) |
-| 5 | **F6c2 병합** → 다음 dev push에서 같은 SHA의 `validate`+`app-checks`+게시 job이 성공하면 `deploy-app` | §6.7 자동 검증 + §8 서버 게시 확인 |
+| 5 | **F6c2 병합** → 다음 dev push에서 같은 SHA의 `validate`+`workflow-contracts`+`app-checks`+게시 job이 성공하고 migration gate를 통과하면 `deploy-app` | §6.7 자동 검증 + §8 서버 게시 확인 |
 
 - 1~4 동안 dev는 정적이다. 게시만 하고 활성화하지 않으므로 운영·dev 사용자 영향이 없다.
 - F6c2를 되돌리면 dev는 다시 정적 push 배포가 된다. 그 전에 `revert-static dev`를 먼저 실행한다(§10).
@@ -451,7 +469,7 @@ API gate는 path filter 때문에 "run 없음"의 의미를 정할 수 없어 �
    ```
    docker run --rm --read-only --user ‹deploy_uid›:‹deploy_gid› --cap-drop ALL --security-opt no-new-privileges --network ‹db_network› -v ‹migrator_env_file›:/run/secrets/migrator.env:ro <image@digest> node --env-file=/run/secrets/migrator.env src/server/db/migrate-cli.ts status
    ```
-   그다음 `up`, 다시 `status`. 적용 버전이 이미지 라벨 `pod.migrations.latest`와 같아야 배포한다. 공유 호스트에서 npm·source를 실행하지 않는다. F6c2 뒤 새 migration은 §7.2 Q1을 따른다.
+   그다음 `up`, 다시 `status`. 적용 버전이 이미지 라벨 `pod.migrations.latest`와 같아야 배포한다. 공유 호스트에서 npm·source를 실행하지 않는다. F6c2 뒤 새 migration은 §7.2 migration 승인 gate를 따른다(변수 갱신 → 같은 tree의 새 dev push).
 3. `‹app_env_file›` 작성(0600, §6.3 규칙). 값은 채팅·Cloud·저장소에 남기지 않는다.
 4. egress 범위, 서버 아키텍처, nginx·node·dockerfile frontend digest 고정값을 확인한다.
 5. 서버 docker daemon이 `ghcr.io`에 익명 pull할 수 있는지 확인한다(9-A 2).
@@ -477,8 +495,8 @@ API gate는 path filter 때문에 "run 없음"의 의미를 정할 수 없어 �
 | **F6a1 앱 이미지** | RED: `app/tests/unit/runtime-health.test.ts`·`app/tests/unit/db-pool.test.ts`·`app/tests/image-contract.test.mjs`(실제 이미지 검사). GREEN: `app/Dockerfile`, `app/.dockerignore`, `app/runtime-startup.mjs`, `app/next.config.ts`(`output` 1줄), `app/src/server/db/pool.ts`(Pool 옵션), `app/src/app/healthz/route.ts`, `app/src/app/healthz/ready/route.ts`, `.github/workflows/app-image-validation.yml`(`app-image` job 1~6단계) | 없음 | S1·S2·S3·F6b |
 | **F6a2 프록시 조합** | §8의 프런트+앱 E2E 시험·app-image job 확장. 정확 시험 파일은 S2/F6b 통합 SHA의 helper 상수를 읽고 RED 전에 main이 고정 | S2·F6b·F6a1 통합 | S3b |
 | **F6b helper** | RED: `tests/test_deploy_app.py`·`app/tests/deploy-env-parity.test.mjs`. GREEN: `scripts/ops/deploy.py`(기존 static·production 동작 불변, §6.5 거부 추가)·`.github/workflows/deploy-app-validation.yml`(Node env 대조 전용) | 없음 | F6a |
-| **F6c1 게시만** | RED: `tests/test_deploy_workflow.py`(§7.3, 파서 Q3). GREEN: `.github/workflows/deploy.yml`(`build-dev-app` 추가, 기존 job 불변)·(Q2) `.github/workflows/app-image-validation.yml` dev push 제거 | F6a1 통합 | F6b·S2 |
-| **F6c2 dev 앱 전환** | RED: 같은 시험 파일의 F6c2 사례. GREEN: `.github/workflows/deploy.yml`(`app-checks`·`deploy-dev-app`, 정적 `deploy`는 main만)·`.github/workflows/app-validation.yml`(`workflow_call`, push `[main]`). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6c1 게시 1회, §9-A 2~4, F6a2·F6b·S2 통합, Q1 결정 | — |
+| **F6c1 게시만** | RED: `app/tests/deploy-workflow.test.mjs`(§7.3, app lock의 `js-yaml`). GREEN: `.github/workflows/deploy.yml`(`workflow-contracts`·`build-dev-app` 추가, 기존 job 불변)·(Q2 조건 충족 시) `.github/workflows/app-image-validation.yml` dev push 제거 | F6a1 통합(F6a2가 있으면 그 조합 검사 포함) | F6b·S2·S3b |
+| **F6c2 dev 앱 전환** | RED: 같은 시험 파일의 F6c2 사례. GREEN: `.github/workflows/deploy.yml`(`app-checks`·`deploy-dev-app`, 정적 `deploy`는 main만)·`.github/workflows/app-validation.yml`(`workflow_call`, push `[main]`). `docker-compose.dev.yml`은 그대로(앱 compose는 helper 템플릿) | F6c1 게시 1회, §9-A 2~4, F6a2·F6b·S2 통합, `POD_DEV_APPROVED_MIGRATIONS` 설정 | — |
 | **G2** | — | F6c2, S2(B4) 통합, B5 Google, 사용자 콘솔 | — |
 
 - 상태 문서 갱신 대상은 `README.md`·`app/README.md`·`deploy/README.md`·`CHANGELOG.md`·관련 계획이다. 통합 단계에서 메인·문서 담당이 한다.
@@ -536,11 +554,11 @@ API gate는 path filter 때문에 "run 없음"의 의미를 정할 수 없어 �
 | 문서만 바뀐 push·concurrency 상호 취소 | `deploy.yml`은 path filter가 없어 항상 판정된다. dev push 독립 트리거를 같은 PR에서 없애 group 충돌을 없앤다 | §7.2 |
 | 권한 | `packages: write`는 게시 job 하나에만 있고 PR·production에는 0이다. token을 쓰는 단계에서는 저장소 코드를 실행하지 않는다 | §7.1 |
 
-**메인 결정 요청**
-- **Q1:** migration이 있는 후속 push의 배포 차단 방식(저장소 변수 권장, 재실행 시 `vars` 평가 [미확인]).
-- **Q2:** F6c1에서 `app-image-validation.yml` dev push 제거.
-- **Q3:** 구조 시험의 YAML 파서.
-- **Q4:** `preview-validation.yml`(`/try/` E2E)을 같은 SHA gate에 넣을지. 지금의 정적 dev 배포도 이것을 기다리지 않으므로 기본값은 F6a2 조합 E2E에서 다룬다.
+**메인 결정(2026-11-05) 반영**
+- **Q1:** 저장소 변수 `POD_DEV_APPROVED_MIGRATIONS`(엄격한 양의 정수, 미설정·오류면 SSH 전 실패, 이미지 latest가 더 크면 차단). 표준 절차는 변수를 올린 뒤 같은 tree의 새 dev push다. 실패 job 재실행은 동작이 증명된 뒤에만 쓴다. 추가 Actions API 권한은 없다(§7.2).
+- **Q2·Q4:** 게시 job은 F6a1의 6건, F6a2의 실제 front+app 프록시·보존 사례, 변경 없는 preview 10건(nginx 경유)을 같은 SHA·같은 로컬 artifact로 registry login 전에 실행한다. `app-image-validation`의 dev push 제거는 이 명령을 모두 실행할 때만 한다. `preview-validation`은 따로 호출하지 않는다(§7.1).
+- **Q3:** `app/tests/deploy-workflow.test.mjs` + app lock `js-yaml` 4.3.2(새 dependency 없음). 그리고 `deploy.yml`에 `workflow-contracts` job을 둔다(contents read, secret·packages 0). 게시 job은 이를 `needs`에 넣는다. 정적 production `deploy`는 `needs: validate` 그대로다(§7.0·§7.3).
+- **권한 정정:** 게시 job은 저장소 코드와 `packages: write` token을 같은 job에 둔다. 순서만으로 격리된다고 주장하지 않는다. 대신 token은 login 단계 env에만 명시하고, `persist-credentials: false`, logout·설정 삭제, 같은 artifact digest 대조를 한다. 배포 SSH secret은 이 job에 없다(§7.1).
 
 **이 초안이 하지 않은 것**
 - workflow·helper·시험·제품 변경.
