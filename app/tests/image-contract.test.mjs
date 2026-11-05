@@ -5,6 +5,7 @@
 //   POD_FULL_CHECK_ISOLATED=1                 격리 Cloud·CI 전용 표시(공유 서버에서 실행하지 않는다)
 //   POD_IMAGE_TEST_IMAGE                      시험할 이미지: 로컬 image ID `sha256:<64 hex>` 또는 CI 전용 tag `pod-app-ci:<[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}>`
 //   POD_IMAGE_TEST_NETWORK                    CI 서비스 컨테이너 전용 Docker network ID(12~64 hex). 이름(host·bridge·none·edge 등)은 받지 않는다.
+//                                             CI는 job.services.postgres.network 값을 `docker network inspect --format {{.Id}}`로 ID로 바꿔 전달한다.
 //                                             inspect한 이름이 `github_network_<hex>`(Actions 서비스 network)이고 driver가 bridge여야 한다.
 //   POD_IMAGE_TEST_DB_HOST                    그 network 안에서 PG18 서비스의 alias(예: CI services 키 이름). 포트는 서비스 내부 5432 고정.
 //   POD_TEST_DB_DISPOSABLE=1, POD_TEST_ADMIN_URL   기존 일회용 PG18 harness 그대로(loopback 관리자 URL guard 유지).
@@ -375,7 +376,7 @@ test("the helper command form with an env file of ordinary keys starts the serve
 test("same image on PG18: the fixed migrate CLI runs status/up with the migrator env file up to the latest migration, then /healthz/ready is 200 with the app role and writes nothing", { timeout: CASE_TIMEOUT }, async () => {
   const ctx = requireInputs();
   const { network, dbHost, env } = requireDbInputs();
-  secrets.add(env.adminUrl);
+  rememberUrl(env.adminUrl);
   const tmp = mkdtempSync(path.join(tmpdir(), "pod-f6a1-"));
   chmodSync(tmp, 0o700);
   try {
