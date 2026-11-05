@@ -24,7 +24,7 @@
 
 1. `loadAuthConfig(process.env, process.env.NODE_ENV)`. 오류는 `unavailable`이며 mutation은 없다.
 2. `(await headers()).get("origin")`을 기존 `assertSameOrigin(cfg.session, origin)`으로 검사한다. 누락·`null`·불일치는 `forbidden`, viewer/DB 호출·쓰기 0이다. Next의 내장 Origin/Host 대조도 유지하고 `allowedOrigins` 우회는 추가하지 않는다.
-3. 매 호출 `getViewer()`를 확인한다. `user`만 허용하고 `fixture`·`signed_out`은 `not_signed_in`, `unavailable`은 `unavailable`이다. viewer/config 예외도 fail closed이며 원문을 노출하지 않는다.
+3. 매 호출 `getViewer()`를 확인한다. `user`만 허용하고 `fixture`·`signed_out`은 `not_signed_in`, `unavailable`은 `unavailable`이다. viewer/config/headers 예외도 `unavailable`로 fail closed이며 원문을 노출하지 않는다. 실제 fixture env는 앞의 config 미설정·충돌에서 `unavailable`이 된다. viewer `fixture` 분기는 단위 seam의 방어 사례다. 시험은 액션 호출마다 요청 번호를 늘려 새 POST 요청을 모델링한다. 같은 요청 안의 React cache memo를 인증 재검사 실패로 세지 않는다.
 4. 검증된 viewer의 userId만 기존 `createPgDiaryStore(getAppDb())`·`setFontKey(getAppDb(), userId, key)`에 전달한다. 외부 userId 인자는 없고 여분 인자·헤더·다른 쿠키가 권한이 되지 않는다.
 5. 문자열이 아닌 id는 `not_found`, 잘못된 버전은 `invalid_version`, 날짜/본문 타입은 `invalid_date`/`invalid_body`로 거부한다. 그 밖의 UUID·trim·코드포인트 300·버전/소유권 검증과 오류는 기존 F3에 위임한다. 입력 거부 시 mutation SQL 0이다. `getAppDb()`는 Pool 획득이며 검증 전 쿼리를 추가하지 않는다.
 6. DB/연결 오류는 `unavailable`. 성공/도메인 오류는 그대로 돌려준다. 새 로그인 지급·탈퇴·복구·재시도는 호출하지 않는다.
@@ -32,7 +32,8 @@
 ## 2. 날짜·갱신·화면 오류
 
 - 새 조각은 기존 F3의 서버 now와 `Asia/Seoul` 오늘에만 생성한다. 요청에서 날짜를 받지 않는다. 기존 조각은 과거 날도 수정/삭제할 수 있고 원래 날짜·시각은 유지된다.
-- 하루 한 줄은 기존 F3처럼 유효한 날짜를 받는다(과거 포함). 생성 null·기대 버전 수정·빈 본문 삭제를 유지하며 새 날짜 제한을 임의 추가하지 않는다.
+- 하루 한 줄은 기존 F3처럼 유효한 날짜를 받는다(과거·오늘 포함, 서울 오늘 이후는 `invalid_date`). 생성 null·기대 버전 수정·빈 본문 삭제를 유지하며 새 날짜 제한을 임의 추가하지 않는다.
+- int4를 초과해도 양의 안전 정수인 기대 버전은 기존 F3의 bigint 비교로 처리한다. 존재하는 본인 기록이면 `conflict`, 없거나 타인 소유면 `not_found`이며 `invalid_version`으로 바꾸지 않는다.
 - S3a는 캐시 갱신을 호출하지 않는다. 아직 UI에 연결하지 않아 HTTP/화면 동작을 완료로 세지 않는다. S3b의 성공 응답 뒤 client `router.refresh()`로 보호된 dynamic page/layout을 다시 읽고, 새 id·버전을 반영한다. DB 성공 뒤 캐시 갱신 실패를 DB 실패로 바꾸거나 mutation을 자동 재호출하지 않는다.
 - S3b에서 `forbidden`은 다시 열어 시도 안내, `not_signed_in`은 로그인 안내, `unavailable`은 초안 보존·재시도 안내, `conflict`는 다른 곳에서 변경됨·다시 불러오기, `not_found`는 삭제/접근 불가, 입력 오류는 해당 필드 오류로 표시한다. 성공 전 저장 성공을 표시하지 않는다.
 

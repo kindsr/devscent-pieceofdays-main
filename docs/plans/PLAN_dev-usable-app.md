@@ -23,7 +23,7 @@
 | 계정 수명주기(L1·L2) | 탈퇴·복구·활성 확인 함수 | `account/lifecycle.ts` |
 | 인증(B1·B2) | 설정·쿠키 codec, OIDC 어댑터, 처리 함수 5개(`handleStart`·`handleCallback`·`handleLogout`·`handleWithdraw`·`handleRestore`) | `server/auth/*`. **HTTP route가 없어 시험에서만 호출된다** |
 | 요청별 viewer·DAL(B3) | `getViewer()`가 세션 쿠키 → `verifyActiveAccount`로 `user`/`signed_out`/`unavailable` 판정. `getDiaryContext()`는 실제 계정에 `signed_in`(저장소 없음)을 준다 | `app/src/server/context.ts` |
-| 로그인 화면·route | **없다.** `signed_out`이면 `/`가 `/login`으로 보내지만 `/login` page가 없다 | `app/src/app/` 목록: `days`·`dev`·`settings`·`page.tsx`·`layout.tsx` |
+| 로그인 화면·route | **없다.** 인증 env가 설정돼 `signed_out`이면 `/`가 `/login`으로 보내지만 `/login` page가 없다. env가 없으면 `unavailable` 안내를 보인다 | `app/src/app/` 목록: `days`·`dev`·`settings`·`page.tsx`·`layout.tsx` |
 | 기록 화면의 서버 저장 | **없다.** `DayBoard`는 화면 메모리만 바꾸고 저장됐다고 하지 않는다. 로그인 사용자는 "기록 연결 전" 안내만 본다 | `ui/d/DayBoard.tsx`, `app/page.tsx` |
 | 설정의 글꼴 저장·계정 영역 | **없다.** 글꼴은 화면 메모리만, 로그아웃·탈퇴 UI 없음 | `app/settings/page.tsx` |
 | 서비스 DB·OAuth 자격·Next 이미지·purge 실행 | **없다**(F6) | foundation §7 |
@@ -109,7 +109,7 @@ S0 현황안내는 위 준비와 병행하며 어느 기능의 선행 조건도 
 | 항목 | 필요 | 비고 |
 |---|---|---|
 | Next 이미지 | Node 런타임 이미지(Next standalone 출력 등). `next.config.ts`에 출력 설정 추가는 코드 slice(F6-dev 앱 부분) | `--network=none` 빌드에서는 `npm ci`가 안 되므로, 의존성 포함 빌드 방식(사전 빌드 이미지 또는 허용된 레지스트리 접근)을 메인이 정한다 [미확인] |
-| 정적 경로 유지 | 기존 nginx frontend를 앞에 유지해 `/try/`·`/design/`·`/promo/`·추가 시 `/status/`를 동일한 디렉터리 index·상대경로로 제공한다. `/`·인증·계정·Next 자산은 별도 Next 컨테이너로 프록시한다 | Next public에 복사하는 것만으로 디렉터리 index를 보장하지 않는다. Next 이미지 전환 뒤에도 nginx 경유 preview E2E10·기존 localStorage 새로고침을 게시 조건으로 확인한다 |
+| 정적 경로 유지 | 기존 nginx frontend를 앞에 유지해 `/try/`·`/design/`·`/promo/`·추가 시 `/status/`를 동일한 디렉터리 index·상대경로로 제공한다. `/`·인증·계정·Next 자산은 별도 Next 컨테이너로 프록시한다. 이 nginx 설정은 별도 dev-app 모드 소유다. Next 로그인 화면과 설정에 `/try/` 링크를 둔다 | Next public에 복사하는 것만으로 디렉터리 index를 보장하지 않는다. Next 이미지 전환 뒤에도 nginx 경유 preview E2E10·기존 localStorage 새로고침을 게시 조건으로 확인한다 |
 | env 주입 | `POD_AUTH_SESSION_SECRETS`·`POD_AUTH_BASE_URL`·`POD_AUTH_PROVIDERS`·`POD_AUTH_GOOGLE_CLIENT_ID/SECRET`·`POD_DATABASE_URL`을 저장소 밖 런타임 파일에서 주입 | 현재 허용 목록에 없음 → 설치본 개정 |
 | DB 네트워크 | 앱 컨테이너 → dev 전용 PG18만 | 다른 서비스 DB 접근 없음 |
 | 포트·health | Next 포트와 health 방식 결정(예: 내부 포트 + DB 없이 200을 주는 경량 health 경로) | 현재 고정 `:80/` → 개정 필요 [미확인] |
