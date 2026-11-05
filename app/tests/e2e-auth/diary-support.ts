@@ -27,6 +27,7 @@ export const DIARY_TEXT = {
   serverLatest: "서버의 최신 글",
   notFound: "기록을 찾을 수 없어요. 다시 불러와 주세요.",
   unavailable: "저장을 확인하지 못했어요. 쓰던 글은 그대로 두었어요. 다시 불러와 확인해 주세요.",
+  notSignedIn: "다시 로그인해 주세요. 쓰던 글은 그대로 두었어요.",
   reload: "다시 불러오기",
   readFailed: "기록을 불러오지 못했어요",
   readFailedBody: "잠시 뒤 다시 열어 주세요.",
@@ -181,6 +182,7 @@ export async function withRevokedSelect<T>(tables: readonly string[], fn: () => 
 
 export type ActionCall = { url: string; headers: Record<string, string>; body: string };
 type Behavior = "pass" | "hold" | "abort-before" | "lose-response";
+const REACHED_TIMEOUT_MS = 15_000;
 type Pending = { behavior: Behavior; gate?: Promise<void>; release?: () => void; reached: () => void; reachedP: Promise<void> };
 
 export type ActionTap = {
@@ -223,14 +225,33 @@ export async function tapActions(page: Page): Promise<ActionTap> {
   return {
     calls,
     next(behavior) {
+      // reached는 15초 상한이 있다: 화면이 action을 보내지 않으면 고정 진단으로 실패한다(무기한 대기 없음).
       let reached!: () => void;
-      const reachedP = new Promise<void>((r) => (reached = r));
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const reachedP = new Promise<void>((resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`[e2e-diary] action POST not observed within ${REACHED_TIMEOUT_MS / 1000}s`)), REACHED_TIMEOUT_MS);
+        timer.unref?.();
+        reached = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+      // 시험이 다른 단언에서 먼저 실패해 reached를 기다리지 않은 경우의 미처리 거부를 막는다(기다린 쪽에는 그대로 거부된다).
+      reachedP.catch(() => undefined);
       let release: () => void = () => undefined;
       const gate = behavior === "hold" ? new Promise<void>((r) => (release = r)) : undefined;
       queue.push({ behavior, gate, release, reached, reachedP });
       return { reached: reachedP, release: () => release() };
     },
-    dispose: () => page.unroute(matcher, handler),
+    // 닫힌 page에서는 정리 오류로 원래 실패를 가리지 않는다.
+    dispose: async () => {
+      if (page.isClosed()) return;
+      try {
+        await page.unroute(matcher, handler);
+      } catch (err) {
+        if (!page.isClosed()) throw err;
+      }
+    },
   };
 }
 

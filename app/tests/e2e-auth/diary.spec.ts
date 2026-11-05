@@ -243,6 +243,29 @@ test("one-line summary: writable with 0 pieces, empty text deletes, a past day w
   await page.getByRole("button", { name: "저장" }).click();
   await expect(page.getByText("다시 쓴 한 줄", { exact: true })).toBeVisible();
 
+  // 코드포인트 경계: 301 emoji는 잘리지 않고 거부되며 저장된 한 줄은 그대로, 300 emoji는 저장된다.
+  await page.getByRole("button", { name: "고쳐 쓰기" }).click();
+  const emoji301 = "😀".repeat(301);
+  await page.getByRole("textbox").fill(emoji301);
+  await expect(page.getByRole("textbox"), "not truncated by UTF-16 length").toHaveValue(emoji301);
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(page.getByText(DIARY_TEXT.tooLong, { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox"), "rejected text stays for editing").toHaveValue(emoji301);
+  expect(await summariesOf(a.userId), "301 code points write nothing").toEqual([{ localDate: today, body: "다시 쓴 한 줄", version: 1 }]);
+  const emoji300 = "😀".repeat(300);
+  await page.getByRole("textbox").fill(emoji300);
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(page.getByText(emoji300, { exact: true })).toBeVisible();
+  expect(await summariesOf(a.userId), "300 code points saved").toEqual([{ localDate: today, body: emoji300, version: 2 }]);
+
+  // 자료가 없는 과거 날에는 그날 한 줄을 새로 쓰는 진입점이 없다(상단 오늘 조각 추가는 그대로).
+  await page.goto(`/days/${addDays(today, -2)}`);
+  await expect(page.getByRole("heading", { level: 1, name: "모아보기", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "한 줄 쓰기" }), "no summary entry for an empty past day").toHaveCount(0);
+  await expect(page.getByRole("textbox")).toHaveCount(0);
+  await expect(topAdd(page), "global add for today stays").toBeVisible();
+  await page.goto("/");
+
   await createPiece(page, tap, "어제가 될 조각");
   await moveMomentToPreviousDay((await momentsOf(a.userId))[0]!.id);
   await page.goto("/days");
@@ -251,7 +274,7 @@ test("one-line summary: writable with 0 pieces, empty text deletes, a past day w
 
   await page.getByRole("link", { name: `${dateLabel(today)} 하루 한 줄`, exact: true }).click();
   await expect(page).toHaveURL(`${AUTH_BASE}/days/${today}`);
-  await expect(page.getByText("다시 쓴 한 줄", { exact: true })).toBeVisible();
+  await expect(page.getByText(emoji300, { exact: true })).toBeVisible();
 
   await page.goto(`/days/${yesterday}`);
   await page.getByRole("button", { name: "한 줄 쓰기" }).click();
@@ -260,7 +283,7 @@ test("one-line summary: writable with 0 pieces, empty text deletes, a past day w
   await expect(page.getByText(DIARY_TEXT.summarySaved, { exact: true })).toBeAttached();
   expect(await summariesOf(a.userId)).toEqual([
     { localDate: yesterday, body: "어제의 한 줄", version: 1 },
-    { localDate: today, body: "다시 쓴 한 줄", version: 1 },
+    { localDate: today, body: emoji300, version: 2 },
   ]);
   await page.goto("/days");
   await expect(page.getByRole("link", { name: `${dateLabel(yesterday)}, 조각 1개`, exact: true })).toBeVisible();
@@ -361,6 +384,25 @@ test("transport: aborted before the server → 0 rows; response lost after commi
   await expect(item(page, "응답만 끊긴 조각")).toHaveCount(1);
   await expect(memo(page), "draft kept for the user to decide").toHaveValue("응답만 끊긴 조각");
   expect(tap.calls.length).toBe(2);
+});
+
+// ================================================================= 쓰는 중 세션 만료
+
+test("session lost while composing: the save is refused as not signed in with a login link, the draft stays and nothing is written", async ({ page }) => {
+  const a = await signIn(page);
+  const tap = await tapActions(page);
+  await openComposer(page);
+  await memo(page).fill("세션이 끊긴 뒤의 초안");
+  await page.context().clearCookies(); // 브라우저 세션 쿠키만 지운다(제품·DB는 그대로)
+  await composer(page).getByRole("button", { name: "저장" }).click();
+  await expect(page.getByText(DIARY_TEXT.notSignedIn, { exact: true })).toBeVisible();
+  const loginLink = page.getByRole("link", { name: /로그인/ });
+  await expect(loginLink.first()).toBeVisible();
+  expect(await loginLink.first().getAttribute("href"), "link to the login page").toMatch(/^\/login(\?|$)/);
+  await expect(memo(page), "draft kept").toHaveValue("세션이 끊긴 뒤의 초안");
+  await expect(page.getByText(DIARY_TEXT.created, { exact: true })).toHaveCount(0);
+  expect(tap.calls.length, "one refused action, no retry").toBe(1);
+  expect(await momentsOf(a.userId), "nothing written").toEqual([]);
 });
 
 // ================================================================= 계정 분리·Origin
