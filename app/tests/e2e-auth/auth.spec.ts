@@ -16,6 +16,7 @@ import {
   expectLayoutOk,
   holdStart,
   login,
+  observeAuthForms,
   newSubject,
   providerButton,
   sha256,
@@ -324,15 +325,28 @@ for (const w of WIDTHS) {
     await expect(g, "reached by Tab").toBeFocused();
     const outline = await g.evaluate((e) => getComputedStyle(e).outlineStyle);
     expect(outline, "visible focus ring").not.toBe("none");
+    // 제출 뒤에는 navigation(붙잡힌 start POST)이 끝나지 않으므로 locator·evaluate를 쓰지 않는다:
+    // 페이지 안 관찰 보고와 keyboard·mouse 입력만 쓴다(미리 잰 Kakao 좌표).
+    const kakaoBox = await providerButton(page, "kakao").boundingBox();
+    expect(kakaoBox, "Kakao button measured before submitting").not.toBeNull();
+    const observed = await observeAuthForms(page);
+    const labels = { google: PROVIDER_BUTTON.google.name, kakao: PROVIDER_BUTTON.kakao.name };
+    const before = await observed.waitFor((s) => s.buttons.length === 2, "initial provider state");
+    expect(before.buttons.map((b) => [b.provider, b.label]), "labels before submitting").toEqual([["google", labels.google], ["kakao", labels.kakao]]);
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("status").filter({ hasText: TEXT.moving })).toBeVisible();
-    await expect(providerButton(page, "google"), "provider label unchanged while moving").toBeVisible();
-    const state = await g.evaluate((e) => [e.getAttribute("aria-disabled"), (e as HTMLButtonElement).disabled]);
-    expect(state[0] === "true" || state[1] === true, "button marked busy").toBe(true);
+    const moving = await observed.waitFor((s) => s.status.some((x) => x.text === TEXT.moving && x.visible), "visible 이동 중… status");
+    expect(moving.buttons.map((b) => [b.provider, b.label]), "provider labels unchanged while moving").toEqual([["google", labels.google], ["kakao", labels.kakao]]);
+    expect(moving.buttons.map((b) => [b.provider, b.visible]), "both provider buttons stay visible while moving").toEqual([["google", true], ["kakao", true]]);
+    const google = moving.buttons.find((b) => b.provider === "google");
+    expect(google?.ariaDisabled === "true" || google?.disabled === true, "button marked busy").toBe(true);
     await page.keyboard.press("Enter");
-    await providerButton(page, "kakao").dispatchEvent("click");
-    await page.waitForTimeout(500);
+    await page.mouse.click(kakaoBox!.x + kakaoBox!.width / 2, kakaoBox!.y + kakaoBox!.height / 2);
+    await new Promise((r) => setTimeout(r, 500));
     expect(held.count(), "only one start POST").toBe(1);
+    const after = observed.last();
+    expect(after?.buttons.map((b) => [b.provider, b.label]), "labels still unchanged after the second attempts").toEqual([["google", labels.google], ["kakao", labels.kakao]]);
+    expect(after?.status.some((x) => x.text === TEXT.moving && x.visible), "still moving").toBe(true);
+    expect(after?.buttons.map((b) => [b.provider, b.visible]), "both provider buttons still visible after the second attempts").toEqual([["google", true], ["kakao", true]]);
     held.release();
     const { callback } = await held.result();
     await held.dispose();
