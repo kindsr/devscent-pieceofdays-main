@@ -16,7 +16,6 @@
     purge_due: { text: "복구 기간이 지나 이 계정을 되돌릴 수 없어요." },
     signed_out: { text: "로그아웃했어요" },
     withdrawn: { text: "탈퇴를 요청했어요. 30일 안에 다시 로그인하면 복구할 수 있어요." },
-    recovery_expired: { text: "확인 시간이 지났어요. 다시 로그인하면 복구할 수 있어요." },
   };
 
   function h(tag, props) {
@@ -130,7 +129,16 @@
         h("h2", { id: "rs-h", text: "탈퇴를 요청한 계정이에요. 복구할까요?" }),
         h("div", { class: "row" },
           h("button", { type: "button", class: "btn-main", onclick: function () { go("signed_in"); } }, "복구하기"),
-          h("button", { type: "button", class: "text-btn", onclick: function () { go("login"); } }, "복구하지 않기")))];
+          // 실제 흐름: POST logout → /login?notice=signed_out (PLAN_mvp-oidc-integration §6.3)
+          h("button", { type: "button", class: "text-btn", onclick: function () { go("signed_out"); } }, "복구하지 않기")))];
+  }
+
+  // 복구 증명이 없거나 지났을 때의 /account/restore page(§6.3). 공급자 버튼 없이 로그인 화면 링크만 둔다.
+  function recoveryExpiredView() {
+    return [head("계정 복구"),
+      h("section", { class: "notice", "aria-labelledby": "rx-h" },
+        h("h2", { id: "rx-h", text: "확인 시간이 지났어요. 다시 로그인하면 복구할 수 있어요." }),
+        h("div", { class: "row" }, h("a", { class: "text-btn", href: "#login" }, "로그인 화면으로")))];
   }
 
   // ------------------------------------------------------------ 상태 전환
@@ -149,6 +157,7 @@
     else if (s === "settings") nodes = settingsView();
     else if (s === "withdraw") nodes = withdrawView();
     else if (s === "restore") nodes = restoreView();
+    else if (s === "recovery_expired") nodes = recoveryExpiredView();
     else nodes = loginView(s);
     view.replaceChildren.apply(view, nodes);
     stateSel.value = s;
