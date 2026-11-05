@@ -1,0 +1,52 @@
+/* 시안 D 인증 상태 아트보드(B4-d) — style.css(D 정본)에 더하는 최소 규칙.
+   D 토큰·board-head·notice·settings 구조를 그대로 쓴다. 새 색·그라데이션·장식·애니메이션 없음.
+   예외는 공급자 버튼 내부뿐이다(공식 에셋·규정 색, auth-assets/SOURCES.md). */
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* 앱 안내(app/src/app/globals.css의 .notice와 같은 값) */
+.notice { display: grid; gap: var(--s-1); padding: var(--s-3); border: 2px dashed var(--ink); border-radius: var(--r); background: var(--surface); max-width: 640px; }
+.notice h2 { font-size: 20px; font-weight: 800; }
+.notice p { color: var(--muted); }
+.notice .auth-msg { color: var(--ink); font-weight: 700; }
+.notice.is-error { border-style: solid; border-color: #8E2A12; }
+.notice.is-error .auth-msg { color: #8E2A12; }
+
+/* 아트보드 도구(제품 화면이 아님) */
+.auth-tool {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2);
+  max-width: 1200px; margin: 0 auto; padding: var(--s-1) var(--s-3);
+  font-size: 13px; color: var(--muted); border-bottom: 1px dashed var(--muted);
+}
+.auth-tool-note { font-weight: 700; }
+.auth-tool label { display: inline-flex; align-items: center; gap: 6px; }
+.auth-tool select { font: inherit; min-height: 44px; max-width: 100%; color: var(--ink); background: var(--surface); border: 1px solid var(--muted); border-radius: 6px; }
+
+/* 로그인 화면 */
+.auth-body { display: grid; gap: var(--s-3); max-width: 640px; }
+.auth-providers { display: grid; gap: var(--s-2); justify-items: start; }
+.auth-status { min-height: 1.6em; font-weight: 700; }
+
+/* 공급자 버튼: 내용·색은 공식 에셋·규정 그대로. D는 포커스 외곽선만 더한다. */
+.auth-pbtn { display: block; padding: 0; margin: 0; border: 0; background: none; cursor: pointer; line-height: 0; }
+.auth-pbtn img { display: block; height: 46px; width: auto; max-width: 100%; }
+.auth-kakao { border-radius: 8px; }
+.auth-google-img { border-radius: 4px; }
+.auth-pbtn[aria-disabled="true"] { cursor: progress; }
+/* Google HTML 후보: 규정 Light 값(Fill #FFFFFF · Stroke #747775 1px inside · Font #1F1F1F 14/20), 여백 12 / G 뒤 10 / 12 */
+.auth-google-html {
+  display: inline-flex; align-items: center; gap: 10px; height: 46px; min-width: 224px; padding: 0 12px;
+  background: #FFFFFF; color: #1F1F1F; box-shadow: inset 0 0 0 1px #747775; border-radius: 4px;
+  font-family: "Google Sans", var(--font-ui); font-weight: 500; font-size: 14px; line-height: 20px;
+}
+/* 공식 아이콘 버튼 이미지(40×40 기준, G는 가운데 20×20)를 자르지 않고 창으로만 보여 준다 */
+.auth-g { flex: none; width: 20px; height: 20px; overflow: hidden; }
+.auth-g img { width: 40px; height: 40px; max-width: none; margin: -10px; }
+
+/* 탈퇴 확인 */
+.auth-check { display: flex; align-items: center; gap: var(--s-1); min-height: 44px; font-weight: 700; cursor: pointer; }
+.auth-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+.auth-danger { color: #8E2A12; border-color: #8E2A12; }
+.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+.auth-warn { font-weight: 700; }
+.row a.text-btn { display: inline-flex; align-items: center; }
