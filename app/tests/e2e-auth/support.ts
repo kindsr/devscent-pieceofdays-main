@@ -140,6 +140,54 @@ export async function holdStart(page: Page, opts: AuthorizeOptions = {}, autoRel
   };
 }
 
+export type AuthFormsSnapshot = {
+  status: { text: string; visible: boolean }[];
+  buttons: { provider: string; label: string; ariaDisabled: string | null; disabled: boolean; visible: boolean }[];
+};
+
+/**
+ * 로그인 공급자 form 상태를 페이지 안 MutationObserver가 보고하게 한다(exposeBinding).
+ * 붙잡힌 native form navigation(POST start 응답 대기) 동안 Playwright locator·evaluate는 navigation을 기다리므로,
+ * 제출 뒤 관찰은 이 보고만 쓴다. 제출 전에 설치한다. label은 버튼의 접근성 이름과 같은 방식(img alt + 버튼 글자)으로 만든다.
+ */
+export async function observeAuthForms(page: Page): Promise<{ last(): AuthFormsSnapshot | undefined; waitFor(pred: (s: AuthFormsSnapshot) => boolean, label: string, timeoutMs?: number): Promise<AuthFormsSnapshot> }> {
+  const reports: AuthFormsSnapshot[] = [];
+  await page.exposeBinding("__podAuthFormsReport", (_source, snap: AuthFormsSnapshot) => void reports.push(snap));
+  await page.evaluate(() => {
+    const report = (window as unknown as { __podAuthFormsReport: (s: unknown) => void }).__podAuthFormsReport;
+    const visible = (e: Element) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden" && getComputedStyle(e).display !== "none";
+    const snap = () =>
+      report({
+        status: [...document.querySelectorAll('[role="status"]')].map((e) => ({ text: (e.textContent ?? "").trim(), visible: visible(e) })),
+        buttons: [...document.querySelectorAll<HTMLFormElement>('form[action^="/auth/"][action$="/start"]')].map((f) => {
+          const b = f.querySelector("button");
+          const alt = b?.querySelector("img")?.getAttribute("alt") ?? "";
+          return {
+            provider: /^\/auth\/([a-z]+)\/start$/.exec(f.getAttribute("action") ?? "")?.[1] ?? "",
+            label: `${alt} ${b?.textContent ?? ""}`.replace(/\s+/g, " ").trim(),
+            ariaDisabled: b?.getAttribute("aria-disabled") ?? null,
+            disabled: b?.disabled ?? false,
+            visible: b ? visible(b) : false,
+          };
+        }),
+      });
+    new MutationObserver(snap).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+    snap();
+  });
+  return {
+    last: () => reports[reports.length - 1],
+    async waitFor(pred, label, timeoutMs = 10_000) {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const hit = reports.find(pred);
+        if (hit) return hit;
+        if (Date.now() > deadline) throw new Error(`[e2e-auth] ${label}: not reported within ${timeoutMs}ms (last ${JSON.stringify(reports[reports.length - 1])})`);
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    },
+  };
+}
+
 export const providerButton = (page: Page, p: Provider) => page.getByRole("button", { name: PROVIDER_BUTTON[p].name, exact: true });
 
 /** /login에서 공급자 버튼을 눌러 callback URL을 받는다(아직 callback으로 가지 않는다). */
