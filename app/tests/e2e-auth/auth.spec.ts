@@ -331,11 +331,12 @@ for (const w of WIDTHS) {
     expect(kakaoBox, "Kakao button measured before submitting").not.toBeNull();
     const observed = await observeAuthForms(page);
     const labels = { google: PROVIDER_BUTTON.google.name, kakao: PROVIDER_BUTTON.kakao.name };
-    const before = observed.last();
-    expect(before?.buttons.map((b) => [b.provider, b.label]), "labels before submitting").toEqual([["google", labels.google], ["kakao", labels.kakao]]);
+    const before = await observed.waitFor((s) => s.buttons.length === 2, "initial provider state");
+    expect(before.buttons.map((b) => [b.provider, b.label]), "labels before submitting").toEqual([["google", labels.google], ["kakao", labels.kakao]]);
     await page.keyboard.press("Enter");
     const moving = await observed.waitFor((s) => s.status.some((x) => x.text === TEXT.moving && x.visible), "visible 이동 중… status");
     expect(moving.buttons.map((b) => [b.provider, b.label]), "provider labels unchanged while moving").toEqual([["google", labels.google], ["kakao", labels.kakao]]);
+    expect(moving.buttons.map((b) => [b.provider, b.visible]), "both provider buttons stay visible while moving").toEqual([["google", true], ["kakao", true]]);
     const google = moving.buttons.find((b) => b.provider === "google");
     expect(google?.ariaDisabled === "true" || google?.disabled === true, "button marked busy").toBe(true);
     await page.keyboard.press("Enter");
@@ -345,6 +346,7 @@ for (const w of WIDTHS) {
     const after = observed.last();
     expect(after?.buttons.map((b) => [b.provider, b.label]), "labels still unchanged after the second attempts").toEqual([["google", labels.google], ["kakao", labels.kakao]]);
     expect(after?.status.some((x) => x.text === TEXT.moving && x.visible), "still moving").toBe(true);
+    expect(after?.buttons.map((b) => [b.provider, b.visible]), "both provider buttons still visible after the second attempts").toEqual([["google", true], ["kakao", true]]);
     held.release();
     const { callback } = await held.result();
     await held.dispose();

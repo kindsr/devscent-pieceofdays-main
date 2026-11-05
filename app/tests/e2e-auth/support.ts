@@ -142,7 +142,7 @@ export async function holdStart(page: Page, opts: AuthorizeOptions = {}, autoRel
 
 export type AuthFormsSnapshot = {
   status: { text: string; visible: boolean }[];
-  buttons: { provider: string; label: string; ariaDisabled: string | null; disabled: boolean }[];
+  buttons: { provider: string; label: string; ariaDisabled: string | null; disabled: boolean; visible: boolean }[];
 };
 
 /**
@@ -167,6 +167,7 @@ export async function observeAuthForms(page: Page): Promise<{ last(): AuthFormsS
             label: `${alt} ${b?.textContent ?? ""}`.replace(/\s+/g, " ").trim(),
             ariaDisabled: b?.getAttribute("aria-disabled") ?? null,
             disabled: b?.disabled ?? false,
+            visible: b ? visible(b) : false,
           };
         }),
       });
