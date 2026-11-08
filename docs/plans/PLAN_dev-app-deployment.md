@@ -1,5 +1,7 @@
 # PLAN — F6-dev: 개발 도메인에 Next 앱 배포 (S4) — R4
 
+- **2026-11-08 통합 상태:** PR59 R4의 독립 계획 PASS를 수락했고 C1/C2 트리거 단언을 구분했다. PR60 F6b 소스와 PR65 F6a2 검증을 통합했다. F6a2 exact `03b4182`는 격리 CI에서 같은 불변 이미지 ID의 이미지6·프런트14·원문 preview10 전부를 통과했다. F6c1 구현·실제 이미지 게시·서버 설치/DB·OAuth·C2 전환은 아직 남아 있다. 아래 작성 당시 사실과 현재 구현은 README·해당 PR의 정확 SHA를 함께 대조한다.
+
 - **상태:** R2 계획이다(2026-11-05). R1(`4c3fb8a`) 독립 검토의 P1 2건과 운영 예산·deadline을 메인이 보완했다(§14).
   - **R3 초안(F6c 부트스트랩·같은 SHA 검증):** §7·§9·§11·§15를 고쳤다. F6c를 F6c1(게시만)·F6c2(dev 앱 전환)로 나눈다. R3는 메인 결정 Q1~Q4(2026-11-05)를 반영했다. **R4는 R3 독립 검토(P1 2·P2)를 메인이 수락한 결정을 반영했다(§15.1):** 불변 artifact 연결 알고리즘, F6a2 무조건 선행, C1 완료 판정, dev 앱 배포 전용 concurrency. 재검토 전이며 구현은 없다. F6a1·F6b 고정 계약(§4~§6: 모드·helper·env)은 바꾸지 않았다.
   - 이 문서는 코드·CI·Compose·배포 프로그램·서버를 바꾸지 않았고 권한을 늘리지 않는다.
@@ -340,7 +342,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
    - **(b) F6a2 실제 front+app 조합 검사 전부(무조건):**
      - 실제 프록시 HTTP·개인정보(헤더·no-store·Host 위조) 사례와 `/try/` 기록 보존 사례(§8 조합 E2E)
      - 기존 preview E2E 10건을 **변경 없이** 실제 front(nginx) 경유로 실행
-   - (b)의 정확한 스크립트·config 경로는 F6a2를 고정한 뒤 메인이 정한다. 경로는 나중에 고정하지만 (b) 자체는 선택이 아니다.
+   - (b)의 고정 명령은 app 작업 디렉터리의 `node --test --test-reporter=tap tests/front-contract.test.mjs`다(F6a2 PR65, 2026-11-08 수락). 내부에서 `playwright.front-preview.config.ts`를 써 원문 preview10을 실행한다. F6a1과 같은 `POD_IMAGE_TEST_IMAGE` 불변 ID·일회용 PG18/network 계약을 사용한다. front14/pass14·preview10/pass10·fail/skip/cancel/todo0을 모두 확인한다.
    - 이름 붙은 필수 계약: **"게시 job은 F6a2의 조합 검사 명령을 하나도 빼지 않고 같은 ID로 실행한다."**
    - 시험 뒤 `docker image inspect <ID>`가 여전히 같은 ID를 돌려줘야 한다.
 7. **게시:**

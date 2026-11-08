@@ -20,6 +20,7 @@
 2026-11-08 F6b: [PR60](https://github.com/kindsr/devscent-pieceofdays-main/pull/60)의 dev 앱 전용 `deploy-app`·`revert-static` 소스와 환경 검사 CI를 통합했다. 독립 검토 PASS와 배포 계약 106개·Node 환경 대조 29개 통과를 수락했다. 설치본은 기존 정적 방식이며, 실제 프런트 조합 검증(F6a2)·이미지 게시·전용 DB·OAuth 설정 뒤 메인이 별도로 설치한다. 이 통합으로 현재 dev나 운영이 앱으로 전환되지는 않는다.
 
 - GitHub 정본: `https://github.com/kindsr/devscent-pieceofdays-main.git`(2026-11-02 `kindsr/pieceofdays`에서 이름 변경). 서버 체크아웃 origin과 설치된 배포 프로그램의 `REPOSITORY`도 같은 주소여야 한다.
+  F6a2는 2026-11-08 [PR65](https://github.com/kindsr/devscent-pieceofdays-main/pull/65)의 실제 격리 nginx/Next·콜백 fixture·기록 보존 검사로 통합했다(이미지6·프런트14·원문 preview10, skip0). 서버 설치·실제 외곽 설정 반영·앱 전환은 이 CI와 별도다.
 - GitHub 호스팅 러너만 사용한다. 배포 job은 `dev` 또는 `production` 환경을 선택하며 각 환경은 `dev`·`main` 브랜치에만 허용된다.
 - 접속 정보와 키는 환경별 GitHub Secrets에 둔다. 값은 문서에 적지 않는다. PR 검사에는 배포 키가 없다.
 - 서버 키는 환경별로 분리하고 고정 환경 강제 명령으로 제한한다. 일반 쉘을 제공하지 않는다.
