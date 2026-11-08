@@ -94,7 +94,18 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
-          python3 -c 'import json, os; p=json.load(open(os.environ["RUNNER_TEMP"]+"/pod-build-metadata.json")); print(json.dumps({"metadata_keys": sorted(p)}))' | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, os, sys
+          try:
+              with open(os.environ["RUNNER_TEMP"] + "/pod-build-metadata.json") as source:
+                  metadata = json.load(source)
+              if not isinstance(metadata, dict):
+                  raise ValueError
+          except Exception:
+              sys.stderr.write("verify-image: invalid metadata object\n")
+              sys.exit(1)
+          print(json.dumps({"metadata_keys": sorted(metadata)}))
+          PY
           python3 scripts/ci/verify-image-archive.py archive \
             --metadata "$RUNNER_TEMP/pod-build-metadata.json" --archive "$RUNNER_TEMP/pod-image.tar" \
             --sha "$POD_PROOF_SHA" --tree "$POD_PROOF_TREE" --migrations-latest "$POD_PROOF_MIGRATIONS" \
