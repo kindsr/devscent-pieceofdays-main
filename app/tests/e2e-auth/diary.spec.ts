@@ -255,6 +255,8 @@ test("one-line summary: writable with 0 pieces, empty text deletes, a past day w
   const emoji300 = "😀".repeat(300);
   await page.getByRole("textbox").fill(emoji300);
   await page.getByRole("button", { name: "저장" }).click();
+  await expect(statusWith(page, DIARY_TEXT.summarySaved)).toBeVisible();
+  await expect(page.getByRole("textbox"), "the saved summary form is closed").toHaveCount(0);
   await expect(page.getByText(emoji300, { exact: true })).toBeVisible();
   expect(await summariesOf(a.userId), "300 code points saved").toEqual([{ localDate: today, body: emoji300, version: 2 }]);
 
@@ -413,9 +415,11 @@ test("transport: aborted before the server → 0 rows; response lost after commi
   expect(tap.calls.length, "no automatic retry").toBe(1);
   expect(await momentsOf(a.userId), "server never saw the request").toEqual([]);
   await page.getByRole("button", { name: DIARY_TEXT.reload }).click();
+  await expect(composer(page).getByRole("button", { name: "닫기", exact: true }), "read-only refresh finished before Esc").toBeEnabled();
   await expect(memo(page)).toHaveValue("보내지 못한 조각");
   expect(tap.calls.length, "reload sends no action").toBe(1);
   await page.keyboard.press("Escape");
+  await expect(composer(page), "Esc closes the composer after read-only refresh").toHaveCount(0);
 
   await page.reload();
   const cut = tap.next("lose-response");

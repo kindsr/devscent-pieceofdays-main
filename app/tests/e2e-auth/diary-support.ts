@@ -255,8 +255,9 @@ export async function tapActions(page: Page): Promise<ActionTap> {
   };
 }
 
-/** 붙잡은 action 요청을 같은 브라우저 문맥(쿠키)으로 다시 보낸다. origin: undefined면 Origin 헤더 없이 보낸다. */
-export async function replayAction(page: Page, call: ActionCall, body: string, origin: string | undefined | "keep" = "keep") {
+/** 붙잡은 action 요청을 같은 브라우저 문맥(쿠키)으로 다시 보낸다. 인자 생략은 keep, 명시 undefined는 Origin 누락이다. */
+export async function replayAction(page: Page, call: ActionCall, body: string, ...originArg: [] | [string | undefined]) {
+  const origin = originArg.length === 0 ? "keep" : originArg[0];
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(call.headers)) {
     if (["cookie", "host", "content-length", "origin", "connection"].includes(k.toLowerCase())) continue;
