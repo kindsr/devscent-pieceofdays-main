@@ -319,7 +319,9 @@ function withArchive(options, fn) {
     writeFileSync(metadata, fixture.metadata);
     execFileSync("python3", ["-B", "-c", TAR_WRITER, archive], { input: JSON.stringify(fixture.entries), encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
     const args = ["archive", "--metadata", metadata, "--archive", archive, "--sha", SHA, "--tree", TREE, "--migrations-latest", MIGRATIONS];
-    return fn({ ...fixture, dir, archive, metadataFile: metadata, args });
+    const result = fn({ ...fixture, dir, archive, metadataFile: metadata, args });
+    assert.deepEqual(sorted(readdirSync(dir)), ["ci-input-sensitive-marker.json", "ci-input-sensitive-marker.tar"], "no archive extraction on success OR rejection");
+    return result;
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 function invoke(args) {
@@ -385,8 +387,6 @@ for (const [name, options] of archiveInvalid) {
   test(`archive rejects ${name} with explicit safe validation failure`, () => {
     withArchive(options(), (f) => {
       rejection(invoke(f.args), [f.dir]);
-      // Nothing from the tar may be extracted to the fixture directory.
-      assert.deepEqual(sorted(readdirSync(f.dir)), ["ci-input-sensitive-marker.json", "ci-input-sensitive-marker.tar"]);
     });
   });
 }
