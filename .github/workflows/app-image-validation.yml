@@ -77,19 +77,25 @@ jobs:
           docker version > "$RUNNER_TEMP/pod-docker-version.txt"
           docker info --format '{{json .Driver}} {{json .DriverStatus}}' > "$RUNNER_TEMP/pod-docker-store.txt"
           cat "$RUNNER_TEMP/pod-docker-version.txt" "$RUNNER_TEMP/pod-docker-store.txt" | tee -a "$GITHUB_STEP_SUMMARY"
-          # The runner's daemon exporter omits config metadata; use the pinned Docker exporter.
+          # A file exporter preserves M; containerd auto-load intentionally removes that field.
+          docker buildx version | tee -a "$GITHUB_STEP_SUMMARY"
           builder="pod-c1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          trap 'docker buildx rm "$builder" >/dev/null || exit 1' EXIT
+          builder_created=0
+          trap 'if test "$builder_created" = 1; then docker buildx rm "$builder" >/dev/null || exit 1; fi' EXIT
           docker buildx create --name "$builder" --driver docker-container \
             --driver-opt image=moby/buildkit:v0.34.2@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098
+          builder_created=1
           docker buildx inspect --bootstrap "$builder" > "$RUNNER_TEMP/pod-builder.txt"
           sed -nE '/^[[:space:]]*(Driver:|BuildKit version:)/p' "$RUNNER_TEMP/pod-builder.txt" | tee -a "$GITHUB_STEP_SUMMARY"
           echo 'builder_driver=docker-container; buildkit=v0.34.2@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098' | tee -a "$GITHUB_STEP_SUMMARY"
           docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load \
             --builder "$builder" \
+            --output "type=docker,dest=$RUNNER_TEMP/pod-build-output.tar" \
             --metadata-file "$RUNNER_TEMP/pod-build-metadata.json" \
             --build-arg "POD_SHA=${sha}" --build-arg "POD_TREE=${tree}" --build-arg "POD_MIGRATIONS_LATEST=${latest}" \
             -t "pod-app-ci:${sha}" .
+          docker image load --input "$RUNNER_TEMP/pod-build-output.tar"
+          rm -- "$RUNNER_TEMP/pod-build-output.tar"
           image_id="$(docker image inspect --format '{{.Id}}' "pod-app-ci:${sha}")"
           [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
           docker image save "$image_id" -o "$RUNNER_TEMP/pod-image.tar"
