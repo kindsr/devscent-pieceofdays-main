@@ -62,6 +62,7 @@
 - Codex 작업용 `AGENTS.md` 템플릿 추가: `$karpathy-guidelines`, PRD 기반 계획 산출물, 디자인/개발/운영 검증 흐름 정의.
 
 ### Changed
+- 개발 현황 안내 (2026-11-08): 계정 기록 화면·합성 PNG15·실제 프런트 조합 검증 완료를 문서와 `/status/`에 반영했다. 현재 사용 가능한 브라우저 저장 체험판과 아직 준비 중인 실제 로그인·서버 저장을 구분한다.
 - 사용자 선택 반영 (2026-11-02): 기본 디자인 D, TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소·Konva, 개인용 하루 꾸미기 포함 MVP. 마켓·구매·정산은 후속으로 구분하고 현재 프로토타입·앱 구현 예정 상태를 README·AGENTS·PRD에 맞췄다.
 - GitHub 저장소 이름 변경 반영 (2026-11-02): 사용자가 `kindsr/pieceofdays`를 `kindsr/devscent-pieceofdays-main`으로 바꿈. `scripts/ops/deploy.py`의 `REPOSITORY`와 공개 문서의 현재 주소를 `https://github.com/kindsr/devscent-pieceofdays-main.git`으로 정정. 서비스명·도메인·컨테이너·브랜치는 그대로.
 - 운영 릴리스 경로 계약 변경 (2026-11-02): `scripts/ops/deploy.py`의 `STATE`를 홈 기준 `deployment/devscent-pieceofdays-main`으로 변경(로직·검증 정책 불변). 작업 트리 밖 설치본·서버 디렉터리·배포 설정 이전은 자동으로 바뀌지 않으며 메인이 별도 반영한다.

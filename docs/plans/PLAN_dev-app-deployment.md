@@ -490,6 +490,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - `manifest --manifest FILE --manifest-digest D --config-digest C`: 원문 생바이트 hash D·단일 schema2 manifest·config C를 검사한다. 허용 mediaType/config/layer 형식은 기존 helper의 `validate_app_manifest` 계약과 같다. 성공 JSON은 `{manifest_digest, config_digest, media_type}`다.
 - 두 명령의 실패는 종료1과 고정 `verify-image:` 진단만 내보내며 입력 원문·파일 경로는 출력하지 않는다. digest·SHA/tree·양의 버전 형식도 검사한다.
 - RED의 음성 사례는 단순 script 부재·TypeError를 의도한 거부로 세지 않는다. PR의 local build/export 증거와 dev의 실제 게시 D/C/M/ID 증거는 계속 분리한다. 임시 RED 검증 workflow는 별도 verify branch에서만 쓰고 dev에 통합하지 않는다.
+- app-image의 PR·dev push paths는 기존 `app/**`·자기 workflow에 `.github/workflows/deploy.yml`·`scripts/ci/verify-image-archive.py`·`scripts/ops/deploy.py`·`frontend/public/**`를 더한 정확한 6개다. PR trial 전체의 권한·environment·Secrets/token·registry login/push 부재와 허용 action을 RED에서 검사한다. 기존 dev push 검사는 유지한다.
 
 ## 8. 게시 기준
 
