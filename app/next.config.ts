@@ -7,6 +7,8 @@ export default function config(phase: string): NextConfig {
   // 고정 사용자 + 실제 auth 동시 사용, 운영 phase의 mock issuer를 거부한다(PLAN_mvp-oidc-integration §4.2).
   assertAuthModeAllowed(phase, process.env);
   return {
+    // 앱 이미지(PLAN_dev-app-deployment §4)는 standalone 출력을 runtime-startup.mjs로 시작한다.
+    output: "standalone",
     reactStrictMode: true,
     poweredByHeader: false,
     devIndicators: false,

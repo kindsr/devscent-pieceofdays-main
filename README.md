@@ -13,7 +13,7 @@
 [개발 현황](https://dev.pieceofdays.com/status/)에서 사용 가능한 기능과 연결 중인 기능을 확인할 수 있다. [로그인·탈퇴·복구 화면 시안](https://dev.pieceofdays.com/design/d-warm-pieces/auth.html)은 화면 확인용이며 실제 인증 요청은 하지 않는다. 실제 앱 연결 순서와 기록 저장 액션 계약은 [실사용 전환 계획](docs/plans/PLAN_dev-usable-app.md)과 [저장 연결 계획](docs/plans/PLAN_dev-diary-actions.md)에 있다.
 
 운영은 준비중 페이지이며, 개발 환경에서는 사용자가 선택한 **D안(C 화면 구성 + A 색)**을 확인할 수 있다. `/design/` 시안의 조각별 수정과 기록 글꼴 설정은 메모리에서 동작해 새로고침하면 초기화되며, `/try/`는 브라우저에 저장한다.
-실제 앱은 **TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소**, 그리기는 **Konva**로 개발한다(2026-11-02 사용자 선택). [Next.js 앱](app/README.md)에 D 화면과 시험·빌드 기반, PG 저장 코어를 만들었다. 이 앱은 현재 dev의 정적 시안 배포와 별개다. MVP는 기록·하루 정리·다시 보기와 개인용 **하루 꾸미기**를 포함하고, 디자인 마켓·구매·정산은 이후 단계다. 실제 로그인·화면의 서버 저장 연결·그리기 편집기는 아직 구현 전이다.
+실제 앱은 **TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소**, 그리기는 **Konva**로 개발한다(2026-11-02 사용자 선택). [Next.js 앱](app/README.md)에 D 화면과 시험·빌드 기반, PG 저장 코어와 인증 route·화면을 만들었다. 이 앱은 현재 dev의 정적 시안 배포와 별개다. MVP는 기록·하루 정리·다시 보기와 개인용 **하루 꾸미기**를 포함하고, 디자인 마켓·구매·정산은 이후 단계다. 실제 공급자 로그인 활성화·화면의 서버 저장 연결·그리기 편집기는 후속이다.
 
 - [선택한 D 화면](https://dev.pieceofdays.com/design/d-warm-pieces/) · [기록 글꼴 설정](https://dev.pieceofdays.com/design/d-warm-pieces/#settings)
 - [20초 세로 홍보영상](https://dev.pieceofdays.com/promo/) · [MP4 내려받기](https://dev.pieceofdays.com/promo/pieceofdays-d-vertical.mp4)
@@ -21,9 +21,9 @@
 
 홍보영상은 예시 기록으로 서비스를 사용하는 모습을 보여 주는 콘셉트 영상이다. 제품 진행과 작업 경계는 [AGENTS.md](AGENTS.md)를 따른다.
 
-DB 기반(F2), 첫 로그인 지급·기록·꾸미기 저장 코어(F3), 세션 봉인·검증과 서버 전용 경계(F4a)를 검증했다. 계정 탈퇴·삭제용 스키마(F4 L1), 탈퇴·복구 도메인(F4 L2), 실제 로그인용 실행 모드 검사·공급자 설정·로그인 진행/복구 쿠키 codec(F4 B1)은 CI와 독립 검토를 통과해 dev에 통합했다. OIDC 어댑터와 로그인·로그아웃·탈퇴·복구 처리 함수(F4 B2)도 같은 검토를 거쳤으며 아직 HTTP route·화면에서 호출하지 않는다. 요청별 세션·계정 활성/세대 확인과 async 화면 문맥(F4 B3)에 이어 검증한 사용자로 기록·한 줄·글꼴을 저장하는 Server Actions 5개(S3a, PR52 `24721ae`)의 독립 PASS를 수락했다. CI 기준 단위 223(체험판 저장 모듈 18 포함)·DB 178개, 빌드 경계 4·운영 경계 6·E2E 12개가 통과했다. 실제 로그인·화면 저장 연결은 후속이며 자세한 근거는 [앱 문서](app/README.md)에 있다.
+DB 기반(F2), 첫 로그인 지급·기록·꾸미기 저장 코어(F3), 세션 봉인·검증과 서버 전용 경계(F4a), 계정 수명주기(L1·L2), 인증 설정·OIDC 처리·요청별 DAL(B1~B3), 기록·한 줄·글꼴 Server Actions 5개(S3a)를 검증했다. B4는 처리 함수를 호출하는 인증 route 5개와 D 로그인·탈퇴·복구 화면을 추가했다([PR57](https://github.com/kindsr/devscent-pieceofdays-main/pull/57)). F6a1은 standalone 앱 이미지·기동 검사·health와 연결 수 제한을 추가했다([PR58](https://github.com/kindsr/devscent-pieceofdays-main/pull/58)). 실제 공급자 자격·서비스 DB·Next 배포는 아직 연결하지 않아 사용자는 계속 정적 체험판을 쓴다. 검증 SHA·시험 수·통합 결과는 [앱 문서](app/README.md)와 PR에 기록한다.
 
-로그인은 **Google·카카오 둘 다**, 계정 탈퇴는 **30일 복구 기간 후 삭제**로 정했다(2026-11-03 사용자 선택). [인증 계획](docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](docs/plans/PLAN_account-lifecycle.md)에 구현 순서를 정리한다. 공급자 간 계정 연결은 결정 대기이며, 실제 로그인·탈퇴·복구 기능은 아직 사용자에게 제공되지 않는다(L1 스키마·L2 도메인 통합, HTTP·화면은 미연결). 개발 도메인은 정적 D 시안과 브라우저 저장 체험판을 제공한다.
+로그인은 **Google·카카오 둘 다**, 계정 탈퇴는 **30일 복구 기간 후 삭제**로 정했다(2026-11-03 사용자 선택). [인증 계획](docs/plans/PLAN_mvp-authentication.md)과 [계정 수명주기 계획](docs/plans/PLAN_account-lifecycle.md)에 구현 순서를 정리한다. 공급자 간 계정 연결은 결정 대기다. B4의 HTTP·화면은 구현했지만 실제 로그인·탈퇴·복구 기능은 아직 사용자에게 제공되지 않는다. 탈퇴 요청은 삭제 운영 검증 전까지 실행 설정으로 닫고 복구는 유지한다. 개발 도메인은 정적 D 시안과 브라우저 저장 체험판을 제공한다.
 
 ## GitHub와 자동배포
 

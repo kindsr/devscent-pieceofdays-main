@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/** D 상단: 브랜드 · 오늘/모아보기 세그먼트 · 조각 추가. */
-export function TopBar({ canWrite }: { canWrite: boolean }) {
+/** D 상단: 브랜드 · 오늘/모아보기 세그먼트 · 조각 추가(예시 사용자) 또는 로그인(로그아웃 상태). viewer는 종류 문자열만 받는다. */
+export function TopBar({ canWrite, viewer }: { canWrite: boolean; viewer: "fixture" | "signed_in" | "signed_out" | "unavailable" }) {
   const path = usePathname();
   const inDays = path.startsWith("/days");
   const inToday = path === "/";
@@ -31,6 +31,10 @@ export function TopBar({ canWrite }: { canWrite: boolean }) {
           <a className="btn-add" href="/#write">
             <span aria-hidden="true">+</span> 조각 추가
           </a>
+        ) : viewer === "signed_out" ? (
+          <Link className="text-btn top-login" href="/login">
+            로그인
+          </Link>
         ) : null}
       </div>
     </header>
