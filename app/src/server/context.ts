@@ -2,12 +2,14 @@ import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import type { DiaryContext } from "@/shared/diary";
+import { seoulLocalDate } from "@/shared/local-date";
 import { verifyActiveAccount } from "./account/lifecycle";
 import { loadAuthConfig } from "./auth/config";
 import { readSession, sessionCookieOptions } from "./auth/session";
 import { getAppDb } from "./db/pool";
 import type { DiaryStore } from "./diary/store";
 import { createMemoryDiaryStore } from "./diary/store.memory";
+import { createPgDiaryStore } from "./diary/store.pg";
 import { FIXTURE_DAYS, FIXTURE_TODAY } from "./diary/fixture";
 import { assertAuthModeAllowed, isFixtureModeEnabled } from "./runtime-mode";
 
@@ -49,7 +51,7 @@ export const getViewer = cache(async (): Promise<RequestViewer> => {
   return active ? { kind: "user", ...subject } : { kind: "signed_out" };
 });
 
-/** page·layout용 기록 문맥. 실제 계정에는 F5 전까지 저장소를 주지 않는다(signed_in 안내만). */
+/** 일반 서버 함수에서 읽기를 마친 뒤 화면 자료만 JSX에 넘긴다. 문맥 자체는 props로 넘기지 않는다. */
 export async function getDiaryContext(): Promise<DiaryContext> {
   const viewer = await getViewer();
   switch (viewer.kind) {
@@ -57,10 +59,14 @@ export async function getDiaryContext(): Promise<DiaryContext> {
       fixtureStore ??= createMemoryDiaryStore(FIXTURE_USER_ID, FIXTURE_DAYS);
       return { kind: "fixture", userId: FIXTURE_USER_ID, store: fixtureStore, today: FIXTURE_TODAY };
     case "user":
-      return { kind: "signed_in" };
+      try {
+        return { kind: "account", userId: viewer.userId, store: createPgDiaryStore(getAppDb()), today: seoulLocalDate(new Date()) };
+      } catch {
+        return { kind: "unavailable", reason: "db_unavailable" };
+      }
     case "signed_out":
       return { kind: "signed_out" };
     case "unavailable":
-      return { kind: "unavailable" };
+      return viewer.reason === "db_unavailable" ? { kind: "unavailable", reason: "db_unavailable" } : { kind: "unavailable" };
   }
 }

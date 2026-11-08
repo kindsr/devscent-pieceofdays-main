@@ -1,12 +1,14 @@
 # pieceofdays app (F1 화면·F2 DB·F3 도메인·F4 인증 기반)
 
+2026-11-08 S3b: 검증한 계정 문맥을 PG 기록장 화면에 연결했다([PR64](https://github.com/kindsr/devscent-pieceofdays-main/pull/64)). 조각 작성·수정·삭제, 조각이 없어도 쓰는 하루 한 줄, 날짜별 보기, 계정 글꼴 저장을 기존 Server Actions로 호출한다. 서버 자료만 화면에 전달하고 사용자 식별자·저장소는 React props에 넣지 않는다. 충돌·통신 실패에는 초안을 보존하고 자동 재시도하지 않는다. 삭제된 한 줄의 반복 재조회 회귀를 [PR66](https://github.com/kindsr/devscent-pieceofdays-main/pull/66)에서 먼저 확인해 수정했다. 제품 `573afd1`의 독립 검토 PASS와 [앱 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42479020099)(Node24/26 각각 단위265·빌드 경계7·운영12·fixture12, DB178, 인증·기록33), [이미지 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42479019998) 6/6·skip0을 수락했다. 실제 계정 화면 PNG 확인·프런트 조합·서비스 DB·실제 OAuth·개발 앱 배포는 아직 남아 있다.
+
 2026-11-05 F6a1: 격리 CI에서 빌드하는 standalone 앱 이미지와 기동 시 모드 검사 wrapper, `/healthz`·`/healthz/ready`, 최대 5개·연결 대기 5초·idle 10초의 앱 Pool 설정을 추가했다([PR58](https://github.com/kindsr/devscent-pieceofdays-main/pull/58)). 원본 제품 `dbaf8c2`는 [실제 이미지 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41960545128) 6/6과 독립 검토 PASS를 통과했다. 같은 이미지의 PG18 migration·app role readiness도 확인했다. 이미지는 CI 로컬에서만 만들며 아직 registry 게시·프런트 조합·서버 설치·앱 배포는 하지 않았다. B4 통합 뒤 최종 CI 결과는 PR58에 기록한다.
 
 2026-11-05 B4: 인증 route 5개와 D 로그인·탈퇴·복구 화면, 설정의 계정 영역을 구현했다([PR57](https://github.com/kindsr/devscent-pieceofdays-main/pull/57), 제품 `cdf4edd`). route는 기존 B2 처리 함수와 쿠키 설정을 그대로 사용한다. `POD_WITHDRAWAL_ENABLED=1`일 때만 탈퇴 요청을 허용하며 기본은 닫힘이다. 복구는 이 설정과 독립이다. JS 없이도 공급자 form은 POST·303으로 동작한다. 계정 사용자는 아직 기록 연결 전 안내를 보며 S3b에서 저장 화면을 연결한다. 실제 공급자 자격·서비스 DB·개발 앱 배포는 미설정이다. 최종 통합 SHA의 CI·독립 검토 결과는 PR57에 기록한다.
 
 2026-11-05 S3a: `src/app/actions/diary.ts`의 기록 작성·수정·삭제·하루 한 줄·글꼴 저장 액션을 검증했다. config → 명시 Origin → `getViewer()` → 입력 형태 → 기존 F3 순서이며, 예상 밖 오류는 원문 없이 `unavailable`이다. 화면에서 아직 호출하지 않아 실제 저장 UI가 켜진 것은 아니다. [PR52](https://github.com/kindsr/devscent-pieceofdays-main/pull/52) exact `24721ae`의 CI·독립 PASS: Node24/26 단위223·빌드 경계4·운영 경계6·E2E12, PG18 DB178(신규8), 배포 계약42. [연결 계약](../docs/plans/PLAN_dev-diary-actions.md)을 따른다.
 
-Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기, 첫 로그인 지급·기록 CRUD·개인 꾸미기 버전·기록 글꼴 저장 코어, 인증 HTTP·화면을 구현했다. 실제 공급자 로그인 활성화·화면의 PG 저장 연결·이미지 저장소는 후속이다. 첫 지급은 B2의 성공 콜백에서 호출하며 실제 공급자 검증은 B5다. MVP 완료가 아니다.
+Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실행기, 첫 로그인 지급·기록 CRUD·개인 꾸미기 버전·기록 글꼴 저장 코어, 인증 HTTP·계정 기록 화면을 구현했다. 실제 공급자 로그인 활성화·서비스 DB·앱 배포·이미지 저장소는 후속이다. 첫 지급은 B2의 성공 콜백에서 호출하며 실제 공급자 검증은 B5다. MVP 완료가 아니다.
 루트 `frontend/`(정적 nginx 이미지)와 별개이며, **현재 dev 정적 배포(`dev.pieceofdays.com`)에 자동으로 포함되지 않는다**.
 앱 배포 전환은 PLAN_mvp-foundation F6(메인 주도)에서 따로 정한다.
 
@@ -18,12 +20,12 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 | 경로 | 내용 |
 |---|---|
 | `src/app/` | 경로: `/` 오늘, `/days` 모아보기, `/days/[date]` 특정 날, `/settings` 기록 글꼴·계정, `/login`·`/account/withdraw`·`/account/restore` 인증 화면, `/auth/` 인증 route 5개, `/dev/konva-smoke` 시험 fixture |
-| `src/app/actions/diary.ts` | S3a Server Actions 5개: config·Origin·요청 사용자 확인 뒤 기존 F3 쓰기 호출. 아직 Client Component에서 호출하지 않는다 |
+| `src/app/actions/diary.ts` | S3a Server Actions 5개: config·Origin·요청 사용자 확인 뒤 기존 F3 쓰기 호출. S3b 계정 화면이 직접 호출한다 |
 | `src/ui/d/` | D 화면 컴포넌트(상단, 조각 보드·하루 한 줄·작성/수정 팝업, 달력, 글꼴 설정). 스타일은 `src/app/globals.css`(D `style.css`에서 옮김) |
 | `src/ui/decorate/` | Konva 클라이언트 전용 모듈. 지금은 호환 스모크만 있고 꾸미기 편집기 UI는 없다(별도 아트보드 필요) |
 | `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부, 고정 사용자+실제 인증 동시 사용·운영 단계 mock issuer 거부. 원본 순수 검사를 `next.config.ts`와 standalone `runtime-startup.mjs`가 호출 |
 | `src/server/auth/` | 세션 codec(F4a), 인증 설정·공급자 목록(`config.ts`), 로그인 진행·복구 쿠키 codec, returnTo 허용 목록(F4 B1), OIDC 어댑터·처리 함수(B2), HTTP 응답·쿠키 변환(`http.ts`, B4). 인증 route에서 호출한다 |
-| `src/server/context.ts` | 요청별 viewer·async 기록 문맥(B3). 세션 쿠키와 계정 활성 상태·세대를 확인하고 실제 계정에는 F5 전까지 기록 저장소를 주지 않는다 |
+| `src/server/context.ts` | 요청별 viewer·기록 문맥. 세션·계정 활성 상태·세대를 확인한 계정에 본인 PG 저장소를 제공한다. page의 일반 서버 함수에서 읽고 JSX에는 화면 자료만 전달한다 |
 | `src/server/diary/` | 읽기·쓰기 port(`store.ts`)와 PG CRUD 구현, 메모리 구현·예시 기록(로컬·시험 전용) |
 | `src/server/account/`, `src/server/credit/` | identity별 계정 해석·첫 성공 로그인 10개 1회 지급·잔액 조회, 글꼴·디자인 적용 설정. B2/B4 성공 콜백 연결, 실제 공급자 검증은 후속 |
 | `src/server/decoration/` | 본인 소유 개인 디자인 버전의 저장·목록·읽기 |
@@ -38,13 +40,13 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 
 | 모드 | 조건 | 화면 |
 |---|---|---|
-| 기본(운영 빌드 포함) | fixture·인증 설정 없음 | 오늘·모아보기는 "아직 준비 중" 안내. 설정은 화면 메모리에서만 동작. `/dev/konva-smoke`는 404 |
+| 기본(운영 빌드 포함) | fixture·인증 설정 없음 | 오늘·모아보기는 "아직 준비 중" 안내. 설정에는 저장 글꼴 편집기가 없다. `/dev/konva-smoke`는 404 |
 | 로컬 고정 사용자 | `POD_LOCAL_FIXTURE=1` + `next dev`(development) 또는 test | D 예시 기록(실제 사용자 기록 아님)을 메모리에서 읽기만 한다 |
-| 인증 설정·세션 확인(현재 시험 경계) | 유효한 인증 설정 + 요청 세션 | active·현재 세대이면 기록 연결 전 안내. 세션 거부는 서버가 아는 경로를 `returnTo`로 `/login`에 보낸다. DB·설정 장애는 준비 중 안내. 발급 route·`/login` 화면은 B4 전 없으므로 이 설정을 서비스에 켜지 않는다 |
+| 인증 설정·검증 세션 | 유효한 인증 설정 + 요청 세션 | active·현재 세대이면 본인 PG 기록장과 저장 글꼴을 읽고 쓴다. 세션 거부는 서버가 아는 경로를 `returnTo`로 `/login`에 보낸다. DB 읽기 실패는 실패 안내이며 빈 자료·예시 기록으로 대신하지 않는다. 실제 서비스 사용은 F6 전환 뒤다 |
 
 - `POD_LOCAL_FIXTURE=1`이 켜진 채 `next build`/`next start`(운영 단계)를 실행하면 `next.config.ts`에서 **시작을 거부**한다. 값은 비우거나 정확히 `1`만 허용한다.
-- 작성·수정·한 줄은 **그 화면의 브라우저 메모리에만** 반영되고 서버로 보내지 않는다. 영구 저장도 화면 간 공유 상태도 없어서 **새로고침하거나 다른 화면(오늘↔모아보기·특정 날)으로 이동하면 사라진다.** 완료 안내도 그렇게 알린다.
-- 기록 글꼴은 계정·기기에 저장되지 않고 새로고침하면 고딕으로 돌아간다.
+- 로컬 고정 사용자 모드의 작성·수정·한 줄은 **그 화면의 브라우저 메모리에만** 반영된다. **새로고침하거나 다른 화면으로 이동하면 사라진다.** 실제 계정 모드는 서버 저장 성공 뒤 canonical 자료를 다시 읽으며, 통신 오류만으로 저장 성공·실패를 단정하거나 자동 재시도하지 않는다.
+- 로컬 고정 사용자 모드의 글꼴은 새로고침하면 고딕으로 돌아간다. 실제 계정의 글꼴은 서버 성공 뒤 적용하고 새로고침·다른 기기의 같은 계정에서 유지한다.
 - 추가 팝업은 주소 `#write`와 맞물린다. 브라우저 뒤로 가기로 `#write`를 벗어나면 닫히고, 앞으로 가기로 돌아오면 입력 중이던 초안과 함께 다시 열린다.
 - 서버 코드는 헤더·URL·폼의 사용자 ID를 인증으로 쓰지 않는다. B3의 `getViewer`는 검증한 세션의 `userId`·`gen`만으로 계정 상태를 확인한다. 세션 발급 HTTP route와 실제 로그인은 B4·B5에서 연결한다.
 
@@ -200,7 +202,7 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 - `getViewer`는 fixture/auth 충돌을 먼저 거부하고, 매 요청의 설정·정확한 이름의 세션 쿠키·계정 active와 현재 세대를 차례로 확인한다. 무효 세션은 `signed_out`, DB 실패는 `unavailable:db_unavailable`이다.
 - 실제 `react`의 `cache`로 한 요청 렌더 안에서만 결과를 공유한다. 모듈 전역에는 고정 예시 store만 두고 실제 사용자 정보는 보관하지 않는다. 각 page가 직접 `getDiaryContext`를 await하며 layout 결과는 상단 표시에만 쓴다.
-- async 기록 문맥은 실제 사용자에게 `{kind:"signed_in"}`만 주고 저장소·사용자 ID·예시 기록을 주지 않는다. 화면에는 "로그인됐어요"와 기록 쓰기·불러오기 연결 전 안내만 보인다. 작성 UI는 fixture만 허용한다.
+- B3 당시 async 기록 문맥은 실제 사용자에게 `{kind:"signed_in"}`만 줬다. S3b 이후에는 검증한 계정의 PG 문맥을 일반 서버 함수에서만 쓰고 화면 자료 DTO를 넘긴다. 위의 현재 실행 모드와 S3b 계약이 현재 동작이다.
 - RED PR44 `bccb7f7`: 시험 2파일, 신규 unit 10·DB 5가 기능 부재로 실패하고 기존 unit 196·DB 165는 통과했다. 요청별 관찰 카운터 누적을 RED에서 고쳤고, [독립 RED PASS](https://github.com/kindsr/devscent-pieceofdays-main/pull/44#pullrequestreview-5771019879)를 수락했다. GREEN은 시험 변경 0이며 메인 GREEN gate·diffcheck 통과다.
 - [GREEN CI 41859926510](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41859926510): Node 24.22.2·26.13.0 각각 단위 206(17파일)·빌드 경계 4·운영 경계 6·E2E 12·lint·typecheck·build, PG18.6 DB 170(11파일)이 skip 0으로 통과했다. [root 41859926273](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41859926273) 42·Compose도 통과했다. PR의 deploy job은 정상 skip이다.
 - [작성자 완료 보고](https://github.com/kindsr/devscent-pieceofdays-main/pull/45#issuecomment-6635090669): Cloud Node26에서 unit 206·lint·typecheck·build 직접 통과, clean·정확 원격 일치·수정 중지. 화면은 scratch의 문맥 입력만 `signed_in`으로 바꾸고 실제 page·TopBar·CSS를 정적 렌더해 375/768/1440 총 9장을 직접 봤다(가로 넘침·작성 버튼 없음). 실제 Next 요청·로그인·redirect·배포 화면을 확인한 것은 아니다.
@@ -213,7 +215,7 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 `frontend/public/try/`의 정적 체험판은 **이 Next 앱과 별개**다([계획](../docs/plans/PLAN_dev-local-preview.md)). 기존 정적 이미지가 제공하는 D 화면이며 기록을 브라우저의 전용 저장 항목 하나에만 둔다. 이 앱의 로그인·세션·PG 저장·고정 사용자 모드와 연결되지 않는다.
 
-- 이 앱의 상태는 그대로다: 실제 로그인은 꺼져 있고, 화면은 PG에 저장하지 않으며, 서비스 DB·Next 배포(F6)도 없다. `POD_LOCAL_FIXTURE`는 여전히 개발·시험 전용이고 운영에서 거부된다. 체험판은 이 규칙을 바꾸지 않는다.
+- 현재 서비스에는 실제 로그인·Next 앱 배포(F6)·서비스 DB가 없다. 소스의 계정 기록 화면은 PG 저장에 연결됐지만 정적 `/try/`와 별개다. `POD_LOCAL_FIXTURE`는 여전히 개발·시험 전용이고 운영에서 거부된다. 체험판 기록을 계정으로 자동으로 옮기지 않는다.
 - 체험판 시험은 기존 app lock의 Vitest·Playwright만 빌려 쓴다. 단위 시험 `tests/unit/dev-preview.test.ts`(18)는 기존 `npm test`에 포함된다. 체험판 통합 당시에는 단위 196개(B2 178 + 18)였고 B3의 신규 시험은 위 절에서 구분한다. 브라우저 시험은 기존 E2E 12와 섞지 않는다.
 - 명령(격리 Cloud·CI·개발 PC만, `app/`에서): `npx vitest run tests/unit/dev-preview.test.ts`, `POD_FULL_CHECK_ISOLATED=1 npx playwright test -c playwright.preview.config.ts`. 설정은 플래그가 없으면 시작을 거부하고, `frontend/public`을 Python 표준 정적 서버로 `127.0.0.1:3400`에만 연다. 공유 서버에서 실행하지 않는다.
 - CI는 별도 workflow `.github/workflows/preview-validation.yml`(Secrets·배포 권한 없음)이다. GREEN `2f3e61b`의 [preview CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116570)에서 구문 검사·저장 단위 18·브라우저 10이 통과했다. [app CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41793116422)에서는 Node 24·26 각각 단위 196·빌드 경계 4·운영 경계 6·E2E 12·lint·typecheck·build, DB 165가 통과했다.
@@ -221,9 +223,9 @@ bootstrap 당시 Cloud VM의 native PostgreSQL 실험은 보조 근거다. [F2 C
 
 ## 한계 (제품 구현)
 
-- 실제 로그인·앱의 PG 저장 연결·버킷 없음. 지급·기록·개인 꾸미기·글꼴 저장은 도메인 함수로 검증했으며 실제 인증 연결은 F4다. 화면의 조각 삭제·하루 꾸미기 편집기는 아직 없다.
-- 기록 변경은 화면 이동·새로고침으로 초기화된다(위 실행 모드 참고). F1에서는 영구 저장이나 클라이언트 전역 store를 추가하지 않는다.
+- 계정 화면의 PG 저장 연결은 S3b에서 검증했으며 실제 공급자 로그인·서비스 DB·개발 앱 배포·버킷은 미완료다. 실제 사용자가 로그인해 저장할 수 있다는 뜻이 아니다. 계정 조각 삭제는 구현했고 하루 꾸미기 편집기는 없다.
+- 로컬 고정 사용자 모드의 기록 변경만 화면 이동·새로고침으로 초기화된다. 실제 계정 모드는 서버에 저장한다(위 실행 모드 참고).
 - Konva는 스티커 1개 끌기·펜 획 1개 스모크만 확인했다(`/dev/konva-smoke`, 시험 전용).
 - 글꼴은 시스템 글꼴 스택만 쓴다(동봉·라이선스 확인은 F5). 시험 VM에는 한국어 명조·손글씨 글꼴이 없어 글꼴 차이는 속성 값으로만 확인했다.
-- 화면 날짜는 예시 기록의 날짜(2026-11-02)로 고정돼 있다. PG 저장 모듈은 `Asia/Seoul`을 사용하고 사용자별 시간대는 미정이다.
+- 예시 모드의 날짜는 2026-11-02로 고정돼 있다. 실제 계정 화면·PG 저장 모듈은 서버의 `Asia/Seoul` 날짜를 사용하고 사용자별 시간대는 미정이다.
 - ESLint 9.39.5는 npm에서 지원 종료(deprecated) 표시가 있다. eslint-config-next가 쓰는 플러그인(react, jsx-a11y, import)의 peer 범위가 ESLint 10을 포함하지 않아 peer 무경고를 지키려고 9를 유지했다. 개발 전용 lint 도구 체인에 minimatch moderate 권고 16건이 있고 런타임 의존성 감사(`npm audit --omit=dev`)는 0건이다.

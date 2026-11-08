@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DEFAULT_FONT_KEY, FONT_KEYS, FONT_LABELS, parseFontKey, type FontKey } from "@/shared/fonts";
+import { AccountFontSettings } from "./AccountFontSettings";
 
 /** D 설정 · 기록 글꼴. F1: 이 화면 메모리(html 속성)에만 적용한다. 계정 저장은 F3 이후. */
 function applyFont(key: FontKey) {
@@ -10,7 +11,11 @@ function applyFont(key: FontKey) {
   else document.documentElement.setAttribute("data-record-font", key);
 }
 
-export function FontSettings() {
+export function FontSettings({ mode = "fixture", initialFont = DEFAULT_FONT_KEY }: { mode?: "fixture" | "account"; initialFont?: FontKey }) {
+  return mode === "account" ? <AccountFontSettings initialFont={initialFont} /> : <FixtureFontSettings />;
+}
+
+function FixtureFontSettings() {
   const [font, setFont] = useState<FontKey>(DEFAULT_FONT_KEY);
   const [live, setLive] = useState("");
 

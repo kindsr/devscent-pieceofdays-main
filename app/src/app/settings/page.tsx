@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { getViewer } from "@/server/context";
+import { getPreferences } from "@/server/account/preferences.pg";
+import { getAppDb } from "@/server/db/pool";
+import type { FontKey } from "@/shared/fonts";
 import { AUTH_TEXT } from "@/shared/auth-messages";
 import { FontSettings } from "@/ui/d/FontSettings";
 import { TrialLinks } from "@/ui/d/TrialLinks";
@@ -10,6 +13,14 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
   const sp = await searchParams;
   const viewer = await getViewer();
+  let font: FontKey | null = null;
+  if (viewer.kind === "user") {
+    try {
+      font = (await getPreferences(getAppDb(), viewer.userId)).fontKey;
+    } catch {
+      // 실패를 편집 가능한 기본값으로 대체하지 않는다.
+    }
+  }
   const withdrawEnabled = process.env.POD_WITHDRAWAL_ENABLED === "1";
   const withdrawUnavailable = !withdrawEnabled && sp.notice === "withdrawal_unavailable";
   return (
@@ -23,7 +34,12 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           <p className="auth-msg">{AUTH_TEXT.withdrawUnavailable}</p>
         </section>
       ) : null}
-      <FontSettings />
+      {viewer.kind === "fixture" ? <FontSettings /> : font ? <FontSettings mode="account" initialFont={font} /> : viewer.kind === "user" ? (
+        <section className="notice" aria-labelledby="font-failed-h">
+          <h2 id="font-failed-h">기록 글꼴을 불러오지 못했어요</h2>
+          <p>잠시 뒤 다시 열어 주세요.</p>
+        </section>
+      ) : null}
       {viewer.kind === "user" ? (
         <section className="settings" aria-labelledby="acct-h">
           <h2 id="acct-h">{AUTH_TEXT.accountTitle}</h2>
