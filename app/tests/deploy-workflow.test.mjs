@@ -276,6 +276,22 @@ test("C1 image local-proof PR/dev triggers cover exactly all six approved app/wo
   assert.deepEqual(sorted(IMAGE_WORKFLOW.on.push.paths), sorted(paths));
 });
 
+test("the ENTIRE image PR-trial workflow stays contents-read-or-less, with no token, secret, environment, registry publication or extra action", () => {
+  const readOnly = (permissions) => {
+    assert.ok(permissions && typeof permissions === "object" && !Array.isArray(permissions), "explicitly bounded effective permissions");
+    for (const [name, value] of Object.entries(permissions)) assert.ok(value === "none" || (name === "contents" && value === "read"), "PR trial cannot gain packages-write or other token scopes");
+  };
+  readOnly(IMAGE_WORKFLOW.permissions);
+  assert.equal(IMAGE_WORKFLOW.environment, undefined);
+  assert.ok(!/secrets(?:\.|\[)|github\.token|GITHUB_TOKEN/i.test(JSON.stringify(IMAGE_WORKFLOW)), "no explicit credential/token references anywhere in PR trial");
+  for (const current of Object.values(IMAGE_WORKFLOW.jobs)) {
+    readOnly(current.permissions ?? IMAGE_WORKFLOW.permissions);
+    assert.equal(current.environment, undefined);
+    assert.ok(!/\bdocker\b[^\n]*(?:\blogin\b|\bpush\b|--push\b)/.test(scriptOf(current)), "PR trial cannot log in or publish an image");
+    for (const step of steps(current)) if (step.uses) assert.ok(ACTIONS.has(step.uses), `unapproved PR-trial action: ${step.uses}`);
+  }
+});
+
 // -------------------------------------------------------- stdlib CLI fixtures (no Docker required)
 
 const TAR_WRITER = `import base64,io,json,sys,tarfile
