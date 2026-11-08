@@ -2,10 +2,11 @@ name: Validate pieceofdays app (F1)
 
 # app/ 전용 검사. 배포 job·배포 키·Secrets를 쓰지 않는다. 기존 deploy.yml과 별개다.
 on:
+  workflow_call: {}
   pull_request:
     paths: ["app/**", ".github/workflows/app-validation.yml"]
   push:
-    branches: [dev, main]
+    branches: [main]
     paths: ["app/**", ".github/workflows/app-validation.yml"]
 
 permissions:

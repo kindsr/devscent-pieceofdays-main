@@ -58,11 +58,11 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Unit
         run: npm test
-      - name: Publisher structure and verifier fixtures (exactly 92, no skip)
+      - name: Publisher structure and verifier fixtures (exactly 128, no skip)
         run: |
           set -euo pipefail
           node --test --test-reporter=tap tests/deploy-workflow.test.mjs | tee deploy-workflow.tap
-          for line in "# tests 92" "# pass 92" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+          for line in "# tests 128" "# pass 128" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
             grep -qx -- "$line" deploy-workflow.tap
           done
       - name: Install the existing Chromium version
