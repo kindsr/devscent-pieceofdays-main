@@ -126,7 +126,6 @@ jobs:
       POD_TEST_DB_DISPOSABLE: "1"
       POD_TEST_ADMIN_URL: postgres://postgres:ci-only-not-a-secret@127.0.0.1:5432/postgres
       POD_IMAGE_TEST_DB_HOST: postgres
-      DOCKER_CONFIG: ${{ runner.temp }}/pod-publisher-docker
     outputs:
       sha: ${{ steps.proof.outputs.sha }}
       tree: ${{ steps.proof.outputs.tree }}
@@ -143,15 +142,15 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - name: Verify dev checkout and record Docker server and store
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
-          test "$sha" = "$EXPECTED_SHA"
+          test "$sha" = '${{ github.sha }}'
           tree="$(git rev-parse 'HEAD^{tree}')"
           latest="$(ls migrations | sed -nE 's/^([0-9]{4})_.+\.up\.sql$/\1/p' | sort -n | tail -1 | sed -E 's/^0+//')"
           [[ "$sha" =~ ^[0-9a-f]{40}$ && "$tree" =~ ^[0-9a-f]{40}$ && "$latest" =~ ^[1-9][0-9]*$ ]]
+          export DOCKER_CONFIG="$RUNNER_TEMP/pod-publisher-docker"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
           mkdir -m 700 -- "$DOCKER_CONFIG"
           docker version > "$RUNNER_TEMP/pod-docker-version.txt"
           docker info --format '{{json .Driver}} {{json .DriverStatus}}' > "$RUNNER_TEMP/pod-docker-store.txt"
@@ -244,6 +243,7 @@ jobs:
         if: always()
         run: |
           set -uo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/pod-publisher-docker"
           cleanup_failed=0
           docker logout ghcr.io || cleanup_failed=1
           rm -f -- "$DOCKER_CONFIG/config.json" || cleanup_failed=1
