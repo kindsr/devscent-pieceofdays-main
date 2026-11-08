@@ -76,6 +76,7 @@ jobs:
           [[ "$sha" =~ ^[0-9a-f]{40}$ && "$tree" =~ ^[0-9a-f]{40}$ && "$latest" =~ ^[1-9][0-9]*$ ]]
           docker version > "$RUNNER_TEMP/pod-docker-version.txt"
           docker info --format '{{json .Driver}} {{json .DriverStatus}}' > "$RUNNER_TEMP/pod-docker-store.txt"
+          cat "$RUNNER_TEMP/pod-docker-version.txt" "$RUNNER_TEMP/pod-docker-store.txt" | tee -a "$GITHUB_STEP_SUMMARY"
           docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load \
             --metadata-file "$RUNNER_TEMP/pod-build-metadata.json" \
             --build-arg "POD_SHA=${sha}" --build-arg "POD_TREE=${tree}" --build-arg "POD_MIGRATIONS_LATEST=${latest}" \
@@ -93,6 +94,7 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
+          python3 -c 'import json, os; p=json.load(open(os.environ["RUNNER_TEMP"]+"/pod-build-metadata.json")); print(json.dumps({"metadata_keys": sorted(p)}))' | tee -a "$GITHUB_STEP_SUMMARY"
           python3 scripts/ci/verify-image-archive.py archive \
             --metadata "$RUNNER_TEMP/pod-build-metadata.json" --archive "$RUNNER_TEMP/pod-image.tar" \
             --sha "$POD_PROOF_SHA" --tree "$POD_PROOF_TREE" --migrations-latest "$POD_PROOF_MIGRATIONS" \

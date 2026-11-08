@@ -17,9 +17,13 @@ MANIFEST_TYPES = {
 }
 
 
-def require(condition):
+class InvalidProof(Exception):
+    """Only fixed messages defined here may reach the diagnostic boundary."""
+
+
+def require(condition, reason="invalid image proof"):
     if not condition:
-        raise ValueError("invalid proof")
+        raise InvalidProof(reason)
 
 
 def matches(pattern, value):
@@ -58,10 +62,10 @@ def read_file(filename):
 
 
 def safe_name(name, directory=False):
-    require(isinstance(name, str) and bool(name) and "\\" not in name and "\x00" not in name)
+    require(isinstance(name, str) and bool(name) and "\\" not in name and "\x00" not in name, "unsafe archive member name")
     if directory:
         name = name.rstrip("/")
-    require(all(part not in ("", ".", "..") for part in name.split("/")))
+    require(all(part not in ("", ".", "..") for part in name.split("/")), "unsafe archive member name")
     return name
 
 
@@ -71,36 +75,36 @@ def archive_proof(args):
     metadata = document(read_file(args.metadata))
     require(isinstance(metadata, dict))
     metadata_digest = metadata.get("containerimage.config.digest")
-    require(is_digest(metadata_digest))
+    require(is_digest(metadata_digest), "missing or invalid metadata config digest")
     with tarfile.open(args.archive, mode="r:") as archive:
         members = {}
         for member in archive:
-            require(member.isfile() or member.isdir())
+            require(member.isfile() or member.isdir(), "unsupported archive member type")
             name = safe_name(member.name, member.isdir())
-            require(name not in members)
+            require(name not in members, "duplicate archive member")
             members[name] = member
 
         def read_member(name):
             member = members.get(safe_name(name))
-            require(member is not None and member.isfile() and 0 < member.size <= 16 * 1024 * 1024)
+            require(member is not None and member.isfile() and 0 < member.size <= 16 * 1024 * 1024, "missing or invalid archive proof member")
             with archive.extractfile(member) as source:
                 raw = source.read(member.size + 1)
             require(len(raw) == member.size)
             return raw
 
         manifest = document(read_member("manifest.json"))
-        require(isinstance(manifest, list) and len(manifest) == 1 and isinstance(manifest[0], dict))
+        require(isinstance(manifest, list) and len(manifest) == 1 and isinstance(manifest[0], dict), "archive must contain exactly one image")
         image = manifest[0]
         raw_config = read_member(image.get("Config"))
         layers = image.get("Layers")
-        require(isinstance(layers, list) and bool(layers))
+        require(isinstance(layers, list) and bool(layers), "missing archive layer references")
         for layer in layers:
             member = members.get(safe_name(layer))
-            require(member is not None and member.isfile())
+            require(member is not None and member.isfile(), "missing or invalid archive layer member")
         config_digest = digest(raw_config)
-        require(config_digest == metadata_digest)
+        require(config_digest == metadata_digest, "archive config digest differs from metadata")
         config = document(raw_config)
-    require(isinstance(config, dict) and config.get("os") == "linux" and config.get("architecture") == "amd64")
+    require(isinstance(config, dict) and config.get("os") == "linux" and config.get("architecture") == "amd64", "archive config platform must be linux amd64")
     image_config = config.get("config")
     require(isinstance(image_config, dict))
     labels = image_config.get("Labels")
@@ -111,7 +115,7 @@ def archive_proof(args):
         "pod.tree": args.tree,
         "pod.migrations.latest": args.migrations_latest,
     }.items():
-        require(isinstance(labels.get(key), str) and labels[key] == expected)
+        require(isinstance(labels.get(key), str) and labels[key] == expected, "archive config label mismatch")
     return {"config_digest": config_digest, "migrations_latest": labels["pod.migrations.latest"], "metadata_keys": sorted(metadata)}
 
 
@@ -156,6 +160,9 @@ def main():
             manifest.add_argument("--" + name, required=True)
         args = parser.parse_args()
         result = archive_proof(args) if args.mode == "archive" else manifest_proof(args)
+    except InvalidProof as error:
+        sys.stderr.write("verify-image: " + str(error) + "\n")
+        return 1
     except Exception:
         # Fixed diagnostics never include a supplied path, JSON value or exception.
         sys.stderr.write("verify-image: invalid image proof\n")
