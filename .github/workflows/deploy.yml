@@ -66,3 +66,216 @@ jobs:
             -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "probe $DEPLOY_ENV"
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $DEPLOY_ENV $DEPLOY_SHA"
+
+  workflow-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install using the existing lock without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Publisher structure and verifier fixtures (nonempty, exactly 92, no skip)
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap tests/deploy-workflow.test.mjs | tee deploy-workflow.tap
+          grep -Eq '^# tests [1-9][0-9]*$' deploy-workflow.tap
+          for line in "# tests 92" "# pass 92" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+            grep -qx -- "$line" deploy-workflow.tap
+          done
+
+  # C1 publishes only. Existing static dev/production above remain independent.
+  # Same-job packages-write residual risk is accepted in PLAN §7.1; step order is not isolation.
+  build-dev-app:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: [validate, workflow-contracts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        working-directory: app
+    services:
+      postgres:
+        image: postgres:18.6@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      POD_FULL_CHECK_ISOLATED: "1"
+      POD_TEST_DB_DISPOSABLE: "1"
+      POD_TEST_ADMIN_URL: postgres://postgres:ci-only-not-a-secret@127.0.0.1:5432/postgres
+      POD_IMAGE_TEST_DB_HOST: postgres
+      DOCKER_CONFIG: ${{ runner.temp }}/pod-publisher-docker
+    outputs:
+      sha: ${{ steps.proof.outputs.sha }}
+      tree: ${{ steps.proof.outputs.tree }}
+      manifest_digest: ${{ steps.proof.outputs.manifest_digest }}
+      config_digest: ${{ steps.proof.outputs.config_digest }}
+      migrations_latest: ${{ steps.proof.outputs.migrations_latest }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Verify dev checkout and record Docker server and store
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          test "$sha" = "$EXPECTED_SHA"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          latest="$(ls migrations | sed -nE 's/^([0-9]{4})_.+\.up\.sql$/\1/p' | sort -n | tail -1 | sed -E 's/^0+//')"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ && "$tree" =~ ^[0-9a-f]{40}$ && "$latest" =~ ^[1-9][0-9]*$ ]]
+          mkdir -m 700 -- "$DOCKER_CONFIG"
+          docker version > "$RUNNER_TEMP/pod-docker-version.txt"
+          docker info --format '{{json .Driver}} {{json .DriverStatus}}' > "$RUNNER_TEMP/pod-docker-store.txt"
+          {
+            echo "POD_PROOF_SHA=$sha"
+            echo "POD_PROOF_TREE=$tree"
+            echo "POD_PROOF_MIGRATIONS=$latest"
+          } >> "$GITHUB_ENV"
+      - name: Install using the existing lock without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Install the existing Chromium version
+        run: npx playwright install --with-deps chromium
+      - name: Build locally and export only the immutable engine image ID
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load \
+            --metadata-file "$RUNNER_TEMP/pod-build-metadata.json" \
+            --build-arg "POD_SHA=$POD_PROOF_SHA" --build-arg "POD_TREE=$POD_PROOF_TREE" \
+            --build-arg "POD_MIGRATIONS_LATEST=$POD_PROOF_MIGRATIONS" \
+            -t "pod-app-ci:$POD_PROOF_SHA" .
+          image_id="$(docker image inspect --format '{{.Id}}' "pod-app-ci:$POD_PROOF_SHA")"
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker image save "$image_id" -o "$RUNNER_TEMP/pod-image.tar"
+          echo "POD_IMAGE_TEST_IMAGE=$image_id" >> "$GITHUB_ENV"
+      - name: Verify exported config C equals metadata M and checkout labels
+        working-directory: .
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/verify-image-archive.py archive \
+            --metadata "$RUNNER_TEMP/pod-build-metadata.json" --archive "$RUNNER_TEMP/pod-image.tar" \
+            --sha "$POD_PROOF_SHA" --tree "$POD_PROOF_TREE" --migrations-latest "$POD_PROOF_MIGRATIONS" \
+            > "$RUNNER_TEMP/pod-archive-proof.json"
+          python3 -c 'import json, os; p=json.load(open(os.environ["RUNNER_TEMP"]+"/pod-archive-proof.json")); print("POD_PROOF_CONFIG="+p["config_digest"]); print("POD_PROOF_LABEL_MIGRATIONS="+p["migrations_latest"])' >> "$GITHUB_ENV"
+          rm -- "$RUNNER_TEMP/pod-image.tar"
+      - name: Resolve the disposable service network ID
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          set -euo pipefail
+          test -n "$SERVICE_NETWORK"
+          id="$(docker network inspect --format '{{.Id}}' "$SERVICE_NETWORK")"
+          [[ "$id" =~ ^[0-9a-f]{12,64}$ ]]
+          echo "POD_IMAGE_TEST_NETWORK=$id" >> "$GITHUB_ENV"
+      - name: Original actual-image contract (exactly six, no skip)
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap tests/image-contract.test.mjs | tee image-contract.tap
+          for line in "# tests 6" "# pass 6" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+            grep -qx -- "$line" image-contract.tap
+          done
+      - name: Actual front and app (fourteen including original preview ten, same ID)
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap tests/front-contract.test.mjs | tee front-contract.tap
+          for line in "# tests 14" "# pass 14" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+            grep -qx -- "$line" front-contract.tap
+          done
+          grep -q 'original preview: pass 10, fail 0, flaky 0, skip 0' front-contract.tap
+      - name: Reinspect the tested ID and bind the fixed repository tag
+        run: |
+          set -euo pipefail
+          image_id="$POD_IMAGE_TEST_IMAGE"
+          test "$(docker image inspect --format '{{.Id}}' "$image_id")" = "$image_id"
+          docker tag "$image_id" "ghcr.io/kindsr/devscent-pieceofdays-main-app:dev-$POD_PROOF_SHA"
+          test "$(docker image inspect --format '{{.Id}}' "ghcr.io/kindsr/devscent-pieceofdays-main-app:dev-$POD_PROOF_SHA")" = "$image_id"
+      - name: Login to the fixed registry
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Push the tested tag and select exactly one fixed-repository digest
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Id}}' "ghcr.io/kindsr/devscent-pieceofdays-main-app:dev-$POD_PROOF_SHA")" = "$POD_IMAGE_TEST_IMAGE"
+          docker push "ghcr.io/kindsr/devscent-pieceofdays-main-app:dev-$POD_PROOF_SHA"
+          docker image inspect --format '{{json .RepoDigests}}' "$POD_IMAGE_TEST_IMAGE" > "$RUNNER_TEMP/pod-repo-digests.json"
+          manifest_digest="$(python3 -c 'import json, re, sys; refs=json.load(open(sys.argv[1])); matches=[r for r in refs if isinstance(r,str) and re.fullmatch(r"ghcr.io/kindsr/devscent-pieceofdays-main-app@sha256:[0-9a-f]{64}",r)]; assert len(matches) == 1, "expected exactly one fixed-repository digest"; print(matches[0].split("@",1)[1])' "$RUNNER_TEMP/pod-repo-digests.json")"
+          [[ "$manifest_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker buildx imagetools inspect --raw "ghcr.io/kindsr/devscent-pieceofdays-main-app@$manifest_digest" > "$RUNNER_TEMP/pod-raw-manifest.json"
+          echo "POD_PROOF_MANIFEST=$manifest_digest" >> "$GITHUB_ENV"
+      - name: Verify raw manifest D and config C before accepting publication
+        working-directory: .
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/verify-image-archive.py manifest \
+            --manifest "$RUNNER_TEMP/pod-raw-manifest.json" --manifest-digest "$POD_PROOF_MANIFEST" \
+            --config-digest "$POD_PROOF_CONFIG" > "$RUNNER_TEMP/pod-manifest-proof.json"
+      - name: Always logout and delete this job's credential file
+        if: always()
+        run: |
+          set -uo pipefail
+          cleanup_failed=0
+          docker logout ghcr.io || cleanup_failed=1
+          rm -f -- "$DOCKER_CONFIG/config.json" || cleanup_failed=1
+          exit "$cleanup_failed"
+      - name: Emit validated proof only after verification and credential cleanup
+        id: proof
+        run: |
+          set -euo pipefail
+          sha="$POD_PROOF_SHA"
+          tree="$POD_PROOF_TREE"
+          manifest_digest="$POD_PROOF_MANIFEST"
+          config_digest="$POD_PROOF_CONFIG"
+          migrations_latest="$POD_PROOF_LABEL_MIGRATIONS"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ && "$tree" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$manifest_digest" =~ ^sha256:[0-9a-f]{64}$ && "$config_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$migrations_latest" =~ ^[1-9][0-9]*$ ]]
+          test "$sha" = "$GITHUB_SHA"
+          test "$migrations_latest" = "$POD_PROOF_MIGRATIONS"
+          test ! -e "$DOCKER_CONFIG/config.json"
+          {
+            echo '### C1 publisher proof (C2 remains gated)'
+            cat "$RUNNER_TEMP/pod-docker-version.txt" "$RUNNER_TEMP/pod-docker-store.txt"
+            echo "sha=$sha tree=$tree"
+            echo "Opaque tested image ID: $POD_IMAGE_TEST_IMAGE"
+            echo "config_digest=$config_digest (C=M), manifest_digest=$manifest_digest, migrations_latest=$migrations_latest"
+            cat "$RUNNER_TEMP/pod-archive-proof.json" "$RUNNER_TEMP/pod-manifest-proof.json"
+            echo 'Verified metadata_keys and media_type above; image 6/6, front 14/14, original preview 10/10, skip 0.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "sha=$sha"
+            echo "tree=$tree"
+            echo "manifest_digest=$manifest_digest"
+            echo "config_digest=$config_digest"
+            echo "migrations_latest=$migrations_latest"
+          } >> "$GITHUB_OUTPUT"
