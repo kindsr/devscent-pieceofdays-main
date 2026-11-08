@@ -268,16 +268,12 @@ test("publisher emits only the five validated outputs in the LAST step, then exp
   for (const field of ["metadata_keys", "media_type", "migrations_latest", "config_digest", "manifest_digest"]) assert.ok(script.includes(field), `retain verified summary field ${field}`);
 });
 
-test("original image PR checks remain; removing the duplicate dev image trigger is allowed only with ALL original commands retained by publisher", () => {
-  assert.deepEqual(IMAGE_WORKFLOW.on.pull_request, { paths: ["app/**", ".github/workflows/app-image-validation.yml"] });
-  const branches = IMAGE_WORKFLOW.on.push?.branches ?? [];
-  if (!branches.includes("dev")) {
-    const script = scriptOf(job("build-dev-app"));
-    assert.match(script, /npm(?: --prefix app)? test\b/, "original app-image Unit step must not disappear");
-    assert.match(script, /tests\/image-contract\.test\.mjs/);
-    assert.match(script, /tests\/front-contract\.test\.mjs/);
-    assert.match(script, /original preview: pass 10, fail 0, flaky 0, skip 0/);
-  }
+test("C1 image local-proof PR/dev triggers cover exactly all six approved app/workflow/verifier/helper/front path patterns", () => {
+  const paths = ["app/**", ".github/workflows/app-image-validation.yml", ".github/workflows/deploy.yml", "scripts/ci/verify-image-archive.py", "scripts/ops/deploy.py", "frontend/public/**"];
+  assert.deepEqual(sorted(Object.keys(IMAGE_WORKFLOW.on)), ["pull_request", "push"]);
+  assert.deepEqual(sorted(IMAGE_WORKFLOW.on.pull_request.paths), sorted(paths), "verifier/deploy-only PRs must run local image proof too");
+  assert.deepEqual(IMAGE_WORKFLOW.on.push.branches, ["dev"], "retain dev image validation in C1");
+  assert.deepEqual(sorted(IMAGE_WORKFLOW.on.push.paths), sorted(paths));
 });
 
 // -------------------------------------------------------- stdlib CLI fixtures (no Docker required)
