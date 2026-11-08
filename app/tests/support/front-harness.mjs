@@ -98,6 +98,9 @@ export class FrontHarness {
     this.containers = new Set();
     this.images = new Set();
     this.archived = [];
+    this.sinks = new Map();
+    this.sinkSequence = 0;
+    this.cleanupErrors = [];
     this.mode = undefined;
   }
 
@@ -179,6 +182,7 @@ export class FrontHarness {
     await docker(["create", "--name", this.names.outer, "--network", this.ingress, "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "-p", "127.0.0.1::80", "--mount", `type=bind,src=${path.join(this.tmp, "outer.conf")},dst=/etc/nginx/conf.d/default.conf,readonly`, "--mount", `type=bind,src=${path.join(this.tmp, "htpasswd")},dst=/etc/nginx/ci.htpasswd,readonly`, this.trusted.base]);
     await docker(["network", "connect", this.network, this.names.outer]);
     await docker(["start", this.names.outer]);
+    await this.observe(this.names.outer, "outer");
     this.outerPort = await this.port(this.names.outer);
     await this.waitPort(this.outerPort, 401);
   }
@@ -192,16 +196,46 @@ export class FrontHarness {
     return ["--read-only", "--user", `${this.uid}:${this.gid}`, "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m,mode=1777", "--tmpfs", `/app/.next/cache:rw,noexec,nosuid,size=64m,uid=${this.uid},gid=${this.gid},mode=0700`];
   }
   async archive(name) {
-    if (this.containers.has(name)) {
-      const r = await docker(["logs", name]);
-      this.archived.push(r.stdout, r.stderr);
-    }
+    if (this.sinks.has(name)) this.archived.push(await this.readSink(name));
   }
   async remove(name) {
     if (!this.containers.has(name)) return;
-    await this.archive(name);
-    await docker(["rm", "-f", "-v", name]);
-    this.containers.delete(name);
+    const errors = [];
+    try { await this.archive(name); }
+    catch (err) { errors.push(sanitized(`archive ${name}: ${err.message}`)); }
+    finally {
+      try {
+        await docker(["rm", "-f", "-v", name]);
+        this.containers.delete(name);
+        this.sinks.delete(name);
+      } catch (err) { errors.push(sanitized(`remove ${name}: ${err.message}`)); }
+    }
+    if (errors.length) {
+      this.cleanupErrors.push(...errors);
+      throw new AggregateError(errors.map((message) => new Error(message)), "owned container log/removal failed");
+    }
+  }
+  async observe(name, role) {
+    const sink = `${role}-${++this.sinkSequence}`;
+    const record = { sink, role, stdoutMarker: `${this.prefix}-${sink}-stdout-control`, stderrMarker: `${this.prefix}-${sink}-stderr-control` };
+    this.sinks.set(name, record);
+    // Safe test-only writes to PID 1's log descriptors. No product failure, request or callback value
+    // is injected. An exec process's own stdout/stderr would NOT prove container log collection.
+    if (role === "upstream") {
+      const script = "const f=require('node:fs');f.writeFileSync('/proc/1/fd/1',process.argv[1]+'\\n');f.writeFileSync('/proc/1/fd/2',process.argv[2]+'\\n');";
+      await docker(["exec", name, "node", "-e", script, record.stdoutMarker, record.stderrMarker]);
+    } else {
+      await docker(["exec", name, "sh", "-c", 'printf "%s\\n" "$1" > /proc/1/fd/1; printf "%s\\n" "$2" > /proc/1/fd/2', "sh", record.stdoutMarker, record.stderrMarker]);
+    }
+    await this.readSink(name);
+  }
+  async readSink(name) {
+    const record = this.sinks.get(name);
+    assert.ok(record, "log sink identity must be registered");
+    const r = await docker(["logs", name]);
+    assert.ok(r.stdout.includes(record.stdoutMarker), `${record.sink}: stdout positive collection control`);
+    assert.ok(r.stderr.includes(record.stderrMarker), `${record.sink}: stderr positive collection control`);
+    return { ...record, stdout: r.stdout, stderr: r.stderr };
   }
   async address(name) {
     const info = JSON.parse((await docker(["inspect", name])).stdout)[0];
@@ -230,12 +264,42 @@ export class FrontHarness {
     await docker(args);
     this.appIP ??= await this.address(this.names.upstream);
     this.mode = mode;
+    await this.observe(this.names.upstream, "upstream");
     for (let n = 0; n < 90; n++) {
       const result = await this.appRequest("/healthz").catch(() => null);
       if (result?.status === 200) return;
       await pause(500);
     }
     assert.fail(`upstream ${mode} did not become healthy`);
+  }
+  async unavailable(role, fn) {
+    assert.ok(["upstream", "front"].includes(role));
+    const name = this.names[role];
+    const savedMode = this.mode;
+    const address = role === "upstream" ? this.appIP : this.frontIP;
+    // Stop/remove the real app/nginx. An unoccupied bridge address can blackhole SYN packets
+    // until nginx's connect timeout. A CI-only idle endpoint at the SAME address, with no
+    // listening socket, makes this outage an explicit TCP refusal and exercises real nginx 502.
+    await this.remove(name);
+    this.containers.add(name);
+    try {
+      await docker(["run", "-d", "--name", name, "--network", this.network, "--ip", address, ...this.appRestrictions(), "--entrypoint", "node", this.image, "-e", "setInterval(()=>{},1000)"]);
+      await this.observe(name, "upstream");
+      const info = JSON.parse((await docker(["inspect", name])).stdout)[0];
+      assert.equal(info.Config.Image, this.image, "outage endpoint is the local tested image only");
+      assert.equal(info.Config.Entrypoint[0], "node");
+      assert.deepEqual(info.Config.Cmd, ["-e", "setInterval(()=>{},1000)"], "no app or nginx process runs in the outage endpoint");
+      await fn();
+    } finally {
+      if (role === "upstream") {
+        this.mode = undefined;
+        await this.upstream(savedMode);
+        await this.waitPort(this.frontPort, 200, "/login");
+      } else {
+        await this.front("front");
+        await this.waitPort(this.outerPort, 401);
+      }
+    }
   }
   async appRequest(target) {
     const script = "fetch(process.argv[1],{redirect:'manual',signal:AbortSignal.timeout(3000)}).then(async r=>console.log(JSON.stringify({status:r.status,body:await r.text()}))).catch(()=>process.exitCode=1)";
@@ -248,6 +312,7 @@ export class FrontHarness {
     await docker(["create", "--name", this.names.front, "--network", this.ingress, "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "-p", `127.0.0.1:${this.frontPort ?? ""}:80`, this[`${kind}Image`]]);
     await docker(["network", "connect", ...(this.frontIP ? ["--ip", this.frontIP] : []), this.network, this.names.front]);
     await docker(["start", this.names.front]);
+    await this.observe(this.names.front, "front");
     this.frontIP ??= await this.address(this.names.front);
     this.frontPort = await this.port(this.names.front);
     await this.waitPort(this.frontPort, 200, "/try/");
@@ -277,16 +342,18 @@ export class FrontHarness {
   edgeRequest(target, options = {}) { return request(this.outerPort, target, { ...options, headers: { Authorization: BASIC, ...options.headers } }); }
   async logs() {
     const out = [...this.archived];
-    for (const name of this.containers) {
-      const r = await docker(["logs", name]);
-      out.push(r.stdout, r.stderr);
-    }
-    return out.join("\n");
+    for (const name of this.sinks.keys()) out.push(await this.readSink(name));
+    assert.ok(out.length > 0, "identified actual log sinks are required");
+    return out;
   }
+  currentLog(role) { return this.readSink(this.names[role]); }
   async noSentinels(sentinels) {
-    const text = await this.logs();
-    assert.ok(text.length > 0, "collected actual nginx/Next logs");
-    for (const sentinel of sentinels) assert.ok(!text.includes(sentinel) && !text.includes(encodeURIComponent(sentinel)), "callback sentinel must be absent from all nginx/Next logs");
+    for (const record of await this.logs()) {
+      for (const stream of ["stdout", "stderr"]) {
+        const text = record[stream];
+        for (const sentinel of sentinels) assert.ok(!text.includes(sentinel) && !text.includes(encodeURIComponent(sentinel)), `${record.sink}/${stream}: callback sentinel absent`);
+      }
+    }
   }
   async safeRows() {
     const r = await docker(["logs", this.names.outer]);
@@ -326,6 +393,6 @@ export class FrontHarness {
       try { await docker(["image", "rm", image]); } catch { failures.push("fixture image cleanup"); }
     }
     if (this.tmp) rmSync(this.tmp, { recursive: true, force: true });
-    assert.deepEqual(failures, [], "all owned CI resources must be cleaned");
+    assert.deepEqual([...this.cleanupErrors, ...failures], [], "all archive/removal errors are retained; all owned CI resources must be cleaned");
   }
 }

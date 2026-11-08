@@ -47,11 +47,6 @@ function safeRow(row, provider, status) {
   assert.equal(row.status, status);
   for (const key of ["time", "remote_addr", "x_forwarded_for", "host", "server_name", "request_method", "body_bytes_sent", "http_user_agent", "request_time", "upstream_response_time", "scheme"]) assert.ok(Object.hasOwn(row, key), `safe JSON retains ${key}`);
 }
-async function stopped(name, fn) {
-  await docker(["stop", "-t", "1", name]);
-  try { await fn(); }
-  finally { await docker(["start", name]); }
-}
 
 test("01 exact helper configuration and the complete outer fragment pass real nginx syntax checks; immutable image identity", OPTIONS, async (t) => {
   for (const name of [h.names.front, h.names.outer]) await docker(["exec", name, "nginx", "-t"]);
@@ -67,6 +62,7 @@ test("01 exact helper configuration and the complete outer fragment pass real ng
   assert.equal(image.Config.Labels["org.opencontainers.image.revision"], (await command("git", ["rev-parse", "HEAD"])).stdout.trim());
   assert.equal(image.Config.Labels["pod.tree"], (await command("git", ["rev-parse", "HEAD^{tree}"])).stdout.trim());
   t.diagnostic(`immutable app image ${h.image}; public fragment sha256 ${h.fragmentHash}`);
+  for (const record of await h.logs()) t.diagnostic(`${record.sink}: stdout and stderr positive collection controls observed`);
 });
 
 test("02 actual Next with no providers: login preparation and configuration-before-Origin 503", OPTIONS, async () => {
@@ -224,11 +220,11 @@ test("09 direct front callbacks reach actual Next: expired redirect, flow-cookie
 test("10 app-down callbacks leave no query/referrer in front access/error logs, with positive log controls", OPTIONS, async () => {
   const accessControl = "pod_front_access_positive_control";
   await h.frontRequest(`/try/?probe=${accessControl}`);
-  assert.ok((await h.logs()).includes(accessControl), "ordinary access logging is actually collected");
-  await stopped(h.names.upstream, async () => {
+  assert.ok((await h.currentLog("front")).stdout.includes(accessControl), "front ordinary access stdout is actually collected");
+  await h.unavailable("upstream", async () => {
     const errorControl = "pod_front_error_positive_control";
     assert.equal((await h.frontRequest(`/login?probe=${errorControl}`)).status, 502);
-    const frontLogs = await docker(["logs", h.names.front]);
+    const frontLogs = await h.currentLog("front");
     assert.ok(frontLogs.stderr.includes(errorControl), "ordinary upstream errors are actually collected");
     for (const provider of PROVIDERS) {
       const input = callbackInput(provider);
@@ -278,16 +274,21 @@ test("12 BOTH proxies to actual Next retain one no-referrer/security/no-store an
     safeRow(rows.filter((row) => row.uri === `/auth/${provider}/callback`).at(-1), provider, 303);
     await h.noSentinels(input.sentinels);
   }
-  assert.ok(/Next\.js|Ready in/.test(await h.logs()), "actual Next startup logs were collected too");
+  assert.ok(/Next\.js|Ready in/.test((await h.currentLog("upstream")).stdout), "actual Next stdout startup logs were collected too");
 });
 
 test("13 BOTH proxies with app-down and front-down preserve safe 502 access records and log no callback sentinels", OPTIONS, async () => {
   const control = "pod_outer_log_positive_control";
   await h.edgeRequest(`/try/?probe=${control}`);
-  const outerLog = await docker(["logs", h.names.outer]);
+  const outerLog = await h.currentLog("outer");
   assert.ok(outerLog.stdout.includes(control), "outer general-path access logging is actually collected");
-  for (const name of [h.names.upstream, h.names.front]) {
-    await stopped(name, async () => {
+  for (const role of ["upstream", "front"]) {
+    await h.unavailable(role, async () => {
+      if (role === "front") {
+        const errorControl = "pod_outer_error_positive_control";
+        assert.equal((await h.edgeRequest(`/login?probe=${errorControl}`)).status, 502);
+        assert.ok((await h.currentLog("outer")).stderr.includes(errorControl), "outer ordinary upstream-error stderr is actually collected");
+      }
       for (const provider of PROVIDERS) {
         const input = callbackInput(provider);
         const r = await h.edgeRequest(input.target, { headers: input.headers });
@@ -306,5 +307,6 @@ test("14 ORIGINAL preview suite: exactly ten Chromium passes through real helper
   await h.upstream("off");
   const stats = await h.preview();
   t.diagnostic(`original preview: pass ${stats.expected}, fail ${stats.unexpected}, flaky ${stats.flaky}, skip ${stats.skipped}`);
+  for (const record of await h.logs()) t.diagnostic(`${record.sink}: both identified streams collected with positive controls`);
   assert.equal((await docker(["image", "inspect", "--format", "{{.Id}}", h.image])).stdout.trim(), h.image, "the same immutable app ID survived every test");
 });
