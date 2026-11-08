@@ -52,6 +52,9 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Install using the existing app lock
         run: npm ci
+      # Verification branch only. Never merge/cherry-pick this step into the RED branch or dev.
+      - name: F6c1 RED contract (same test blob as the test-only PR)
+        run: node --test --test-reporter=tap tests/deploy-workflow.test.mjs
       - name: Syntax of the new Node harness and observer
         run: |
           node --check tests/front-contract.test.mjs
