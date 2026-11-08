@@ -77,6 +77,11 @@ jobs:
           docker version > "$RUNNER_TEMP/pod-docker-version.txt"
           docker info --format '{{json .Driver}} {{json .DriverStatus}}' > "$RUNNER_TEMP/pod-docker-store.txt"
           cat "$RUNNER_TEMP/pod-docker-version.txt" "$RUNNER_TEMP/pod-docker-store.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+          # The runner's daemon exporter omits config metadata; use the pinned Docker exporter.
+          trap 'docker buildx rm pod-c1 >/dev/null || exit 1' EXIT
+          docker buildx create --name pod-c1 --driver docker-container --use \
+            --driver-opt image=moby/buildkit:v0.34.2@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098
+          echo 'builder_driver=docker-container; buildkit=v0.34.2@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098' | tee -a "$GITHUB_STEP_SUMMARY"
           docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load \
             --metadata-file "$RUNNER_TEMP/pod-build-metadata.json" \
             --build-arg "POD_SHA=${sha}" --build-arg "POD_TREE=${tree}" --build-arg "POD_MIGRATIONS_LATEST=${latest}" \
