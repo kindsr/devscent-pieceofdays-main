@@ -92,7 +92,7 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
       setLatest({ text: current?.text ?? "이 조각은 지워졌어요. 초안은 복사할 수 있어요.", missing: !current });
       if (current) setCompose({ ...compose, version: current.version });
     } else if (summaryDraft) {
-      setLatest({ text: day.summary || "저장된 한 줄이 없어요.", missing: false });
+      setLatest({ text: day.summary || "저장된 한 줄이 없어요.", missing: summaryDraft.version !== null && day.summaryVersion === null });
       setSummaryDraft({ ...summaryDraft, version: day.summaryVersion });
     }
   }, [pending, day, compose, summaryDraft]);
@@ -187,7 +187,7 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
 
   function submitSummary(e: FormEvent) {
     e.preventDefault();
-    if (!summaryDraft || busy.current || !validate(summaryDraft.text, false)) return;
+    if (!summaryDraft || busy.current || latest?.missing || !validate(summaryDraft.text, false)) return;
     run(() => saveSummaryAction(summaryDraft.date, summaryDraft.version, summaryDraft.text), () => {
       setLive(summaryDraft.text.trim() ? "한 줄을 저장했어요." : "한 줄을 지웠어요.");
       setSummaryDraft(null);
@@ -229,7 +229,7 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
             onChange={(e) => setSummaryDraft({ ...summaryDraft, text: e.target.value })} />
           {!compose ? <>{errorContent}{latestContent}</> : null}
           <div className="row">
-            <button className="btn-main" type="submit" disabled={pending}>저장</button>
+            <button className="btn-main" type="submit" disabled={pending || !!latest?.missing}>저장</button>
             <button className="btn-ghost" type="button" disabled={pending} onClick={() => {
               if (busy.current) return;
               setSummaryDraft(null);

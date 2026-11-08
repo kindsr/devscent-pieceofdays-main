@@ -10,10 +10,11 @@ export default async function DaysPage() {
   const ctx = await getDiaryContext();
   if (ctx.kind === "unavailable") return <NotConnected title="모아보기" readFailed={ctx.reason === "db_unavailable"} />;
   if (ctx.kind === "signed_out") redirect(`/login?returnTo=${encodeURIComponent("/days")}`);
+  let data: Awaited<ReturnType<typeof readDaysView>>;
   try {
-    const data = await readDaysView(ctx, null);
-    return <DaysView {...data} mode={ctx.kind} />;
+    data = await readDaysView(ctx, null);
   } catch {
     return <NotConnected title="모아보기" readFailed />;
   }
+  return <DaysView {...data} mode={ctx.kind} />;
 }

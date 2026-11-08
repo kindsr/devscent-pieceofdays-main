@@ -14,10 +14,11 @@ export default async function DayPage({ params }: PageProps<"/days/[date]">) {
   if (ctx.kind === "unavailable") return <NotConnected title="모아보기" readFailed={ctx.reason === "db_unavailable"} />;
   // returnTo는 검증된 날짜로 서버가 만든 경로만 쓴다.
   if (ctx.kind === "signed_out") redirect(`/login?returnTo=${encodeURIComponent(`/days/${date}`)}`);
+  let data: Awaited<ReturnType<typeof readDaysView>>;
   try {
-    const data = await readDaysView(ctx, date);
-    return <DaysView {...data} mode={ctx.kind} />;
+    data = await readDaysView(ctx, date);
   } catch {
     return <NotConnected title="모아보기" readFailed />;
   }
+  return <DaysView {...data} mode={ctx.kind} />;
 }
