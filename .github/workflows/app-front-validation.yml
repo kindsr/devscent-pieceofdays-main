@@ -1,0 +1,101 @@
+name: Validate pieceofdays front and app (F6a2)
+
+# Local images on disposable Actions runners only: no Secrets, environment, registry publication or SSH.
+on:
+  pull_request:
+    branches: [dev]
+    paths: ["app/**", "frontend/**", "scripts/ops/deploy.py", ".github/workflows/app-front-validation.yml"]
+  push:
+    branches: [dev]
+    paths: ["app/**", "frontend/**", "scripts/ops/deploy.py", ".github/workflows/app-front-validation.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-front-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  front-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app
+    services:
+      postgres:
+        image: postgres:18.6@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      POD_FULL_CHECK_ISOLATED: "1"
+      POD_TEST_DB_DISPOSABLE: "1"
+      POD_TEST_ADMIN_URL: postgres://postgres:ci-only-not-a-secret@127.0.0.1:5432/postgres
+      POD_IMAGE_TEST_DB_HOST: postgres
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install using the existing app lock
+        run: npm ci
+      - name: Syntax of the new Node harness and observer
+        run: |
+          node --check tests/front-contract.test.mjs
+          node --check tests/support/front-harness.mjs
+          node --check tests/fixtures/front/observer.mjs
+      - name: Install the existing Chromium version
+        run: npx playwright install --with-deps chromium
+      - name: Build the actual standalone image and freeze its immutable local ID
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          latest="$(ls migrations | sed -nE 's/^([0-9]{4})_.+\.up\.sql$/\1/p' | sort -n | tail -1 | sed -E 's/^0+//')"
+          test -n "$latest"
+          docker build --platform linux/amd64 \
+            --build-arg "POD_SHA=${sha}" --build-arg "POD_TREE=${tree}" --build-arg "POD_MIGRATIONS_LATEST=${latest}" \
+            -t "pod-app-ci:${sha}" .
+          image_id="$(docker image inspect --format '{{.Id}}' "pod-app-ci:${sha}")"
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "POD_IMAGE_TEST_IMAGE=${image_id}" >> "$GITHUB_ENV"
+          echo "Tested checkout ${sha}, tree ${tree}, immutable image ${image_id}"
+      - name: Resolve the disposable service network ID
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          set -euo pipefail
+          test -n "$SERVICE_NETWORK"
+          id="$(docker network inspect --format '{{.Id}}' "$SERVICE_NETWORK")"
+          [[ "$id" =~ ^[0-9a-f]{12,64}$ ]]
+          echo "POD_IMAGE_TEST_NETWORK=${id}" >> "$GITHUB_ENV"
+      - name: Original actual-image contract (exactly six, no skip)
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap tests/image-contract.test.mjs | tee image-contract.tap
+          for line in "# tests 6" "# pass 6" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+            grep -qx -- "$line" image-contract.tap || { echo "image summary mismatch: $line"; exit 1; }
+          done
+      - name: Actual front and app (fourteen contracts including the original ten browser cases)
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap tests/front-contract.test.mjs | tee front-contract.tap
+          for line in "# tests 14" "# pass 14" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+            grep -qx -- "$line" front-contract.tap || { echo "front summary mismatch: $line"; exit 1; }
+          done
+          grep -q 'original preview: pass 10, fail 0, flaky 0, skip 0' front-contract.tap
+          test "$(docker image inspect --format '{{.Id}}' "$POD_IMAGE_TEST_IMAGE")" = "$POD_IMAGE_TEST_IMAGE"
+          echo "Actual image 6/6; front 14/14; original preview 10/10; skip 0; immutable image $POD_IMAGE_TEST_IMAGE" >> "$GITHUB_STEP_SUMMARY"
