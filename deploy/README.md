@@ -8,7 +8,7 @@
 
 ## 반영 흐름
 
-2026-11-08 [PR70](https://github.com/kindsr/devscent-pieceofdays-main/pull/70)의 C1 이미지 게시 소스를 통합하고 [실제 dev 게시](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42484654242)를 완료했다. 같은 SHA의 필수 앱 검사와 같은 이미지 ID의 이미지6·프런트14·preview10, 실제 push·raw manifest/config 검증·logout·최종5outputs를 확인했다. 서버에서도 익명 full pull·manifest 생바이트 hash/config·이미지 라벨을 대조했다. **현재 개발 배포는 계속 정적 방식**이다. 전용 DB migration 2·앱 역할 접속·검토 helper 설치를 완료했으며, OAuth·콜백 설정 승인과 최종 환경 검증 뒤 별도 [C2 PR72](https://github.com/kindsr/devscent-pieceofdays-main/pull/72)에서 앱으로 전환한다.
+2026-11-08 [PR70](https://github.com/kindsr/devscent-pieceofdays-main/pull/70)의 C1 이미지 게시 소스를 통합하고 [실제 dev 게시](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42484654242)를 완료했다. 같은 SHA의 필수 앱 검사와 같은 이미지 ID의 이미지6·프런트14·preview10, 실제 push·raw manifest/config 검증·logout·최종5outputs를 확인했다. 서버에서도 익명 full pull·manifest 생바이트 hash/config·이미지 라벨을 대조했다. **현재 개발 배포는 계속 정적 방식**이다. 전용 DB migration 2·앱 역할 접속·검토 helper 설치·dev 외곽 콜백 반영을 완료했으며, OAuth 설정과 최종 환경·실제 앱 콜백 검증 뒤 별도 [C2 PR72](https://github.com/kindsr/devscent-pieceofdays-main/pull/72)에서 앱으로 전환한다. PR72의 source/CI PASS를 실제 dev 활성화 성공으로 세지 않는다.
 
 1. GitHub 작업 브랜치에서 개발하고 `dev`에 반영한다.
 2. `dev` push가 Actions의 검사와 개발 배포를 실행한다. URL은 `https://dev.pieceofdays.com`이다.
@@ -34,7 +34,7 @@
 - 이미지 교체 후 health·HTTPS 본문·이미지 ID가 일치해야 성공한다. 실패하면 직전 동결 Compose/이미지로 복귀하고 복귀 자체도 검증한다.
 - 첫 교체 전에 복귀 자료가 없으면 배포를 거부한다. 전환 전 동결 자료는 서버 밖으로 공개하지 않는다.
 - 소스 작업 체크아웃에서 `docker compose up/build/pull`로 운영을 직접 변경하지 않는다. 자동 배포와 수동 작업의 경합을 만들지 않는다.
-- 개발 전용 DB는 게시된 고정 이미지로 migration `status→up→status`를 완료해 버전 2를 확인했다. 사용자 선택은 C 등급(기록 손실 허용·복구 시간 보장 없음)이며 첫 야간 백업·복원은 아직 확인하지 않았다. 자동 배포는 migration을 실행하지 않고 저장소 승인 상한과 이미지 버전을 대조한다. 운영 DB·앱 전환은 이번 범위가 아니다.
+- 개발 전용 DB는 게시된 고정 이미지로 migration `status→up→status`를 완료해 버전 2를 확인했다. 사용자 선택은 C 등급(기록 손실 허용·복구 시간 보장 없음)이며 첫 야간 백업 포함·로컬 checksum 일치·NAS 검증 성공 로그를 확인했다. 복원은 미실행이다. 자동 배포는 migration을 실행하지 않고 저장소 승인 상한과 이미지 버전을 대조한다. 운영 DB·앱 전환은 이번 범위가 아니다.
 
 ## 도메인
 

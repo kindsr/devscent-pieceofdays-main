@@ -12,7 +12,7 @@
 
 [개발 현황](https://dev.pieceofdays.com/status/)에서 사용 가능한 기능과 연결 중인 기능을 확인할 수 있다. [로그인·탈퇴·복구 화면 시안](https://dev.pieceofdays.com/design/d-warm-pieces/auth.html)은 화면 확인용이며 실제 인증 요청은 하지 않는다. 실제 앱 연결 순서와 기록 저장 액션 계약은 [실사용 전환 계획](docs/plans/PLAN_dev-usable-app.md)과 [저장 연결 계획](docs/plans/PLAN_dev-diary-actions.md)에 있다.
 
-2026-11-08 실제 개발 앱 이미지 게시(C1)를 완료했다([게시 실행](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42484654242)). 같은 SHA의 필수 앱 검사·이미지6/프런트14/preview10, 게시 manifest/config 연결과 서버의 익명 pull을 확인했다. 개발 전용 DB에 migration 2를 적용하고 앱 역할 접속·권한을 확인했으며 검토된 배포 helper를 설치했다. OAuth 키와 dev 콜백 설정 승인을 기다리고 있어 실제 로그인·서버 기록 저장은 아직 열지 않았다. 전환 코드는 [PR72](https://github.com/kindsr/devscent-pieceofdays-main/pull/72)에서 검토 중이며 현재 사이트는 계속 브라우저 저장 체험판이다.
+2026-11-08 실제 개발 앱 이미지 게시(C1)를 완료했다([게시 실행](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42484654242)). 같은 SHA의 필수 앱 검사·이미지6/프런트14/preview10, 게시 manifest/config 연결과 서버의 익명 pull을 확인했다. 개발 전용 DB에 migration 2를 적용하고 앱 역할 접속·권한을 확인했으며 검토된 배포 helper를 설치했다. dev 외곽 콜백의 안전 로그·단일 no-referrer를 반영하고 첫 DB 야간 백업도 확인했다. OAuth 키와 최종 앱 통합을 기다리고 있어 실제 로그인·서버 기록 저장은 아직 열지 않았다. 전환 코드 [PR72](https://github.com/kindsr/devscent-pieceofdays-main/pull/72)는 CI·독립 source/runner 검토를 통과한 draft이며 현재 사이트는 계속 브라우저 저장 체험판이다.
 
 운영은 준비중 페이지이며, 개발 환경에서는 사용자가 선택한 **D안(C 화면 구성 + A 색)**을 확인할 수 있다. `/design/` 시안의 조각별 수정과 기록 글꼴 설정은 메모리에서 동작해 새로고침하면 초기화되며, `/try/`는 브라우저에 저장한다.
 실제 앱은 **TypeScript·React/Next.js + PostgreSQL + 전용 이미지 저장소**, 그리기는 **Konva**로 개발한다(2026-11-02 사용자 선택). [Next.js 앱](app/README.md)에 D 화면과 시험·빌드 기반, PG 저장 코어와 인증·계정 기록 화면을 만들었다. 이 앱은 현재 dev의 정적 시안 배포와 별개다. MVP는 기록·하루 정리·다시 보기와 개인용 **하루 꾸미기**를 포함하고, 디자인 마켓·구매·정산은 이후 단계다. 실제 공급자 로그인 활성화·서비스 DB·앱 배포·그리기 편집기는 후속이다.
