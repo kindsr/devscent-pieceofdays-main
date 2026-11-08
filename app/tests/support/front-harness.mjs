@@ -146,6 +146,12 @@ export class FrontHarness {
     const net = JSON.parse((await docker(["network", "inspect", this.network])).stdout)[0];
     assert.equal(net.Internal, true, "app/observer/front/outer cannot reach real OIDC providers");
     this.subnet = net.IPAM.Config[0].Subnet;
+    // Docker does not publish host ports for an internal-only endpoint. Only nginx gets this
+    // separate ingress bridge; the app/observer remains exclusively on the internal bridge.
+    this.ingress = (await docker(["network", "create", "--driver", "bridge", `${this.prefix}-ingress`])).stdout.trim();
+    const ingress = JSON.parse((await docker(["network", "inspect", this.ingress])).stdout)[0];
+    assert.equal(ingress.Internal, false);
+    this.ingressSubnet = ingress.IPAM.Config[0].Subnet;
     await docker(["network", "connect", "--alias", "pod-front-postgres", this.network, this.pgContainer]);
     this.pgConnected = true;
     await withAdmin(this.dbEnv, async (admin) => {
@@ -170,7 +176,9 @@ export class FrontHarness {
     await this.front("front");
     this.makeOuter();
     this.containers.add(this.names.outer);
-    await docker(["run", "-d", "--name", this.names.outer, "--network", this.network, "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "-p", "127.0.0.1::80", "--mount", `type=bind,src=${path.join(this.tmp, "outer.conf")},dst=/etc/nginx/conf.d/default.conf,readonly`, "--mount", `type=bind,src=${path.join(this.tmp, "htpasswd")},dst=/etc/nginx/ci.htpasswd,readonly`, this.trusted.base]);
+    await docker(["create", "--name", this.names.outer, "--network", this.ingress, "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "-p", "127.0.0.1::80", "--mount", `type=bind,src=${path.join(this.tmp, "outer.conf")},dst=/etc/nginx/conf.d/default.conf,readonly`, "--mount", `type=bind,src=${path.join(this.tmp, "htpasswd")},dst=/etc/nginx/ci.htpasswd,readonly`, this.trusted.base]);
+    await docker(["network", "connect", this.network, this.names.outer]);
+    await docker(["start", this.names.outer]);
     this.outerPort = await this.port(this.names.outer);
     await this.waitPort(this.outerPort, 401);
   }
@@ -197,11 +205,14 @@ export class FrontHarness {
   }
   async address(name) {
     const info = JSON.parse((await docker(["inspect", name])).stdout)[0];
-    return Object.values(info.NetworkSettings.Networks)[0].IPAddress;
+    const endpoints = Object.values(info.NetworkSettings.Networks).filter((endpoint) => endpoint.NetworkID === this.network);
+    assert.equal(endpoints.length, 1, "exactly one owned internal endpoint");
+    return endpoints[0].IPAddress;
   }
   async port(name) {
     const info = JSON.parse((await docker(["inspect", name])).stdout)[0];
     const mapping = info.NetworkSettings.Ports["80/tcp"];
+    assert.ok(Array.isArray(mapping), `nginx must have a real loopback port mapping (running=${info.State.Running})`);
     assert.equal(mapping.length, 1);
     assert.equal(mapping[0].HostIp, "127.0.0.1");
     return Number(mapping[0].HostPort);
@@ -234,7 +245,9 @@ export class FrontHarness {
   async front(kind) {
     await this.remove(this.names.front);
     this.containers.add(this.names.front);
-    await docker(["run", "-d", "--name", this.names.front, "--network", this.network, ...(this.frontIP ? ["--ip", this.frontIP] : []), "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "-p", `127.0.0.1:${this.frontPort ?? ""}:80`, this[`${kind}Image`]]);
+    await docker(["create", "--name", this.names.front, "--network", this.ingress, "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "-p", `127.0.0.1:${this.frontPort ?? ""}:80`, this[`${kind}Image`]]);
+    await docker(["network", "connect", ...(this.frontIP ? ["--ip", this.frontIP] : []), this.network, this.names.front]);
+    await docker(["start", this.names.front]);
     this.frontIP ??= await this.address(this.names.front);
     this.frontPort = await this.port(this.names.front);
     await this.waitPort(this.frontPort, 200, "/try/");
@@ -255,7 +268,7 @@ export class FrontHarness {
     const format = fragment.slice(0, start);
     const locations = fragment.slice(start);
     const security = 'add_header X-Robots-Tag "noindex, nofollow" always; add_header X-Frame-Options "SAMEORIGIN" always; add_header X-Content-Type-Options "nosniff" always; add_header Referrer-Policy "strict-origin-when-cross-origin" always; add_header Strict-Transport-Security "max-age=31536000" always;';
-    const background = `set $pieceofdays_dev_web http://${this.frontIP}:80; auth_basic "CI dev fixture"; auth_basic_user_file /etc/nginx/ci.htpasswd; allow ${this.subnet}; deny all; ${security}`;
+    const background = `set $pieceofdays_dev_web http://${this.frontIP}:80; auth_basic "CI dev fixture"; auth_basic_user_file /etc/nginx/ci.htpasswd; allow ${this.ingressSubnet}; deny all; ${security}`;
     writeFileSync(path.join(this.tmp, "outer.conf"), `${format}\nserver { listen 80; server_name dev.pieceofdays.com; ${background}\n${locations}\nlocation / { proxy_pass $pieceofdays_dev_web; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto $scheme; }\n}\n`);
     const sha = createHash("sha1").update(FAKE_PASSWORD).digest("base64");
     writeFileSync(path.join(this.tmp, "htpasswd"), `ci:{SHA}${sha}\n`, { mode: 0o644 });
@@ -303,6 +316,9 @@ export class FrontHarness {
     }
     if (this.network) {
       try { await docker(["network", "rm", this.network]); } catch { failures.push("network cleanup"); }
+    }
+    if (this.ingress) {
+      try { await docker(["network", "rm", this.ingress]); } catch { failures.push("ingress cleanup"); }
     }
     try { await cleanupAll(this.dbEnv); } catch { failures.push("disposable DB cleanup"); }
     await closeAllClients();
