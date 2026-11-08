@@ -347,6 +347,55 @@ test("conflict between two contexts of the same account: a stale save keeps the 
   }
 });
 
+test("a deleted summary stays blocked after the first and second explicit reload: the draft stays copyable and no action recreates the row", async ({ page, browser }) => {
+  const a = await signIn(page);
+  const today = await serverSeoulToday();
+  await page.getByRole("button", { name: "한 줄 쓰기" }).click();
+  await page.getByRole("textbox", { name: "하루 한 줄" }).fill("삭제 전 한 줄");
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(page.getByRole("button", { name: "고쳐 쓰기" })).toBeVisible();
+  expect(await summariesOf(a.userId)).toEqual([{ localDate: today, body: "삭제 전 한 줄", version: 1 }]);
+
+  const b = await sameAccountContext(browser, a);
+  const tap = await tapActions(page);
+  try {
+    await page.getByRole("button", { name: "고쳐 쓰기" }).click();
+    const draft = "삭제 뒤에도 복사할 내 초안";
+    const field = page.getByRole("textbox", { name: "하루 한 줄" });
+    const save = page.getByRole("button", { name: "저장", exact: true });
+    await field.fill(draft);
+
+    await b.page.getByRole("button", { name: "고쳐 쓰기" }).click();
+    await b.page.getByRole("textbox", { name: "하루 한 줄" }).fill("");
+    await b.page.getByRole("button", { name: "저장", exact: true }).click();
+    await expect(statusWith(b.page, DIARY_TEXT.summaryDeleted)).toBeVisible();
+    expect(await summariesOf(a.userId), "the other context deleted the summary").toEqual([]);
+
+    await save.click();
+    await expect(page.getByText(DIARY_TEXT.notFound, { exact: true })).toBeVisible();
+    expect(tap.calls.length, "one refused stale save").toBe(1);
+
+    for (const attempt of ["first", "second"]) {
+      const reload = page.getByRole("button", { name: DIARY_TEXT.reload, exact: true });
+      await reload.click();
+      // 비활성인 pending 상태를 통과로 세지 않는다. 명시 재조회가 끝난 뒤의 상태를 확인한다.
+      await expect(reload, `${attempt} explicit reload finished`).toBeEnabled();
+      await expect(field, `${attempt} explicit reload keeps the copyable draft`).toHaveValue(draft);
+      expect(await summariesOf(a.userId), `${attempt} explicit reload does not recreate the deleted summary`).toEqual([]);
+      expect(tap.calls.length, `${attempt} explicit reload only reads`).toBe(1);
+      await expect(save, `${attempt} explicit reload must keep a deleted summary's save disabled`).toBeDisabled();
+    }
+
+    await save.dispatchEvent("click");
+    expect(tap.calls.length, "a disabled resubmit sends no action").toBe(1);
+    expect(await summariesOf(a.userId), "the deleted summary is never recreated").toEqual([]);
+    await expect(field).toHaveValue(draft);
+  } finally {
+    await tap.dispose();
+    await b.close();
+  }
+});
+
 // ================================================================= 통신 실패
 
 test("transport: aborted before the server → 0 rows; response lost after commit → exactly 1 row; both show the unavailable text, keep the draft, never retry, and 다시 불러오기 only reads", async ({ page }) => {
