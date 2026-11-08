@@ -232,3 +232,12 @@ html[data-record-font="hand"] { --font-record: var(--font-hand); }
 .row a.text-btn, .row .text-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
 .top-login { grid-area: add; justify-self: end; }
 .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 계정 저장 상태·삭제는 D 토큰과 기존 팝업을 쓴다. */
+.account-board .first { margin-bottom: var(--s-4); }
+.account-board .piece-meta { flex-wrap: wrap; }
+.account-board .piece-delete { margin: var(--s-1) 0 -6px; }
+.diary-error, .diary-latest { display: grid; gap: var(--s-1); }
+.diary-latest { border-top: var(--border); padding-top: var(--s-2); white-space: pre-wrap; }
+.account-board .oneline .err { font-family: var(--font-ui); }
+.btn-main:disabled, .piece-edit:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import type { DiaryDay, SampleImageKey } from "@/shared/diary";
 import { dateLabel } from "@/shared/local-date";
 import { SAMPLE_IMAGES } from "./sample-images";
+import { AccountDayBoard } from "./AccountDayBoard";
 
 /*
  * D 조각 보드 + 하루 한 줄 + 작성·수정 팝업(docs/design/concepts/d-warm-pieces/app.js 동작을 React로 옮김).
@@ -46,7 +47,19 @@ function nowTime(): string {
 
 type Compose = { mode: "add" } | { mode: "edit"; key: string };
 
-export function DayBoard({
+export type DayBoardProps = {
+  day: DiaryDay;
+  isToday: boolean;
+  sub: string;
+  showSettingsLink?: boolean;
+  headingLevel?: 1 | 2;
+};
+
+export function DayBoard({ mode = "fixture", ...props }: DayBoardProps & { mode?: "fixture" | "account" }) {
+  return mode === "account" ? <AccountDayBoard {...props} /> : <FixtureDayBoard {...props} />;
+}
+
+function FixtureDayBoard({
   day,
   isToday,
   sub,

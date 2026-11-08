@@ -17,10 +17,10 @@ export interface DiaryStore {
 
 /**
  * 요청의 기록 문맥. userId는 세션에서만 얻는다(F4). 헤더·URL·폼 값의 사용자 ID는 쓰지 않는다.
- * signed_in은 F5 전까지 저장소 없이 "기록 연결 전" 안내만 한다. 설정 없음·DB 실패는 unavailable이다.
+ * account 문맥은 일반 서버 함수에서만 쓰고 어떤 React props에도 넘기지 않는다.
  */
 export type DiaryContext =
   | { kind: "fixture"; userId: string; store: DiaryStore; today: string }
-  | { kind: "signed_in" }
+  | { kind: "account"; userId: string; store: DiaryStore; today: LocalDate }
   | { kind: "signed_out" }
-  | { kind: "unavailable" };
+  | { kind: "unavailable"; reason?: "db_unavailable" };

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /** D 상단: 브랜드 · 오늘/모아보기 세그먼트 · 조각 추가(예시 사용자) 또는 로그인(로그아웃 상태). viewer는 종류 문자열만 받는다. */
-export function TopBar({ canWrite, viewer }: { canWrite: boolean; viewer: "fixture" | "signed_in" | "signed_out" | "unavailable" }) {
+export function TopBar({ canWrite, viewer }: { canWrite: boolean; viewer: "fixture" | "account" | "signed_out" | "unavailable" }) {
   const path = usePathname();
   const inDays = path.startsWith("/days");
   const inToday = path === "/";

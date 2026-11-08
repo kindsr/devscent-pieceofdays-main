@@ -4,7 +4,7 @@ import { WEEK, dateLabel } from "@/shared/local-date";
 import { SAMPLE_IMAGES } from "./sample-images";
 
 /** D 모아보기 달력 한 달. 조각이 있는 날만 누를 수 있고, 첫 사진 조각을 덮개로 보여 준다. */
-export function MonthCalendar({ year, month, days, today, picked }: { year: number; month: number; days: DiaryDay[]; today: string; picked: string | null }) {
+export function MonthCalendar({ year, month, days, today, picked, includeSummary = false }: { year: number; month: number; days: DiaryDay[]; today: string; picked: string | null; includeSummary?: boolean }) {
   const start = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
   const count = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const byDate = new Map(days.map((d) => [d.date, d]));
@@ -13,11 +13,11 @@ export function MonthCalendar({ year, month, days, today, picked }: { year: numb
   for (let d = 1; d <= count; d++) {
     const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const day = byDate.get(iso);
-    if (day && day.moments.length) {
+    if (day && (day.moments.length || (includeSummary && day.summary.trim()))) {
       const cover = day.moments.find((m) => m.image);
       cells.push(
         <li key={iso}>
-          <Link className="cell" href={`/days/${iso}`} aria-current={picked === iso ? "date" : undefined} aria-label={`${dateLabel(iso)}, 조각 ${day.moments.length}개`}>
+          <Link className="cell" href={`/days/${iso}`} aria-current={picked === iso ? "date" : undefined} aria-label={day.moments.length ? `${dateLabel(iso)}, 조각 ${day.moments.length}개` : `${dateLabel(iso)} 하루 한 줄`}>
             <span className="n" aria-hidden="true">
               {d}
             </span>
