@@ -23,12 +23,23 @@ import {
   userCount,
   type Provider,
 } from "./support";
+import { DIARY_TEXT, FIXTURE_TEXT, dateLabel, escapeRe, seoulDate, topAdd } from "./diary-support";
 
 const SEVEN_DAYS_S = 7 * 24 * 3600;
 
+// F5 S3b 전환(PLAN_dev-diary-actions §4): 로그인한 계정은 "기록 연결 전" 안내 대신 실제 계정 기록 화면을 본다.
+// 오늘(/)은 서울 오늘의 빈 계정 보드, /days·/days/<date>는 모아보기. 상단에 조각 추가 진입점이 있다.
 async function expectSignedInHome(page: Page, label: string): Promise<void> {
-  await expect(page.getByRole("heading", { name: TEXT.signedIn }), `${label}: signed-in notice`).toBeVisible();
-  await expect(page.getByText(TEXT.signedInBody), `${label}: not-connected text`).toBeVisible();
+  const path = new URL(page.url()).pathname;
+  if (path === "/") {
+    await expect(page.getByRole("heading", { level: 1, name: new RegExp(escapeRe(dateLabel(seoulDate()))) }), `${label}: today board`).toBeVisible();
+    await expect(page.getByText(DIARY_TEXT.empty, { exact: true }), `${label}: empty account board`).toBeVisible();
+  } else {
+    await expect(page.getByRole("heading", { level: 1, name: "모아보기", exact: true }), `${label}: ${path}`).toBeVisible();
+  }
+  await expect(topAdd(page), `${label}: account write entry`).toBeVisible();
+  await expect(page.getByRole("heading", { name: TEXT.signedIn }), `${label}: no not-connected notice`).toHaveCount(0);
+  await expect(page.getByText(TEXT.signedInBody), `${label}: no not-connected text`).toHaveCount(0);
 }
 
 async function expectLoginNotice(page: Page, text: string, query: string): Promise<void> {
@@ -129,14 +140,13 @@ for (const p of ["google", "kakao"] as const satisfies readonly Provider[]) {
   });
 }
 
-test("signed-in pages show only the not-connected notice: no write UI, sample pieces, balance or /try/ note in the diary body", async ({ page }) => {
+test("signed-in pages show the account's own (empty) diary: write entry allowed, no sample pieces, balance or /try/ note in the diary body", async ({ page }) => {
   await login(page, "google", newSubject("google"));
   for (const path of ["/", "/days", "/days/2026-11-03"]) {
     await page.goto(path);
     await expectSignedInHome(page, path);
-    await expect(page.getByRole("link", { name: "조각 추가" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "조각 추가" })).toHaveCount(0);
-    await expect(page.locator(".piece")).toHaveCount(0);
+    for (const t of FIXTURE_TEXT) await expect(page.getByText(t), `${path}: no fixture piece`).toHaveCount(0);
+    await expect(page.locator("main img"), `${path}: no sample images`).toHaveCount(0);
     await expect(page.getByText(/감정덩어리|잔액/)).toHaveCount(0);
     await expect(page.getByText(TEXT.tryNote)).toHaveCount(0);
   }
@@ -367,7 +377,10 @@ test("without JavaScript the provider form still POSTs (303) and the login compl
     expect(r.status).toBe(303);
     await held.dispose();
     await page.goto(r.callback);
-    await expect(page.getByRole("heading", { name: TEXT.signedIn })).toBeVisible();
+    // JS 없이도 실제 SSR 빈 계정 보드에 도착한다(상호작용 쓰기는 요구하지 않는다).
+    await expect(page.getByRole("heading", { level: 1, name: new RegExp(escapeRe(dateLabel(seoulDate()))) })).toBeVisible();
+    await expect(page.getByText(DIARY_TEXT.empty, { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: TEXT.signedIn })).toHaveCount(0);
     expect(await accountOf("kakao", subject)).toMatchObject({ status: "active", balance: 10, ledger: 1 });
   } finally {
     await context.close();
