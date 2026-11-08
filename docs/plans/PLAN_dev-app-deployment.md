@@ -481,6 +481,17 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - **GREEN:** F6c1은 `deploy.yml`(+Q2 조건 충족 시 `app-image-validation.yml`)과 §7.1 5의 stdlib archive 검사 스크립트(경로는 RED 전에 메인이 고정), F6c2는 `deploy.yml`·`app-validation.yml`. 구현은 실제 CI run으로 확인한다.
 - 이 계획 작업은 병행 중인 S3b UI 작업을 막지 않는다(파일 겹침 없음).
 
+#### 7.4 C1 archive·manifest 검사 CLI (2026-11-08 메인 고정)
+
+신규 `scripts/ci/verify-image-archive.py`는 Python 표준 라이브러리만 쓴다. 서버에서는 실행하지 않고 격리 CI가 입력 파일을 검사한다. RED는 `app/tests/deploy-workflow.test.mjs` 하나에 구조 계약과 의미 있는 archive/manifest 양성·음성 사례를 둔다.
+
+- `archive --metadata FILE --archive FILE --sha SHA --tree TREE --migrations-latest N`: §7.1 5의 안전한 단일 Docker save archive에서 config 생바이트 C와 metadata M을 대조하고 플랫폼·source/revision/tree/migration 라벨을 확인한다. 디스크 추출은 없고 링크·절대/상위 경로·중복 멤버·중복 JSON 키·모르는 배치는 거부한다.
+- archive 성공 JSON은 `{config_digest, migrations_latest, metadata_keys}`다. `migrations_latest`는 이미지 라벨에서 확인한 canonical 양의 정수 **문자열**(예: `"1"`)이며 CLI 입력과 같아야 한다. `metadata_keys`는 정렬된 문자열 배열이다. 0·음수·선행 0·지수·공백은 허용하지 않는다.
+- `manifest --manifest FILE --manifest-digest D --config-digest C`: 원문 생바이트 hash D·단일 schema2 manifest·config C를 검사한다. 허용 mediaType/config/layer 형식은 기존 helper의 `validate_app_manifest` 계약과 같다. 성공 JSON은 `{manifest_digest, config_digest, media_type}`다.
+- 두 명령의 실패는 종료1과 고정 `verify-image:` 진단만 내보내며 입력 원문·파일 경로는 출력하지 않는다. digest·SHA/tree·양의 버전 형식도 검사한다.
+- RED의 음성 사례는 단순 script 부재·TypeError를 의도한 거부로 세지 않는다. PR의 local build/export 증거와 dev의 실제 게시 D/C/M/ID 증거는 계속 분리한다. 임시 RED 검증 workflow는 별도 verify branch에서만 쓰고 dev에 통합하지 않는다.
+- app-image의 PR·dev push paths는 기존 `app/**`·자기 workflow에 `.github/workflows/deploy.yml`·`scripts/ci/verify-image-archive.py`·`scripts/ops/deploy.py`·`frontend/public/**`를 더한 정확한 6개다. PR trial 전체의 권한·environment·Secrets/token·registry login/push 부재와 허용 action을 RED에서 검사한다. 기존 dev push 검사는 유지한다.
+
 ## 8. 게시 기준
 
 | 구분 | 확인 | 장소 |
