@@ -8,6 +8,8 @@
 
 ## 반영 흐름
 
+2026-11-08 [PR70](https://github.com/kindsr/devscent-pieceofdays-main/pull/70)의 C1 이미지 게시 소스를 통합했다. PR은 게시 자격 없이 실제 local build/export와 같은 이미지 ID의 검사까지 수행한다. dev push만 검사한 이미지를 GHCR에 게시하고 raw manifest/config 연결을 확인한다. **C1 동안 개발 배포는 계속 정적 방식**이며, 실제 게시 proof·익명 pull·전용 DB/환경·OAuth·콜백 설정 준비 뒤 별도 C2에서 앱으로 전환한다. PR trial 성공을 실제 게시 성공으로 세지 않는다.
+
 1. GitHub 작업 브랜치에서 개발하고 `dev`에 반영한다.
 2. `dev` push가 Actions의 검사와 개발 배포를 실행한다. URL은 `https://dev.pieceofdays.com`이다.
 3. 개발 검증을 마친 `dev`를 PR로 `main`에 병합한다. Actions가 운영 배포를 실행하며, 서버는 해당 소스 tree가 성공한 개발 배포와 같은지 확인한다.

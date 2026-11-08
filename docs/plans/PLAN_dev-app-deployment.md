@@ -492,6 +492,16 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - RED의 음성 사례는 단순 script 부재·TypeError를 의도한 거부로 세지 않는다. PR의 local build/export 증거와 dev의 실제 게시 D/C/M/ID 증거는 계속 분리한다. 임시 RED 검증 workflow는 별도 verify branch에서만 쓰고 dev에 통합하지 않는다.
 - app-image의 PR·dev push paths는 기존 `app/**`·자기 workflow에 `.github/workflows/deploy.yml`·`scripts/ci/verify-image-archive.py`·`scripts/ops/deploy.py`·`frontend/public/**`를 더한 정확한 6개다. PR trial 전체의 권한·environment·Secrets/token·registry login/push 부재와 허용 action을 RED에서 검사한다. 기존 dev push 검사는 유지한다.
 
+#### 7.5 현재 CI의 실제 exporter 지원 확인 (2026-11-08)
+
+PR70 exact `8c4ed8f`의 [격리 PR trial](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42483997649)에서 구조92·실제 archive C=M·같은 ID의 이미지6/프런트14/원문 preview10을 skip0으로 통과했다. 이 증거는 실제 GHCR 게시 D가 아니다.
+
+- Docker29.4.2의 containerd image store에서 자동 load 경로는 필수 metadata M을 내보내지 않았다. M 누락을 허용하거나 ID를 C로 간주하지 않았다.
+- 작업 전용 `docker-container` builder와 `moby/buildkit:v0.34.2@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098`(linux/amd64)를 명시한다. 고유 run/attempt 이름과 생성 성공 flag로 본인 builder만 정리하며 기존 default builder를 변경하지 않는다.
+- 기존 build flags에 명시적 Docker file output을 더하고 그 **동일 파일을 실제 `docker image load`**한다. metadata M은 exporter의 원래 필드이며 합성하지 않는다. 이후 tag inspect의 ID → ID save archive → config C=M → 같은 ID 검사 흐름은 그대로다.
+- 실측 Buildx v0.38.1·BuildKit v0.34.2에서 M이 존재하고 현재 Docker save의 단일 manifest/regular config 배치가 고정 CLI를 통과했다. 실제 engine ID와 C는 서로 달랐다. 다른 형식/버전에 대한 지원을 추정하지 않으며 필수 proof 실패 시 계속 게시를 거부한다.
+- source·PR proof 독립 검토는 PASS다. 첫 dev 게시의 D/C/M/ID/mediaType·최종 outputs·credential cleanup을 확인하기 전에는 C1 완료나 C2 착수를 선언하지 않는다.
+
 ## 8. 게시 기준
 
 | 구분 | 확인 | 장소 |

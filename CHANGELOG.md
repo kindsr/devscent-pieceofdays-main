@@ -15,6 +15,7 @@
 ## [Unreleased]
 
 ### Added
+- C1 개발 앱 이미지 게시 기반 (2026-11-08): PR70의 dev 전용 publisher·read-only 구조 검사·archive/manifest 검증기를 통합했다. 같은 불변 ID의 이미지6·프런트14·원문 preview10, config C=metadata M·라벨과 게시 manifest 연결을 요구한다. Docker 자동 load가 M을 생략하는 실제 조건을 확인하고 고정 BuildKit file export→같은 파일 load→ID save 검증으로 해결했다. 구조92·PR local proof·독립 source/runner PASS를 수락했다. 실제 게시 D/C/M/ID proof와 서버 앱 전환은 별도 단계다.
 - 계정 화면 시각 증거 (2026-11-08): PR67의 격리 합성 DTO 캡처 도구와 PNG15장을 추가했다. 실제 계정 컴포넌트·CSS를 원본 그대로 써 기록장·빈 화면·작성·삭제 확인·설정을 375/768/1440에서 메인이 직접 대조했다. 독립 검토 PASS, action POST·외부 요청·쿠키0을 확인했다. 실제 인증·저장 증거와 구분하며 기존 auth harness의 캡처 금지는 유지한다.
 - F6a2 실제 프런트·앱 조합 검증 (2026-11-08): PR65의 격리 CI에서 같은 불변 이미지로 이미지6·프런트14·원문 preview10을 통과하고 독립 PASS를 수락했다. 실제 nginx/Next의 정적 응답·Host/Origin·콜백 헤더/로그·상위 프록시 fixture·장애·같은 브라우저 origin의 기록 보존을 확인한다. 시험 포트 연결과 로그 sink 양성 대조·실패 시 정리를 보완했다. 실제 서버 설정·이미지 게시·앱 전환은 후속이다.
 - 계정 기록 화면 S3b (2026-11-08): 검증된 계정의 PG 조각 CRUD·하루 한 줄·날짜별 보기·글꼴 저장을 D 화면에 연결했다(PR64). 초안 보존·명시 재조회·응답 유실 시 자동 재시도 금지와 비식별 React props 경계를 지켰다. PR66에서 삭제한 한 줄의 반복 재조회 재제출 회귀를 먼저 확인해 수정했다. 독립 PASS, Node24/26 단위265·빌드 경계7·운영12·fixture12, DB178·인증/기록33·이미지6 통과를 수락했다. 화면 PNG·실제 프런트·서버 로그인 배포는 후속이다.

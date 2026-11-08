@@ -29,6 +29,8 @@ DB 기반(F2), 첫 로그인 지급·기록·꾸미기 저장 코어(F3), 세션
 
 ## GitHub와 자동배포
 
+개발용 앱 이미지 게시(C1) 소스는 [PR70](https://github.com/kindsr/devscent-pieceofdays-main/pull/70)에서 통합했다. 검증한 불변 이미지와 게시 결과를 연결하는 단계이며, 현재 개발 사이트의 Next 앱 전환(C2)과 실제 OAuth·서비스 DB 준비는 별도다.
+
 Git 정본: https://github.com/kindsr/devscent-pieceofdays-main.git
 
 | 역할 | 브랜치 | 도메인 | 반영 |

@@ -4,10 +4,10 @@ name: Validate pieceofdays app image (F6a)
 # registry 게시·배포·배포 키·Secrets·environment를 쓰지 않는다. app-validation.yml·deploy.yml과 별개다.
 on:
   pull_request:
-    paths: ["app/**", ".github/workflows/app-image-validation.yml"]
+    paths: ["app/**", ".github/workflows/app-image-validation.yml", ".github/workflows/deploy.yml", "scripts/ci/verify-image-archive.py", "scripts/ops/deploy.py", "frontend/public/**"]
   push:
     branches: [dev]
-    paths: ["app/**", ".github/workflows/app-image-validation.yml"]
+    paths: ["app/**", ".github/workflows/app-image-validation.yml", ".github/workflows/deploy.yml", "scripts/ci/verify-image-archive.py", "scripts/ops/deploy.py", "frontend/public/**"]
 
 permissions:
   contents: read
@@ -19,7 +19,7 @@ concurrency:
 jobs:
   app-image:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: app
@@ -42,6 +42,7 @@ jobs:
       POD_FULL_CHECK_ISOLATED: "1"
       POD_TEST_DB_DISPOSABLE: "1"
       POD_TEST_ADMIN_URL: postgres://postgres:ci-only-not-a-secret@127.0.0.1:5432/postgres
+      POD_IMAGE_TEST_DB_HOST: postgres
     steps:
       # actions/checkout v6.1.0 (official tag commit, resolved with git ls-remote 2026-11-02)
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -54,20 +55,85 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - name: Install (lockfile only)
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Unit
         run: npm test
+      - name: Publisher structure and verifier fixtures (exactly 92, no skip)
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap tests/deploy-workflow.test.mjs | tee deploy-workflow.tap
+          for line in "# tests 92" "# pass 92" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+            grep -qx -- "$line" deploy-workflow.tap
+          done
+      - name: Install the existing Chromium version
+        run: npx playwright install --with-deps chromium
       - name: Build the app image (linux/amd64, labels from this checkout, local only)
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
           tree="$(git rev-parse 'HEAD^{tree}')"
           latest="$(ls migrations | sed -nE 's/^([0-9]{4})_.+\.up\.sql$/\1/p' | sort -n | tail -1 | sed -E 's/^0+//')"
-          test -n "$latest"
-          docker build --platform linux/amd64 \
+          [[ "$sha" =~ ^[0-9a-f]{40}$ && "$tree" =~ ^[0-9a-f]{40}$ && "$latest" =~ ^[1-9][0-9]*$ ]]
+          docker version > "$RUNNER_TEMP/pod-docker-version.txt"
+          docker info --format '{{json .Driver}} {{json .DriverStatus}}' > "$RUNNER_TEMP/pod-docker-store.txt"
+          cat "$RUNNER_TEMP/pod-docker-version.txt" "$RUNNER_TEMP/pod-docker-store.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+          # A file exporter preserves M; containerd auto-load intentionally removes that field.
+          docker buildx version | tee -a "$GITHUB_STEP_SUMMARY"
+          builder="pod-c1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          builder_created=0
+          trap 'if test "$builder_created" = 1; then docker buildx rm "$builder" >/dev/null || exit 1; fi' EXIT
+          docker buildx create --name "$builder" --driver docker-container \
+            --driver-opt image=moby/buildkit:v0.34.2@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098
+          builder_created=1
+          docker buildx inspect --bootstrap "$builder" > "$RUNNER_TEMP/pod-builder.txt"
+          sed -nE '/^[[:space:]]*(Driver:|BuildKit version:)/p' "$RUNNER_TEMP/pod-builder.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo 'builder_driver=docker-container; buildkit=v0.34.2@sha256:97719ccb2ac86fb44fd36f330a6d302f63dddd5326f3ada24f9c05ccac0d9098' | tee -a "$GITHUB_STEP_SUMMARY"
+          docker buildx build --platform linux/amd64 --provenance=false --sbom=false --load \
+            --builder "$builder" \
+            --output "type=docker,dest=$RUNNER_TEMP/pod-build-output.tar" \
+            --metadata-file "$RUNNER_TEMP/pod-build-metadata.json" \
             --build-arg "POD_SHA=${sha}" --build-arg "POD_TREE=${tree}" --build-arg "POD_MIGRATIONS_LATEST=${latest}" \
             -t "pod-app-ci:${sha}" .
-          echo "POD_IMAGE_TEST_IMAGE=pod-app-ci:${sha}" >> "$GITHUB_ENV"
+          docker image load --input "$RUNNER_TEMP/pod-build-output.tar"
+          rm -- "$RUNNER_TEMP/pod-build-output.tar"
+          image_id="$(docker image inspect --format '{{.Id}}' "pod-app-ci:${sha}")"
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker image save "$image_id" -o "$RUNNER_TEMP/pod-image.tar"
+          {
+            echo "POD_IMAGE_TEST_IMAGE=$image_id"
+            echo "POD_PROOF_SHA=$sha"
+            echo "POD_PROOF_TREE=$tree"
+            echo "POD_PROOF_MIGRATIONS=$latest"
+          } >> "$GITHUB_ENV"
+      - name: Verify exported config bytes against build metadata and checkout labels
+        working-directory: .
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, os, re, sys
+          try:
+              with open(os.environ["RUNNER_TEMP"] + "/pod-build-metadata.json") as source:
+                  metadata = json.load(source)
+              if not isinstance(metadata, dict):
+                  raise ValueError
+          except Exception:
+              sys.stderr.write("verify-image: invalid metadata object\n")
+              sys.exit(1)
+          metadata_digest = metadata.get("containerimage.config.digest")
+          valid_digest = isinstance(metadata_digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", metadata_digest) is not None
+          print(json.dumps({"metadata_keys": sorted(metadata), "metadata_config_digest": metadata_digest if valid_digest else None}))
+          PY
+          python3 scripts/ci/verify-image-archive.py archive \
+            --metadata "$RUNNER_TEMP/pod-build-metadata.json" --archive "$RUNNER_TEMP/pod-image.tar" \
+            --sha "$POD_PROOF_SHA" --tree "$POD_PROOF_TREE" --migrations-latest "$POD_PROOF_MIGRATIONS" \
+            > "$RUNNER_TEMP/pod-archive-proof.json"
+          {
+            echo '### PR local image proof (no registry manifest proof)'
+            cat "$RUNNER_TEMP/pod-docker-version.txt" "$RUNNER_TEMP/pod-docker-store.txt"
+            echo "Opaque tested image ID: $POD_IMAGE_TEST_IMAGE"
+            cat "$RUNNER_TEMP/pod-archive-proof.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -- "$RUNNER_TEMP/pod-image.tar"
       - name: Resolve the service network ID
         env:
           SERVICE_NETWORK: ${{ job.services.postgres.network }}
@@ -86,3 +152,13 @@ jobs:
           for line in "# tests 6" "# pass 6" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
             grep -qx -- "$line" image-contract.tap || { echo "image contract summary mismatch: expected '$line'"; exit 1; }
           done
+      - name: Actual front and app (fourteen contracts including original preview ten)
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=tap tests/front-contract.test.mjs | tee front-contract.tap
+          for line in "# tests 14" "# pass 14" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+            grep -qx -- "$line" front-contract.tap
+          done
+          grep -q 'original preview: pass 10, fail 0, flaky 0, skip 0' front-contract.tap
+          test "$(docker image inspect --format '{{.Id}}' "$POD_IMAGE_TEST_IMAGE")" = "$POD_IMAGE_TEST_IMAGE"
+          echo "Actual image 6/6; front 14/14; original preview 10/10; skip 0; immutable image $POD_IMAGE_TEST_IMAGE" >> "$GITHUB_STEP_SUMMARY"
