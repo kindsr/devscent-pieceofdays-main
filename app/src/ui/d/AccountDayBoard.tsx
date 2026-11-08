@@ -9,7 +9,7 @@ import { dateLabel } from "@/shared/local-date";
 import type { DayBoardProps } from "./DayBoard";
 
 type Compose = { mode: "add" } | { mode: "edit" | "delete"; id: string; version: number; time: string };
-type SummaryDraft = { date: string; text: string; version: number | null };
+type SummaryDraft = { date: string; text: string; version: number | null; missing?: boolean };
 type Latest = { text: string; missing: boolean };
 const NOTE = ["y", "m", "p"] as const;
 const ERRORS: Record<ActionError, string> = {
@@ -92,8 +92,10 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
       setLatest({ text: current?.text ?? "이 조각은 지워졌어요. 초안은 복사할 수 있어요.", missing: !current });
       if (current) setCompose({ ...compose, version: current.version });
     } else if (summaryDraft) {
-      setLatest({ text: day.summary || "저장된 한 줄이 없어요.", missing: summaryDraft.version !== null && day.summaryVersion === null });
-      setSummaryDraft({ ...summaryDraft, version: day.summaryVersion });
+      // 삭제를 확인한 초안은 닫을 때까지 잠근다. 재생성된 행도 이 초안으로 덮어쓰지 않는다.
+      const missing = summaryDraft.missing || (summaryDraft.version !== null && day.summaryVersion === null);
+      setLatest({ text: day.summary || "저장된 한 줄이 없어요.", missing });
+      setSummaryDraft({ ...summaryDraft, version: day.summaryVersion, missing });
     }
   }, [pending, day, compose, summaryDraft]);
 
@@ -187,7 +189,7 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
 
   function submitSummary(e: FormEvent) {
     e.preventDefault();
-    if (!summaryDraft || busy.current || latest?.missing || !validate(summaryDraft.text, false)) return;
+    if (!summaryDraft || busy.current || summaryDraft.missing || !validate(summaryDraft.text, false)) return;
     run(() => saveSummaryAction(summaryDraft.date, summaryDraft.version, summaryDraft.text), () => {
       setLive(summaryDraft.text.trim() ? "한 줄을 저장했어요." : "한 줄을 지웠어요.");
       setSummaryDraft(null);
@@ -229,7 +231,7 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
             onChange={(e) => setSummaryDraft({ ...summaryDraft, text: e.target.value })} />
           {!compose ? <>{errorContent}{latestContent}</> : null}
           <div className="row">
-            <button className="btn-main" type="submit" disabled={pending || !!latest?.missing}>저장</button>
+            <button className="btn-main" type="submit" disabled={pending || !!summaryDraft.missing}>저장</button>
             <button className="btn-ghost" type="button" disabled={pending} onClick={() => {
               if (busy.current) return;
               setSummaryDraft(null);
