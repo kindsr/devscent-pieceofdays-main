@@ -660,10 +660,11 @@ def validate_app_image(inspect, sha, tree, manifest_digest, settings):
     """Checks the pulled image; Id is the opaque engine image ID and is not compared with the config digest."""
     if not isinstance(inspect, dict) or not is_digest(inspect.get("Id")) or not is_hex(sha) or not is_hex(tree) or not is_digest(manifest_digest):
         raise ValueError("invalid image identity")
-    if inspect.get("RepoTags") not in (None, []):
+    expected = APP_IMAGE_REPOSITORY + "@" + manifest_digest
+    # The containerd store can also list a digest-only image name in RepoTags.
+    if inspect.get("RepoTags") not in (None, [], [expected]):
         raise ValueError("app image must not carry tags")
     repo_digests = inspect.get("RepoDigests")
-    expected = APP_IMAGE_REPOSITORY + "@" + manifest_digest
     if not isinstance(repo_digests, list) or expected not in repo_digests or any(not isinstance(d, str) or re.fullmatch(re.escape(APP_IMAGE_REPOSITORY) + "@" + DIGEST_RE, d) is None for d in repo_digests):
         raise ValueError("app image must come from the fixed repository and manifest digest")
     if inspect.get("Os") != "linux" or inspect.get("Architecture") != settings.get("server_arch"):
