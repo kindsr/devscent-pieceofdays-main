@@ -26,11 +26,11 @@ jobs:
           docker compose -f docker-compose.dev.yml config -q
 
   deploy:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+    environment: production
     concurrency:
       group: pieceofdays-deployment
       cancel-in-progress: false
@@ -39,7 +39,7 @@ jobs:
       - name: Probe environment and request fixed SHA
         shell: bash
         env:
-          DEPLOY_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+          DEPLOY_ENV: production
           DEPLOY_SHA: ${{ github.sha }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
@@ -86,12 +86,12 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Install using the existing lock without lifecycle scripts
         run: npm ci --ignore-scripts
-      - name: Publisher structure and verifier fixtures (nonempty, exactly 92, no skip)
+      - name: Publisher structure and verifier fixtures (nonempty, exactly 128, no skip)
         run: |
           set -euo pipefail
           node --test --test-reporter=tap tests/deploy-workflow.test.mjs | tee deploy-workflow.tap
           grep -Eq '^# tests [1-9][0-9]*$' deploy-workflow.tap
-          for line in "# tests 92" "# pass 92" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
+          for line in "# tests 128" "# pass 128" "# fail 0" "# cancelled 0" "# skipped 0" "# todo 0"; do
             grep -qx -- "$line" deploy-workflow.tap
           done
 
@@ -99,7 +99,7 @@ jobs:
   # Same-job packages-write residual risk is accepted in PLAN §7.1; step order is not isolation.
   build-dev-app:
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    needs: [validate, workflow-contracts]
+    needs: [validate, workflow-contracts, app-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -309,3 +309,84 @@ jobs:
             echo "config_digest=$config_digest"
             echo "migrations_latest=$migrations_latest"
           } >> "$GITHUB_OUTPUT"
+
+  app-checks:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/app-validation.yml
+
+  deploy-dev-app:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: [validate, workflow-contracts, app-checks, build-dev-app]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    environment: dev
+    concurrency:
+      group: pieceofdays-dev-app-deployment
+      cancel-in-progress: false
+    env:
+      DEPLOY_SHA: ${{ needs.build-dev-app.outputs.sha }}
+      DEPLOY_TREE: ${{ needs.build-dev-app.outputs.tree }}
+      DEPLOY_MANIFEST_DIGEST: ${{ needs.build-dev-app.outputs.manifest_digest }}
+      DEPLOY_CONFIG_DIGEST: ${{ needs.build-dev-app.outputs.config_digest }}
+      DEPLOY_MIGRATIONS_LATEST: ${{ needs.build-dev-app.outputs.migrations_latest }}
+      APPROVED_MIGRATIONS: ${{ vars.POD_DEV_APPROVED_MIGRATIONS }}
+    steps:
+      - name: Validate same-run publication and repository migration approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, sys
+
+          def reject():
+              sys.stderr.write("deploy-app: invalid or unapproved publication metadata\n")
+              sys.exit(1)
+
+          for key, pattern in {
+              "DEPLOY_SHA": r"[0-9a-f]{40}",
+              "DEPLOY_TREE": r"[0-9a-f]{40}",
+              "DEPLOY_MANIFEST_DIGEST": r"sha256:[0-9a-f]{64}",
+              "DEPLOY_CONFIG_DIGEST": r"sha256:[0-9a-f]{64}",
+              "DEPLOY_MIGRATIONS_LATEST": r"[1-9][0-9]*",
+              "APPROVED_MIGRATIONS": r"[1-9][0-9]*",
+          }.items():
+              if re.fullmatch(pattern, os.environ.get(key, "")) is None:
+                  reject()
+          if os.environ["DEPLOY_SHA"] != os.environ.get("GITHUB_SHA", ""):
+              reject()
+          latest = os.environ["DEPLOY_MIGRATIONS_LATEST"]
+          approved = os.environ["APPROVED_MIGRATIONS"]
+          # Canonical positive decimal strings compare by digit count, then digits; no integer limit.
+          if (len(latest), latest) > (len(approved), approved):
+              reject()
+          PY
+      - name: Probe dev and request only the validated app publication
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]]
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          chmod 700 "$ssh_dir"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
+          ssh_options=(-F /dev/null -T -p "$DEPLOY_PORT" -i "$ssh_dir/key"
+            -o "UserKnownHostsFile=$ssh_dir/known_hosts" -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes
+            -o IdentityAgent=none -o ForwardAgent=no -o ClearAllForwardings=yes
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "probe dev"
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "deploy-app dev $DEPLOY_SHA $DEPLOY_TREE $DEPLOY_MANIFEST_DIGEST $DEPLOY_CONFIG_DIGEST"

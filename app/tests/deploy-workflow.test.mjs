@@ -1,6 +1,6 @@
-// F6c1 RED — R4 §7.0/7.1/7.3 and the main-fixed verify-image CLI contract.
+// F6c2 RED — R4 §7.2/7.3/9/11; retain the accepted C1 image/CLI contracts.
 // Actions only, app cwd: node --test --test-reporter=tap tests/deploy-workflow.test.mjs
-// This file never executes a workflow, Docker, login, publication, SSH or deployment.
+// Only verifier fixtures and a validation-only shell prefix execute; never Docker/registry/SSH.
 // Existing js-yaml 4.3.2 from the app lock only; no optional import or skipped tests.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -28,7 +28,8 @@ const digest = (bytes) => `sha256:${createHash("sha256").update(bytes).digest("h
 const workflowText = (name) => readFileSync(path.join(ROOT, ".github/workflows", name), "utf8");
 const DEPLOY_TEXT = workflowText("deploy.yml");
 const DEPLOY = load(DEPLOY_TEXT);
-const APP_WORKFLOW = load(workflowText("app-validation.yml"));
+const APP_TEXT = workflowText("app-validation.yml");
+const APP_WORKFLOW = load(APP_TEXT);
 const IMAGE_WORKFLOW = load(workflowText("app-image-validation.yml"));
 const sorted = (values) => [...values].sort();
 const list = (value) => value === undefined ? [] : Array.isArray(value) ? value : [value];
@@ -37,7 +38,7 @@ const steps = (job) => job.steps ?? [];
 const runOf = (step) => String(step.run ?? "").replace(/\\\r?\n\s*/g, " ").replace(/^\s*#.*$/gm, "");
 const scriptOf = (job) => steps(job).map(runOf).join("\n");
 const job = (name) => {
-  assert.ok(DEPLOY.jobs?.[name], `F6c1 GREEN missing required job: ${name}`);
+  assert.ok(DEPLOY.jobs?.[name], `F6c2 GREEN missing required job: ${name}`);
   return DEPLOY.jobs[name];
 };
 const uniqueStep = (j, re, label) => {
@@ -81,9 +82,9 @@ before(() => {
   assert.equal(process.env.GITHUB_ACTIONS, "true", "Actions-only test: no shared-server execution");
 });
 
-// -------------------------------------------------------- C1 workflow structure (no C2 activation)
+// -------------------------------------------------------- C2 workflow structure (source preparation only)
 
-test("C1 preserves dev/main push+PR triggers and workflow read-only permissions, without new event or concurrency", () => {
+test("C2 preserves dev/main push+PR triggers and workflow read-only permissions, without new event or caller concurrency", () => {
   assert.deepEqual(sorted(Object.keys(DEPLOY.on)), ["pull_request", "push"]);
   for (const trigger of Object.values(DEPLOY.on)) assert.deepEqual(trigger, { branches: ["dev", "main"] });
   assert.deepEqual(DEPLOY.permissions, { contents: "read" });
@@ -92,31 +93,31 @@ test("C1 preserves dev/main push+PR triggers and workflow read-only permissions,
   assert.ok(!/github\.token|secrets\.|GITHUB_TOKEN/.test(JSON.stringify(DEPLOY.env ?? {})));
 });
 
-test("C1 preserves the COMPLETE existing static dev/production deploy job, including SSH body and needs validate", () => {
+test("C2 makes static deploy main-only and production-only, preserving its complete SSH body and needs validate", () => {
   const current = job("deploy");
-  assert.equal(expression(current.if), "github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')");
+  assert.equal(expression(current.if), "github.event_name == 'push' && github.ref == 'refs/heads/main'");
   assert.deepEqual(list(current.needs), ["validate"]);
+  assert.equal(current.environment, "production");
+  assert.equal(steps(current)[0].env?.DEPLOY_ENV, "production");
   assert.deepEqual(current.concurrency, { group: "pieceofdays-deployment", "cancel-in-progress": false });
-  assert.equal(digest(frozenJobText("deploy")), "sha256:3d9fe51f5f55007d9e3705c1e762b91485cf893b7035b0624716bbbf36aab3a0", "frozen62f5d31 static job bytes; no C2 change in C1");
+  // Normalize only the three C2 scalar changes back to the accepted C1 snapshot.
+  const original = frozenJobText("deploy")
+    .replace(/^    if:.*$/m, "    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')")
+    .replace(/^    environment:.*$/m, "    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}")
+    .replace(/^          DEPLOY_ENV:.*$/m, "          DEPLOY_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}");
+  assert.equal(digest(original), "sha256:3d9fe51f5f55007d9e3705c1e762b91485cf893b7035b0624716bbbf36aab3a0", "all other production job bytes remain frozen");
 });
 
-test("C1 preserves the existing root validate job and its complete contract/Compose commands", () => {
+test("C2 preserves the existing root validate job and its complete contract/Compose commands", () => {
   assert.equal(digest(frozenJobText("validate")), "sha256:1c1178d4a7a7e8f6a4de6489b337a1f4ebb1b11b1e26b7a6c0a472319062ca57");
 });
 
-test("C1 leaves app-validation PR/dev/main triggers and all existing app jobs unconditional; no workflow_call yet", () => {
-  assert.deepEqual(sorted(Object.keys(APP_WORKFLOW.on)), ["pull_request", "push"]);
-  assert.deepEqual(APP_WORKFLOW.on.push.branches, ["dev", "main"]);
+test("C2 adds input-free and secret-free workflow_call, retains PR paths, and removes only the independent dev push", () => {
+  assert.deepEqual(sorted(Object.keys(APP_WORKFLOW.on)), ["pull_request", "push", "workflow_call"]);
+  assert.deepEqual(APP_WORKFLOW.on.workflow_call, {});
+  assert.deepEqual(APP_WORKFLOW.on.push, { branches: ["main"], paths: ["app/**", ".github/workflows/app-validation.yml"] });
   assert.deepEqual(APP_WORKFLOW.on.pull_request, { paths: ["app/**", ".github/workflows/app-validation.yml"] });
   assert.deepEqual(APP_WORKFLOW.permissions, { contents: "read" });
-  assert.deepEqual(sorted(Object.keys(APP_WORKFLOW.jobs)), ["app", "auth-e2e", "db"]);
-  for (const appJob of Object.values(APP_WORKFLOW.jobs)) {
-    assert.equal(appJob.if, undefined, "no conditional app checks in C1");
-    assert.equal(appJob.environment, undefined);
-    assert.ok(!/secrets\.|packages.*write/.test(JSON.stringify(appJob)));
-  }
-  assert.equal(DEPLOY.jobs["app-checks"], undefined, "C2 has not started");
-  assert.equal(DEPLOY.jobs["deploy-dev-app"], undefined, "C2 has not started");
 });
 
 test("all deploy actions use the three approved immutable commits; new jobs use credential-free v6 checkout and Node26", () => {
@@ -149,16 +150,16 @@ test("workflow-contracts runs on push and PR with read-only scope, no secrets/en
   assert.ok(!steps(current).some((step) => step.if !== undefined || step["continue-on-error"]));
 });
 
-test("publisher is dev-push ONLY, needs validate and workflow-contracts, and owns the only packages-write permission", () => {
+test("C2 publisher is dev-push ONLY, waits for validate/contracts/app-checks, and owns the only packages-write permission", () => {
   const publisher = job("build-dev-app");
   assert.equal(expression(publisher.if), "github.event_name == 'push' && github.ref == 'refs/heads/dev'");
-  assert.deepEqual(sorted(list(publisher.needs)), ["validate", "workflow-contracts"]);
+  assert.deepEqual(sorted(list(publisher.needs)), ["app-checks", "validate", "workflow-contracts"]);
   assert.deepEqual(publisher.permissions, { contents: "read", packages: "write" });
   assert.equal(publisher.environment, undefined);
   assert.ok(!publisher["continue-on-error"]);
   for (const [name, current] of Object.entries(DEPLOY.jobs)) {
     if (name !== "build-dev-app") assert.ok(!JSON.stringify(current.permissions ?? {}).includes("write"), "PR jobs cannot write packages");
-    if (name !== "deploy") assert.ok(!/secrets\.(?:DEPLOY|SSH)|\bssh\s/.test(JSON.stringify(current)), "only existing static deploy owns SSH credentials");
+    if (!["deploy", "deploy-dev-app"].includes(name)) assert.ok(!/secrets\.(?:DEPLOY|SSH)|\bssh\s/.test(JSON.stringify(current)), "only the two environment deployment jobs own SSH credentials");
   }
 });
 
@@ -291,6 +292,193 @@ test("the ENTIRE image PR-trial workflow stays contents-read-or-less, with no to
     for (const step of steps(current)) if (step.uses) assert.ok(ACTIONS.has(step.uses), `unapproved PR-trial action: ${step.uses}`);
   }
 });
+
+test("C2 app-checks calls the local workflow at the caller SHA once, dev-push only, read-only and without inputs/secrets", () => {
+  const current = job("app-checks");
+  assert.deepEqual(sorted(Object.keys(DEPLOY.jobs)), ["app-checks", "build-dev-app", "deploy", "deploy-dev-app", "validate", "workflow-contracts"]);
+  assert.equal(expression(current.if), "github.event_name == 'push' && github.ref == 'refs/heads/dev'");
+  assert.equal(current.uses, "./.github/workflows/app-validation.yml", "local reusable workflow uses the same caller commit, no branch/tag/API lookup");
+  assert.deepEqual(current.permissions, { contents: "read" });
+  for (const field of ["secrets", "with", "environment", "env", "steps", "runs-on", "continue-on-error"]) assert.equal(current[field], undefined, field);
+});
+
+test("C2 callee retains all Node24/26/app/db/auth jobs and commands, with no job/step if, soft failure, secret or deployment environment", () => {
+  assert.deepEqual(sorted(Object.keys(APP_WORKFLOW.jobs)), ["app", "auth-e2e", "db"]);
+  assert.equal(digest(APP_TEXT.slice(APP_TEXT.indexOf("\njobs:\n") + 1)), "sha256:abbd831685a34952b274fcee2f7a8da1a8680a883100107ba6a41b26837bd48f", "accepted13764b3 complete callee jobs, including auth33, remain byte-identical");
+  for (const current of Object.values(APP_WORKFLOW.jobs)) {
+    assert.equal(current.if, undefined, "every callee job runs for workflow_call, regardless of event name or paths");
+    assert.equal(current["continue-on-error"], undefined);
+    assert.equal(current.environment, undefined);
+    assert.deepEqual(current.permissions ?? APP_WORKFLOW.permissions, { contents: "read" });
+    assert.ok(!/secrets(?:\.|\[)|github\.token|GITHUB_TOKEN/.test(JSON.stringify(current)));
+    for (const step of steps(current)) {
+      assert.equal(step.if, undefined);
+      assert.equal(step["continue-on-error"], undefined);
+      if (step.uses) assert.ok(ACTIONS.has(step.uses));
+      if (step.uses === CHECKOUT6) {
+        assert.equal(step.with?.["persist-credentials"], false);
+        assert.ok(step.with?.ref === undefined || expression(step.with.ref) === "github.sha");
+      }
+    }
+  }
+});
+
+test("C2 keeps callee cancellation on its own ref group and leaves the caller without workflow-level concurrency", () => {
+  assert.deepEqual(APP_WORKFLOW.concurrency, { group: "app-validation-${{ github.ref }}", "cancel-in-progress": true });
+  assert.equal(DEPLOY.concurrency, undefined);
+  assert.equal(APP_WORKFLOW.on.workflow_dispatch, undefined);
+  assert.equal(APP_WORKFLOW.on.pull_request_target, undefined);
+});
+
+test("C2 dev deployment requires all four successful same-run jobs, dev push only, with read-only permissions", () => {
+  const current = job("deploy-dev-app");
+  assert.equal(expression(current.if), "github.event_name == 'push' && github.ref == 'refs/heads/dev'", "no always()/failure()/cancelled() bypass of failed needs");
+  assert.deepEqual(sorted(list(current.needs)), ["app-checks", "build-dev-app", "validate", "workflow-contracts"]);
+  assert.deepEqual(current.permissions ?? DEPLOY.permissions, { contents: "read" });
+  assert.equal(current["continue-on-error"], undefined);
+  for (const step of steps(current)) {
+    assert.equal(step.if, undefined, "validation and SSH cannot be conditionally skipped or forced after failure");
+    assert.equal(step["continue-on-error"], undefined);
+  }
+});
+
+test("C2 dev deployment has environment dev, a separate non-cancelling group and a thirty-minute timeout", () => {
+  const current = job("deploy-dev-app");
+  assert.equal(current.environment, "dev");
+  assert.deepEqual(current.concurrency, { group: "pieceofdays-dev-app-deployment", "cancel-in-progress": false });
+  assert.equal(current["timeout-minutes"], 30);
+  assert.notEqual(current.concurrency.group, job("deploy").concurrency.group);
+});
+
+test("C2 deployment executes no checkout/source/npm/node/docker build, action, API polling, registry login or migration", () => {
+  const current = job("deploy-dev-app");
+  assert.equal(current.uses, undefined);
+  assert.equal(current.services, undefined);
+  assert.equal(current.outputs, undefined);
+  for (const step of steps(current)) assert.equal(step.uses, undefined);
+  const script = scriptOf(current);
+  assert.ok(!/\b(?:git|npm|npx|node|docker|curl|wget|gh)\b|(?:^|\n)\s*(?:source\s|\.\s|(?:bash|sh|python3?)\s+(?:\.\/|scripts\/))|migrate-cli|verify-image-archive/.test(script), "no repository code or alternative artifact source at the SSH boundary");
+  assert.ok(!/api\.github\.com|\/actions\/runs|actions:\s*read|secrets\.[A-Za-z0-9_]*(?:PAT|TOKEN)/i.test(JSON.stringify(DEPLOY)), "same-run needs, never polling or new credential scope");
+  assert.ok(!/\$\{\{/.test(script), "untrusted outputs/vars/secrets enter through env, never inline shell interpolation");
+  assert.ok(!/GITHUB_ENV|GITHUB_OUTPUT/.test(script), "the deployment gate cannot replace upstream proof outputs");
+});
+
+function deploymentEnv(current) {
+  const result = { ...(current.env ?? {}) };
+  for (const step of steps(current)) {
+    for (const [key, value] of Object.entries(step.env ?? {})) {
+      if (key in result) assert.equal(result[key], value, `consistent deployment env binding ${key}`);
+      result[key] = value;
+    }
+  }
+  return result;
+}
+function boundVariable(current, context) {
+  const matches = Object.entries(deploymentEnv(current)).filter(([, value]) => expression(value) === context);
+  assert.equal(matches.length, 1, `one direct env binding for ${context}`);
+  return matches[0][0];
+}
+
+test("C2 deployment consumes only the five publisher outputs plus repository migration approval through explicit env bindings", () => {
+  const current = job("deploy-dev-app");
+  for (const field of ["sha", "tree", "manifest_digest", "config_digest", "migrations_latest"]) boundVariable(current, `needs.build-dev-app.outputs.${field}`);
+  boundVariable(current, "vars.POD_DEV_APPROVED_MIGRATIONS");
+  for (const [key, value] of Object.entries(deploymentEnv(current))) {
+    assert.ok(!/^(?:GITHUB_|RUNNER_)/.test(key), "do not shadow the caller SHA or runner built-ins");
+    assert.equal(typeof value, "string");
+    if (/needs\./.test(value)) assert.match(expression(value), /^needs\.build-dev-app\.outputs\.(?:sha|tree|manifest_digest|config_digest|migrations_latest)$/);
+    if (/vars\./.test(value)) assert.equal(expression(value), "vars.POD_DEV_APPROVED_MIGRATIONS");
+    if (/secrets\./.test(value)) assert.match(expression(value), /^secrets\.DEPLOY_(?:HOST|PORT|USER|KNOWN_HOSTS|SSH_KEY)$/);
+  }
+  assert.ok(!/github\.token|GITHUB_TOKEN|secrets\.POD_DEV_APPROVED_MIGRATIONS/.test(JSON.stringify(current)));
+});
+
+test("C2 SSH sends exactly probe dev then deploy-app dev SHA/tree/D/C, using the existing strict SSH credential boundary", () => {
+  const current = job("deploy-dev-app");
+  const script = scriptOf(current);
+  const calls = script.match(/^\s*ssh[ \t]+[^\n]+$/gm) ?? [];
+  assert.equal(calls.length, 2, "exactly the two fixed helper requests, no automatic migration or static deploy");
+  const devNames = Object.entries(deploymentEnv(current)).filter(([, value]) => value === "dev").map(([name]) => variablePattern(name));
+  const dev = `(?:dev${devNames.length ? "|" + devNames.join("|") : ""})`;
+  assert.match(calls[0], new RegExp(`\\s+"probe ${dev}"\\s*$`));
+  const args = ["sha", "tree", "manifest_digest", "config_digest"].map((field) => variablePattern(boundVariable(current, `needs.build-dev-app.outputs.${field}`)));
+  assert.match(calls[1], new RegExp(`\\s+"deploy-app ${dev} ${args.join(" ")}"\\s*$`));
+  for (const secret of ["HOST", "PORT", "USER", "KNOWN_HOSTS", "SSH_KEY"]) boundVariable(current, `secrets.DEPLOY_${secret}`);
+  for (const option of ["-F /dev/null", "StrictHostKeyChecking=yes", "BatchMode=yes", "IdentitiesOnly=yes", "IdentityAgent=none", "ForwardAgent=no", "ClearAllForwardings=yes", "UserKnownHostsFile=", "GlobalKnownHostsFile=/dev/null"]) assert.ok(script.includes(option), option);
+});
+
+// Execute only the validation prefix in Actions with fake env, ending BEFORE the first SSH.
+// This verifies rejection behavior without invoking a workflow, network, Docker or SSH binary.
+function runDeploymentGate(overrides = {}, callerSha = SHA) {
+  const current = job("deploy-dev-app");
+  const script = scriptOf(current);
+  const firstSsh = script.search(/^\s*ssh[ \t]+/m);
+  assert.ok(firstSsh > 0, "validation must precede the first fixed SSH request");
+  const prefix = script.slice(0, firstSsh);
+  assert.match(prefix, /set -euo pipefail/);
+  assert.ok(!/\b(?:ssh|scp|sftp|curl|wget|gh|git|node|npm|npx|docker|eval|exec)\b|\$\{\{/.test(prefix), "validation prefix has no remote/repository/dynamic command or unresolved Actions expression");
+  const dir = mkdtempSync(path.join(tmpdir(), "pod-c2-gate-"));
+  try {
+    const inputs = { sha: SHA, tree: TREE, manifest_digest: `sha256:${"c".repeat(64)}`, config_digest: `sha256:${"d".repeat(64)}`, migrations_latest: "2", approved: "2", ...overrides };
+    const contexts = {
+      ...Object.fromEntries(["sha", "tree", "manifest_digest", "config_digest", "migrations_latest"].map((field) => [`needs.build-dev-app.outputs.${field}`, inputs[field]])),
+      "vars.POD_DEV_APPROVED_MIGRATIONS": inputs.approved,
+      "github.sha": callerSha,
+      "runner.temp": dir,
+      "secrets.DEPLOY_HOST": "ci.example.invalid", "secrets.DEPLOY_PORT": "22", "secrets.DEPLOY_USER": "ci_only",
+      "secrets.DEPLOY_KNOWN_HOSTS": "ci-only-fake-known-host", "secrets.DEPLOY_SSH_KEY": "ci-only-fake-key",
+    };
+    const env = { PATH: process.env.PATH, HOME: dir, TMPDIR: dir, RUNNER_TEMP: dir, GITHUB_SHA: callerSha, CI: "true", GITHUB_ACTIONS: "true" };
+    for (const [key, value] of Object.entries(deploymentEnv(current))) {
+      const context = expression(value);
+      if (context in contexts) env[key] = contexts[context];
+      else {
+        assert.ok(!/\$\{\{/.test(value), `unresolved deployment binding ${key}`);
+        env[key] = value;
+      }
+    }
+    const result = spawnSync("bash", ["--noprofile", "--norc", "-euo", "pipefail", "-c", `${prefix}\nprintf '%s\\n' C2_GATE_ACCEPTED\n`], { cwd: dir, env, encoding: "utf8", timeout: 5_000, maxBuffer: 1024 * 1024 });
+    assert.equal(result.error, undefined, "validation prefix must actually execute");
+    assert.equal(result.signal, null, "timeout/crash is never a valid gate rejection");
+    assert.ok(!/Traceback|SyntaxError|command not found|unbound variable/.test(result.stderr), "a harness/interpreter error is not a meaningful gate rejection");
+    return result;
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+function gateResult(overrides, accepted, callerSha = SHA) {
+  const result = runDeploymentGate(overrides, callerSha);
+  if (accepted) {
+    assert.equal(result.status, 0, `valid deployment metadata must pass, stderr=${result.stderr}`);
+    assert.match(result.stdout, /^C2_GATE_ACCEPTED$/m);
+  } else {
+    assert.notEqual(result.status, 0, "invalid metadata must fail BEFORE the first SSH request");
+    assert.ok(!result.stdout.includes("C2_GATE_ACCEPTED"));
+  }
+}
+for (const [name, latest, approved, accepted] of [
+  ["equal approval", "2", "2", true],
+  ["below a multi-digit approval", "9", "10", true],
+  ["new migration exceeds approval", "10", "9", false],
+  ["above approval beyond signed64 range", "9223372036854775808", "9223372036854775807", false],
+  ["below approval beyond signed64 range", "9223372036854775807", "9223372036854775808", true],
+]) {
+  test(`C2 migration gate handles ${name} before SSH`, () => gateResult({ migrations_latest: latest, approved }, accepted));
+}
+for (const field of ["approved", "migrations_latest"]) {
+  for (const value of ["", "0", "01", "-1", "1e2", " 2", "2 ", "2\n"]) {
+    test(`C2 gate rejects noncanonical ${field} ${JSON.stringify(value)} before SSH`, () => gateResult({ [field]: value }, false));
+  }
+}
+for (const [name, overrides, callerSha] of [
+  ["publisher SHA differs from caller SHA", {}, "e".repeat(40)],
+  ["SHA is not lowercase forty-hex", { sha: "A".repeat(40) }],
+  ["tree has the wrong length", { tree: "b".repeat(39) }],
+  ["manifest digest lacks sha256 prefix", { manifest_digest: "c".repeat(64) }],
+  ["config digest is not lowercase", { config_digest: `sha256:${"D".repeat(64)}` }],
+  ["manifest digest contains a command suffix", { manifest_digest: `sha256:${"c".repeat(64)};false` }],
+  ["config digest is missing", { config_digest: "" }],
+]) {
+  test(`C2 output gate rejects ${name} before SSH`, () => gateResult(overrides, false, callerSha));
+}
 
 // -------------------------------------------------------- stdlib CLI fixtures (no Docker required)
 
