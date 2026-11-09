@@ -444,6 +444,14 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - edge 설정 계획은 PR62(dev-edge-callback, 메인 준비)다. edge 한정 예외는 fixture 증명 뒤 사용자 승인이 필요하다. 바깥 edge의 실제 설정은 이 계획에서 바꾸지 않는다.
 - 첫 C2 실제 run이 `app-checks`의 모든 callee job 실행·성공과 두 concurrency group 동작을 증명해야 C2 완료다. 구조 시험만으로 완료라고 하지 않는다.
 
+**첫 전환의 실측 순서 명확화(2026-11-09, 메인 수락)**
+- 정적 dev에는 Next 앱이 없어 최초 전환 전에 실제 edge→앱 도달을 관측할 수 없다. 사전 준비, 첫 자동 전환 시도, C2 완료 판정을 구분한다. 사전의 정적 callback 404나 edge 단독 로그 검사를 전체 chain PASS로 세지 않는다.
+- 사전에는 C1 완료·불변 이미지·DB/승인 변수·검토 helper·유효한 실제 OAuth env·기존 접근 제한을 확인한다. 승인된 실제 edge의 단일 no-referrer/안전 로그와 동일 callback 블록의 격리 front/Next CI를 대조한다. 실제 env의 앱 후보는 외부 공개/host port 없이 내부 readiness·로그인 화면·flow 없는 합성 callback을 확인하고 회수한다. URI 등록 오류 등 확인된 공급자 설정 실패가 있으면 첫 공개 전환을 시작하지 않는다.
+- 이 준비 뒤에만 같은 SHA의 모든 필수 검증·게시·migration gate·helper 검증을 거치는 **첫 C2 자동 전환을 검증 중 상태로 시도**한다. 수동 사전 앱 개통, 추가 edge 라우팅, dummy 자격, 검사 skip으로 순서를 우회하지 않는다. 사전 C1 후보의 SHA/digest를 첫 C2의 최종 SHA/digest와 같다고 주장하지 않으며 최종 run의 proof를 새로 확인한다. 후보 이후 앱/runtime/helper-front 내용이 달라졌거나 동일성을 확인할 수 없으면 사전 후보 검증을 재사용하지 않는다.
+- 첫 전환 직후 메인이 실제 edge→새 front→Next의 합성 callback 도달·단일 헤더·query/code/state/referrer 비기록을 확인한다. 그 뒤에만 B5 실제 Google 로그인·기존 서버 게시 기준을 검증한다. 이 항목과 모든 callee/concurrency의 실제 판정 전에는 C2 완료나 실사용 가능으로 알리지 않는다.
+- 시작 전에 현재 메인 세션을 사후 검증/복귀 담당으로 정하고, 직전 정적 기록·동결 Compose/이미지·복귀 명령의 사용 가능 여부를 확인한다. helper의 첫 앱 성공 보고부터 **30분을 전체 사후 검증 상한**으로 기록하며, 메인이 그 시간 동안 결과를 회수할 수 없으면 첫 시도를 시작하지 않는다.
+- 사후 callback·B5·원 §8 게시 기준은 helper의 readiness·`/try/`·`/login` 자동 rollback보다 넓다. 어느 항목이든 실패·필수 검증 미실행·로그 조회 불가·30분 초과이면 메인이 기존 `revert-static dev`로 복귀하고 정적 본문·이미지·상태를 실검증한다. dev 앱 enable flag를 끄고 후속 dev push/대기 배포를 통제하며 C2 소스 복귀를 정리하기 전 재시도하지 않는다. DB down·세션/기록 삭제·운영 전환은 하지 않는다.
+
 **정적 dev와 `/try/`**
 - C2 뒤 dev push는 정적 `deploy` job을 실행하지 않는다(정적 dev 갱신 중지). 정적 job은 main 전용이다.
 - `/try/`·`/design/` 등 정적 front는 그 뒤 **현재 앱 배포의 front**(helper가 같은 SHA의 `frontend/`로 빌드, §5)가 제공한다.
@@ -530,7 +538,7 @@ PR70 exact `8c4ed8f`의 [격리 PR trial](https://github.com/kindsr/devscent-pie
 | 2 | 첫 게시로 생긴 비공개 패키지 1개를 저장소 소유자가 **public**으로 바꾼다. 현재 인증으로 할 수 없으면 그 항목만 사용자에게 요청한다(PAT·scope 확대 없음) | 서버에서 빈 `DOCKER_CONFIG`로 `docker pull <repo>@<digest>` 익명 성공(PAT·서버 registry 자격 없음) |
 | 3 | 아래 9-B 1~7(DB·migration·env·helper 설치·네트워크). migration 뒤 **저장소 수준** 변수 `POD_DEV_APPROVED_MIGRATIONS`를 그 latest로 만든다. dev environment에 같은 이름 변수가 없음을 확인 | 9-B 각 항목, 변수 = 적용 버전 |
 | 4 | OAuth dev 클라이언트 준비(사용자 콘솔, 값은 서버 env 파일로만). S2(B4) 통합 | §6.3 env 검사 통과, `/login` route 존재(§6.7 8단계) |
-| 5 | C1 완료 증거 뒤 **F6c2 병합** → 다음 dev push에서 같은 SHA의 `validate`+`workflow-contracts`+`app-checks`+게시 job이 성공하고 migration gate를 통과하면 `deploy-app`. 활성화 전 실제 gateway callback 호환(§7.2 C2 gate, PR62) | §6.7 자동 검증 + §8 서버 게시 확인 + 모든 callee job·concurrency 실제 동작 |
+| 5 | C1 완료 증거와 사전 준비 뒤 **F6c2 병합** → 다음 dev push에서 같은 SHA의 `validate`+`workflow-contracts`+`app-checks`+게시 job이 성공하고 migration gate를 통과하면 첫 `deploy-app` 검증 시도. 실제 전체 callback chain은 §7.2의 첫 전환 직후·실제 OAuth 전에 확인 | §6.7 자동 검증 + 실제 전체 callback 검증 + §8 서버 게시 확인 + 모든 callee job·concurrency 실제 동작 |
 
 - 1~4 동안 dev는 정적이다. 게시만 하고 활성화하지 않으므로 운영·dev 사용자 영향이 없다.
 - F6c2를 되돌리면 dev는 다시 정적 push 배포가 된다. 그 전에 `revert-static dev`를 먼저 실행한다(§10).
