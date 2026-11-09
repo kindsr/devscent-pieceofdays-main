@@ -15,6 +15,7 @@
 ## [Unreleased]
 
 ### Added
+- 운영 OAuth 공개 페이지 준비 계획 (2026-11-09): 운영 홈페이지·개인정보처리방침·이용약관과 Google/Kakao callback 목표 URL, Google 개발/운영 프로젝트 분리, 실제 공개 경로의 누락과 앱 front 허용 목록 공백을 정리했다. 운영 주체·연락처·문안 확정 뒤 페이지를 준비하며 실제 운영 로그인·정책 게시와 구분한다.
 - dev 외곽 콜백 반영·첫 백업 확인 (2026-11-08): 검토된 한 파일 제안의 안전 로그·단일 no-referrer를 실제 반영하고 syntax/reload·새 HTTPS 연결의 안정 응답·edge 합성 query 비기록을 확인했다. reload 직후 이전 worker 응답과 준비확인 창을 구분했다. 첫 dev DB 야간 백업의 로컬 checksum과 NAS 검증 성공 로그도 확인했다. C2 PR72 source/CI는 PASS이며 실제 OAuth 키·앱 콜백 통합·활성화는 대기다.
 - 실제 C1 게시·개발 DB 준비 (2026-11-08): dev13764b3의 publisher42484654242와 같은 SHA 필수 앱 검사, 실제 manifest/config 연결·익명 full pull을 확인했다. 게시 digest로 개발 전용 DB migration 0001·0002 적용·앱 역할 접속/권한을 확인하고 검토 helper를 설치했다. C 등급·migration 승인 상한을 기록했다. OAuth·dev 콜백 설정 승인 대기로 실제 앱 전환은 아직 하지 않았으며 현황 페이지에 준비 상태를 반영했다. C2 source는 PR72에서 검토한다.
 - C1 개발 앱 이미지 게시 기반 (2026-11-08): PR70의 dev 전용 publisher·read-only 구조 검사·archive/manifest 검증기를 통합했다. 같은 불변 ID의 이미지6·프런트14·원문 preview10, config C=metadata M·라벨과 게시 manifest 연결을 요구한다. Docker 자동 load가 M을 생략하는 실제 조건을 확인하고 고정 BuildKit file export→같은 파일 load→ID save 검증으로 해결했다. 구조92·PR local proof·독립 source/runner PASS를 수락했다. 실제 게시 D/C/M/ID proof와 서버 앱 전환은 별도 단계다.
