@@ -49,7 +49,7 @@
 | 결정 | 선택 | 근거·대안 |
 |---|---|---|
 | 앱 이미지 빌드 | 격리 GitHub Actions runner에서만 빌드한다. 공유 서버에서는 npm·Next build를 하지 않는다 | 서버에서 소스 실행 금지 |
-| **이미지 전달** | **B. GHCR 공개 패키지를 digest로 pull(메인 선택)** | `docker pull <repo>@sha256:<digest>`는 레지스트리가 내용 해시를 검증하고 RepoTags를 만들지 않는다. 공개 패키지는 익명 pull이 가능하므로 서버 pull 자격이 필수는 아니다 |
+| **이미지 전달** | **B. GHCR 공개 패키지를 digest로 pull(메인 선택)** | `docker pull <repo>@sha256:<digest>`는 레지스트리가 내용 해시를 검증한다. 엔진에 따라 같은 불변 주소가 `RepoTags`에도 표시될 수 있다(2026-11-09 실제 pull 확인). 공개 패키지는 익명 pull이 가능하므로 서버 pull 자격이 필수는 아니다 |
 | 대안 | A. SSH로 `docker save` tar 전달 | `docker load`는 tar의 manifest가 가리키는 다른 이미지·태그를 적재하는 부작용이 검사 전에 끝난다. **§6.6의 load 전 archive 검증 계약과 CI에서 고정한 단일 형식이 있을 때만** 채택한다. 이 문서 작성 중 `docker save` 실제 형식은 격리 실행으로 확인하지 못했다 [미확인] |
 | 프런트 | 기존 정적 nginx를 dev 앞단에 둔다. 정적 경로는 그대로, 정해진 Next 경로만 내부 프록시 | origin·디렉터리 index·localStorage 보존 |
 | nginx 설정 출처 | helper 상수(설치본). 저장소의 nginx 설정은 받지 않는다 | 프록시 규칙을 저장소가 바꾸지 못하게 |
@@ -196,7 +196,9 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 **`validate_app_image(inspect, sha, tree, manifest_digest, settings) -> None`**
 
-- `Id`는 유효한 sha256 형식의 **엔진 image ID**로만 취급한다. `config_digest`와 비교하지 않는다. `RepoDigests`에 `APP_IMAGE_REPOSITORY@<manifest_digest>`가 정확히 있고 `RepoTags`는 비어 있어야 한다. fresh pull 전에 manifest/config 연결을 위 함수로 검증하고 Docker의 digest 검증으로 같은 자료를 pull한다.
+- `Id`는 유효한 sha256 형식의 **엔진 image ID**로만 취급한다. `config_digest`와 비교하지 않는다. `RepoDigests`에 `APP_IMAGE_REPOSITORY@<manifest_digest>`가 정확히 있어야 한다. `RepoTags`는 `null`·빈 배열 또는 **요청한 그 불변 주소 하나만 담은 배열**을 허용한다. 일반 태그, 다른 digest·저장소, 혼합·잘못된 자료형은 거부한다. 이는 2026-11-09 첫 C2의 실제 digest pull이 같은 주소를 `RepoTags`에도 노출해 거부된 호환성 수정이며, archive의 별도 `RepoTags` 금지 계약은 바꾸지 않는다. fresh pull 전에 manifest/config 연결을 위 함수로 검증하고 Docker의 digest 검증으로 같은 자료를 pull한다.
+
+  수정은 해당 순수 검사와 회귀 시험으로 제한한다. 별도 시험 커밋의 기존 Actions에서 정확한 불변 별칭 양성의 실패를 먼저 확인하고, 시험 바이트를 유지한 최소 구현 뒤 같은 CI를 확인한다. 설치 helper는 검토된 수정본과 원본을 대조·백업한 뒤 메인이 반영한다. 실패한 첫 C2는 정적 화면을 유지했고, 수정·재검증 동안 dev 앱 enable은 꺼 둔다. 재시도는 최종 같은 SHA의 필수 앱 검사·새 publisher 증거·실제 helper와 전체 chain/B5·30분 복귀 관문을 다시 따른다.
 - `Config.User`가 비어 있지 않고 root·0이 아님.
 - 라벨 `revision == sha`, `pod.tree == tree`, `source == 저장소 URL`, `pod.migrations.latest`는 양의 정수.
 - `ExposedPorts == {"3000/tcp": {}}`, `Volumes`가 비어 있음.

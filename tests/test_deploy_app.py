@@ -598,6 +598,39 @@ class ValidateAppImageTests(unittest.TestCase):
         fewer["Config"]["Volumes"] = {}
         self.assertIsNone(self.check(fewer), "a subset of the allowed env keys and empty Volumes pass")
 
+    def test_requested_manifest_digest_alias_in_repo_tags_passes(self):
+        inspect = app_inspect(engine_id=MANIFEST)
+        inspect["RepoTags"] = [f"{APP_REPO}@{MANIFEST}"]
+        self.assertIsNone(self.check(inspect))
+
+    def test_repo_tags_reject_other_references_mixtures_and_malformed_values(self):
+        requested = f"{APP_REPO}@{MANIFEST}"
+        other_digest = f"{APP_REPO}@{OLD_MANIFEST}"
+        other_repo = f"{APP_REPO}-other@{MANIFEST}"
+        tag = f"{APP_REPO}:latest"
+        cases = {
+            "other digest": [other_digest],
+            "other repository": [other_repo],
+            "mutable tag": [tag],
+            "tag-qualified digest": [f"{APP_REPO}:latest@{MANIFEST}"],
+            "requested alias plus tag": [requested, tag],
+            "requested alias plus other digest": [requested, other_digest],
+            "requested alias plus other repository": [requested, other_repo],
+            "non-list reference": requested,
+            "non-list empty string": "",
+            "non-list empty object": {},
+            "null entry": [None],
+            "numeric entry": [42],
+            "nested list entry": [[requested]],
+            "requested alias plus invalid entry": [requested, None],
+        }
+        for label, repo_tags in cases.items():
+            with self.subTest(label=label):
+                inspect = app_inspect(engine_id=MANIFEST)
+                inspect["RepoTags"] = repo_tags
+                with self.assertRaises(ValueError):
+                    self.check(inspect)
+
     def test_identity_digest_tags_user_labels_ports_volumes_env_and_arch_policy(self):
         def mutate(fn):
             inspect = app_inspect()
