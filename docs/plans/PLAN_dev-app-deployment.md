@@ -1,6 +1,6 @@
 # PLAN — F6-dev: 개발 도메인에 Next 앱 배포 (S4) — R4
 
-- **2026-11-08 통합 상태:** PR59 R4의 독립 계획 PASS를 수락했고 C1/C2 트리거 단언을 구분했다. PR60 F6b 소스와 PR65 F6a2 검증을 통합했다. F6a2 exact `03b4182`는 격리 CI에서 같은 불변 이미지 ID의 이미지6·프런트14·원문 preview10 전부를 통과했다. F6c1 구현·실제 이미지 게시·서버 설치/DB·OAuth·C2 전환은 아직 남아 있다. 아래 작성 당시 사실과 현재 구현은 README·해당 PR의 정확 SHA를 함께 대조한다.
+- **2026-11-08 통합 상태:** PR59 R4·PR60 F6b·PR65 F6a2·PR70 F6c1을 통합했다. dev `13764b3`의 [실제 게시 run42484654242](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42484654242)와 같은 SHA 필수 앱 검사를 확인해 C1을 완료했다. 같은 ID 이미지6·프런트14·preview10(skip0), 실제 게시 D·생바이트 manifest hash/config C=M·익명 full pull·라벨·credential 정리를 확인했다. 게시 이미지로 개발 DB migration 2·앱 역할 접속을 확인하고 검토 helper를 설치했다. 첫 야간 백업과 dev 외곽 콜백 반영·edge 단독 헤더/로그를 확인했다. C2 [PR72](https://github.com/kindsr/devscent-pieceofdays-main/pull/72) exact `ea45e4e`는 구조128·기존 회귀·PR local proof·독립 source/runner PASS다. OAuth 키·최종 환경·실제 앱 콜백 통합은 대기이며 실제 dev는 계속 정적, C2 병합/활성화 전이다. 아래 작성 당시 사실과 현재 구현은 README·해당 PR의 정확 SHA를 함께 대조한다.
 
 - **상태:** R2 계획이다(2026-11-05). R1(`4c3fb8a`) 독립 검토의 P1 2건과 운영 예산·deadline을 메인이 보완했다(§14).
   - **R3 초안(F6c 부트스트랩·같은 SHA 검증):** §7·§9·§11·§15를 고쳤다. F6c를 F6c1(게시만)·F6c2(dev 앱 전환)로 나눈다. R3는 메인 결정 Q1~Q4(2026-11-05)를 반영했다. **R4는 R3 독립 검토(P1 2·P2)를 메인이 수락한 결정을 반영했다(§15.1):** 불변 artifact 연결 알고리즘, F6a2 무조건 선행, C1 완료 판정, dev 앱 배포 전용 concurrency. 재검토 전이며 구현은 없다. F6a1·F6b 고정 계약(§4~§6: 모드·helper·env)은 바꾸지 않았다.

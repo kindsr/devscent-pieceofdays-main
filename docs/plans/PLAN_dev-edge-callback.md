@@ -1,10 +1,12 @@
 # PLAN — 개발 로그인 콜백의 게이트웨이 헤더·로그
 
-- 상태: **수정안·격리 검증 준비, 사용자 예외 승인 전.** 실제 게이트웨이는 바꾸지 않는다.
+- 상태(2026-11-08): **dev 외곽 설정 반영·edge 단독 검증 완료.** 검토된 구체 제안 뒤 사용자의 이어서 진행 요청으로 dev 한 파일만 반영했다. 실제 `nginx -t` 후 reload, 새 연결에서 두 공급자 단일 `no-referrer`와 edge 합성 query/state/referrer 비기록을 확인했다. 아래 수정안·수락 계약은 유지하며 실제 앱 콜백·OAuth 통합은 아직 미검증이다.
 - 범위: `dev.pieceofdays.com`의 Google·Kakao 콜백 두 경로만. 다른 서비스·운영·TLS·기존 접근 제한은 유지한다.
 - 근거: B4의 callback `Referrer-Policy: no-referrer`와 F6 배포 계획 §6.1의 code·state 비기록 계약. 저장소 `AGENTS.md` §3과 F6 계획은 공용 nginx 변경을 제외하므로, 실제 서비스 설정 반영·reload에는 구체 수정안 검증 후 사용자 예외가 필요하다.
 
 ## 1. 메인 확인 사실
+
+2026-11-08 반영 결과: reload 신호 성공 직후에는 이전 worker의 헤더가 관측됐다. 원본 복귀 후 공식 Nginx source 독립 검토를 거쳐 새 연결·30초 준비확인 창·두 공급자 2회 연속 단일 헤더를 확인했다. 실제 strict 값→단일 no-referrer 전이를 기록했다. edge 접근 로그 양성 대조와 query/state/referrer 부재, 기존 정적 dev·운영 응답과 다른 설정 불변을 확인했다. 현재 내부 정적 front에는 합성 probe가 기록되므로 이 결과를 전체 edge→front→Next 비기록이나 실제 OAuth 성공으로 확대하지 않는다. 검토된 앱 front를 적용한 뒤 전체 통합을 확인한다.
 
 메인이 현재 dev 게이트웨이 설정을 읽기 전용으로 확인했다. 공통 보안 헤더가 응답에 `Referrer-Policy: strict-origin-when-cross-origin`을 더하고, 접근 로그 형식이 원문 URI·query·referrer를 기록한다. 공급자 콜백은 브라우저의 GET으로 `code`·`state`를 전달하므로, 실제 로그인을 켜면 이 값이 남을 수 있다. 앱의 `no-referrer`와 외곽 헤더가 함께 오는 상태도 피해야 한다.
 
