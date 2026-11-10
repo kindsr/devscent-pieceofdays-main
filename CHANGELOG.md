@@ -84,6 +84,7 @@
 - `docs/02_DESIGN_GUIDE_v2.md`를 2.1.0으로 갱신하고 devscent.com 마케팅 표면과 제품 설계 가이드의 역할 경계를 명확화.
 
 ### Fixed
+- 개발 사진 gateway 제안의 상위 header 숨김 상속 (2026-11-10): 공개 snippet 두 location의 local `proxy_hide_header X-Content-Type-Options;` 2줄을 삭제했다. local 선언이 상위(http) 수준 hide 5개 상속을 끊어 사진 경로에서만 upstream `X-Frame-Options`·배너 등이 중복·노출될 수 있었다. 현재 판은 정확 두 location의33줄이며 RED e0396dd가 상위 hide5 모델·local hide0·보안 헤더 단일값·배너0을 요구한다. 사용자의 개발 gateway 반영 승인은 받았으나 실제 반영은0이고, 실제 S3·서비스 DB·AI 생성은 준비되지 않았다.
 - RSC 보안 시험의 증거 범위 (2026-11-10): 프레이밍 보완 뒤에도 browser EOF 관문에서 취소가 관측돼, 해당 관문을 원서버 전체200/RSC·UUID 부재·같은 요청/Buffer 전달과 실제 UI 성공·fresh PG 결과 검증으로 교체했다. 브라우저 종료/실패는 별도 안전 진단이며 임의 abort 허용이나 fallback 통과 분기는 없다. 생성1행/본문/version·글꼴 영속화와 기존 HTML/RSC·호출 수·키보드·레이아웃을 요구하고 명시 RSC GET의200/type/비어있지 않은 본문도 추가 검사한다. browser 전체 EOF나 취소 원인 해결을 증명했다고 보고하지 않는다.
 - RSC 시험의 응답 재전달 프레이밍 (2026-11-10): 압축 해제된 원서버 본문을 같은 바이트로 전달할 때 압축/전송 헤더를 정리하고 실제 길이를 지정한다. 원본문200/RSC·계정UUID없음을 전달 전에 추가 검증하고 기존 browser finished·요청 실패·후속 보안/화면 단언은 유지한다. 안전한 길이/enum/boolean만 진단하며 이전 ERR_ABORTED의 실제 원인은 확정하지 않는다.
 - 사진 기능의 기존 시험 호환 (2026-11-10): 작성창에 파일 입력이 없어야 한다던 과거 단언을 선택 사진 입력1개·활성 확인으로 전환하고 초기 이미지 없음은 보존했다. 합성 캡처의 복사 허용 목록에는 새 Node 서버 모듈 `.mjs`·`.d.mts`만 추가했다. 기존 보안·정확PNG15·요청/소스 격리 계약은 유지한다.

@@ -1,6 +1,6 @@
 # PLAN — 개발 사진 경로의 외곽 gateway 제안
 
-- 상태: 검토 가능한 공개 source snippet·비공개 정확 diff 준비 완료, 후보 CI 검증 단계. 실제 shared nginx·TLS·서버 변경0, 운영 domain/production 변경0.
+- 상태: 공개 source snippet을 상위 hide 상속 기준으로 수정한 판의 후보 CI 검증 대기. 비공개 정확 diff는 이전 판 기준이라 현재 판으로 다시 만들어야 한다. 실제 shared nginx·TLS·서버 변경0, 운영 domain/production 변경0. 실제 S3·서비스 DB·AI 생성은 준비되지 않았다.
 - 선행 source: 사진 앱b0e4039, helper/front 후보6d98f25. 기존 [사진 계획](PLAN_private-photo-moments.md)의 inner 경계와 구분한다.
 - 이유: main이 실제 개발 gateway 파일을 읽었고 사진 전용 location은 아직 없었다. generic upstream은 이미 `$pieceofdays_dev_web`다. 실제 상속 body limit·전체 chain 동작은 미검증이며 inner9MiB/로그0를 outer 준비 완료로 세지 않는다.
 
@@ -8,7 +8,8 @@
 
 - 공개 가능한 신규 source snippet `deploy/nginx/snippets/dev-private-photos.conf`에 정확 두 location만 둔다: `= /photos/upload`는9m, `^~ /photos/`는1m. 각 access_log off·error_log /dev/null crit. 기존 `$pieceofdays_dev_web`·generic proxy 헤더/timeout을 재사용한다. source config와 시험 하네스를 분리하며 실제 서버에 자동 설치되는 파일은 아니다.
 - Basic/IP·server headers·upstream 변수 정의·기존 callback exact2/단일 no-referrer·callback safe JSON·generic/static·다른 domain·TLS는 바꾸지 않는다. 사진 location에 add_header를 추가해 기존 server 보안 header 상속을 끊지 않는다.
-- 실제11341f7 CI의 사진401 응답에서 앱과 outer server의 `X-Content-Type-Options`가 겹쳐 `nosniff, nosniff`로 관측됐다. 사진 두 location은 정확 `proxy_hide_header X-Content-Type-Options;` 한 개씩만 사용해 upstream 중복을 제거하고 기존 server의 `nosniff always` 한 값을 상속한다. 다른 hide·보안값 변경은 허용하지 않으며 단일nosniff 검사는 유지한다. main이 실제 include의해당지시문과hash를읽기확인했고실제반영직전동일성을다시확인한다.
+- 사진 두 location에는 `proxy_hide_header`를 두지 않는다. 실제 gateway의 상위(http) 수준 hide 5개(`X-Powered-By`·`X-Frame-Options`·`X-Content-Type-Options`·`Referrer-Policy`·`Strict-Transport-Security`)를 그대로 상속해 upstream 값·배너를 숨기고, 기존 server 보안 헤더를 한 값씩 내보낸다. 다른 hide·보안값 변경은 허용하지 않으며 단일 보안 헤더·배너0 검사는 유지한다.
+- 이력: 실제11341f7 CI의 사진401 응답에서 `nosniff, nosniff` 중복이 관측돼 이전 판은 location마다 `proxy_hide_header X-Content-Type-Options;` 한 줄을 두었다. 그 뒤 main이 실제 main 설정에서 상위 hide 5개를 확인했다. nginx는 location에 `proxy_hide_header`가 하나라도 있으면 상위 목록 전체를 상속하지 않으므로, 그 한 줄이 나머지 4개 hide를 사진 경로에서만 끊는 P1이었다. RED e0396dd는 outer fixture에 상위 hide 5개를 모델링하고 local hide0·사진 응답의 보안 헤더 단일값·upstream 값/배너0을 요구한다. 이 GREEN은 그 local hide 2줄만 삭제한다.
 - main은 실제 동결 config의 SHA256과 generic proxy block을 대조해 비공개 제안 사본/정확 diff를 준비한다. 공개 repo에 실제 경로·포트·자격을 싣지 않는다. 제안이 검토됐다는 이유로 실제 파일을 적용하거나 reload하지 않는다.
 
 ## 2. RED와 후보 검증
@@ -21,14 +22,15 @@
 
 - 관측RED ca8a02f의 [CI42883415502](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42883415502)는 front14=9pass/5fail·skip0, image6/원문preview10 PASS였다. missing hash·사진 로그·nosniff 중복은 모두 미구현 실패이며 선행 실패 뒤9MiB 등은 미도달로 구분했다. 앞선113의 hide 전면금지/단일nosniff 충돌은 별도 기록하고 정확hide1개만 허용하도록 고쳤다.
 - 후속 d8f085c는 경로/optional loader 준비다. 후보가 없으면 기존 outer bytes와 missing-hash 실패가 유지되며 행위 단언은 바꾸지 않았다. 이 준비 commit을 관측된 RED head라고 보고하지 않는다.
-- 공개 source snippet은35줄·SHA256 `cd87bde7055d11f07abbb3c08b9d2a70fb0437ecc30b9d992ef1c9a4a7c47b77`이다. 독립 source 검토에서 정확 두 location과 기존 proxy11개·인증/IP/헤더 상속 보존을 확인했다. 실제 include의 `nosniff always` 유지가 필수 전제이며, 실제 적용 전 원본/include hash를 다시 확인한다.
-- main은 비공개 동결 원본과 제안 사본·정확 diff를 준비했다. 삽입한 두 블록을 제거하면 원본 bytes가 정확히 복원되고, 들여쓰기 외 공개 snippet 내용은 같다. 실제 파일 변경·nginx 검사/reload·전체 HTTPS 검증은 아직0이다.
+- 현재 공개 source snippet은 정확 두 location의33줄·SHA256 `9b9e9495cabd9833f10676c45f39c04e15072f7da49acb2d5df54553e153683c`이며 local `proxy_hide_header`는0이다. 기존 proxy11개·인증/IP/헤더 상속은 그대로다. 실제 include의 보안 헤더와 상위 hide 5개 유지가 필수 전제이며, 실제 적용 전 원본/include/상위 설정 hash를 다시 확인한다. 이 판의 CI 결과는 아직 없다.
+- 이력: 이전 판은35줄·SHA256 `cd87bde7055d11f07abbb3c08b9d2a70fb0437ecc30b9d992ef1c9a4a7c47b77`(location마다 local hide1개)이었고 독립 source 검토를 거쳤다. 아래 비공개 제안 사본·정확 diff와 f45ced8~d142ce4의 CI 결과는 그 이전 판 기준이다.
+- main은 이전 판 기준으로 비공개 동결 원본과 제안 사본·정확 diff를 준비했다. 현재 판으로 실제 적용하려면 제안 사본·hash를 현재 판 기준으로 다시 만들어야 한다. 삽입한 두 블록을 제거하면 원본 bytes가 정확히 복원되고, 들여쓰기 외 공개 snippet 내용은 같다. 실제 파일 변경·nginx 검사/reload·전체 HTTPS 검증은 아직0이다.
 - f45ced8의 outer/front 및 image CI는 각각6/14/원문10을 끝까지 통과했다. 별도 앱 auth는 기존UUID/RSC의 browser_finished 단계 ERR_ABORTED로40pass/1fail이므로 전체GREEN으로 세지 않는다. 공식 Playwright source에서 decoded body와 원본 프레이밍 헤더가 함께 전달되는 경로를 확인해 시험 한 사례의 프레이밍만 보완한다. 기존 완료/보안 단언은 유지하고 실제 취소 원인은 미확정으로 남기며 후속 같은SHA CI로 판정한다.
 - 프레이밍 보완0108b57도 font의 browser_finished에서40pass/1fail이었다. 같은 응답의 전체 원본문과 프레이밍 정규화는 확인됐고 UI font는serif였으나 그 case의후속PG/UUID 증거는 미도달이었다. 독립 검토 후 해당 observer의 EOF 관문을 원서버 전체 응답/동일 요청·Buffer 전달과 항상 필수인 UI/freshPG 검증으로 교체한다. 생성1행·memo/version·글꼴 영속화, 기존HTML/RSC·호출수·keyboard/layout 및 엄격RSC GET은 모두 요구한다. 종료/실패event는 진단으로 분리하고 특정abort를허용해통과하는fallback은없다. 원서버 비직렬화 보안의도와 실제UI/DB성공을 검증하며 browser전체EOF 증명과 혼동하지 않는다.
 - 후속d142ce4는 [앱CI42893945722](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42893945722)의 auth41 전체와 마지막 보안 사례를 포함해 자동7workflow 모두 통과했다. 두 action의 원본문/동일Buffer/전달/UI·freshPG 필수 검증에 도달했다. source와 실제merge의tree4c42db8도 일치했다. 이는 공개 source/격리 후보의 검증이며 실제 gateway 적용이나 AI 생성 성공이 아니다.
 
 ## 3. 실제 반영 경계
 
-- 현재 프로젝트 AGENTS §3은 다른 서비스·공용 nginx·TLS를 임의로 바꾸지 않도록 한다. 이 단계는 실제 반영 전 구체 검토 자료만 준비한다. 실제 shared gateway의 개발 vhost 두 location 추가는 main이 적용 권한을 확인한 뒤 별도 진행한다.
+- 현재 프로젝트 AGENTS §3은 다른 서비스·공용 nginx·TLS를 임의로 바꾸지 않도록 한다. 이 단계는 실제 반영 전 구체 검토 자료만 준비한다. 사용자의 개발 gateway 반영 승인은 받았지만 실제 shared gateway의 개발 vhost 두 location 추가는 아직0이다. main이 현재 판 CI·검토 뒤 별도로 진행한다.
 - 실제 적용 때에는 동결 원본/hash·정확 delta·`nginx -t`·reload 후 새 연결 안정 확인·전체 chain 합성 marker 로그 검증과 복귀 자료가 필요하다. 이 문서는 해당 명령의 실행 허가나 완료 증거가 아니다.
 - 실제 S3 HTTPS/전용 bucket·자격/삭제 소비·DB0003/0004·승인 상한·Google B5/실기기/활성화는 여전히 별도다. dev 정적/OFF·dev/main push 보류를 유지한다.
