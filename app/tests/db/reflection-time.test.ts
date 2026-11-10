@@ -16,6 +16,7 @@ import { loadPreferences } from "./f3-decoration-support";
 
 const MODULE = path.join(APP_DIR, "src", "server", "account", "reflection-time.pg.ts");
 const CASE_TIMEOUT = 90_000;
+const LEGACY_TABLES = ["users", "auth_identities", "preferences", "diary_moments", "day_summaries", "design_versions", "credit_accounts", "emotion_ledger"] as const;
 type Api = {
   getReflectionTime: (db: pg.Pool, userId: string) => Promise<string>;
   setReflectionTime: (db: pg.Pool, userId: string, input: unknown) => Promise<Result<string, "invalid_reflection_time" | "not_found">>;
@@ -50,6 +51,7 @@ async function expectMigration3(db: DisposableDatabase): Promise<void> {
   const rows = await withOwner(env, db, (c) => readMigrationRows(c));
   expect(rows?.map((r) => ({ version: r.version, name: r.name })), "default migrations must include reflection_time").toEqual([
     { version: 1, name: "init" }, { version: 2, name: "account_lifecycle" }, { version: 3, name: "reflection_time" },
+    { version: 4, name: "private_photos" },
   ]);
 }
 
@@ -162,12 +164,14 @@ describe("0003 reflection_time schema and permissions", () => {
       const design = await insertDesignVersion(c, user);
       await insertMoment(c, user);
       await c.query("INSERT INTO pod.preferences (user_id, font_key, applied_design_version_id) VALUES ($1, 'serif', $2)", [user, design]);
-      return { user, design, counts: await userDataCounts(c), row: (await c.query("SELECT * FROM pod.preferences WHERE user_id = $1", [user])).rows[0] };
+      return { user, design, counts: await userDataCounts(c, LEGACY_TABLES), row: (await c.query("SELECT * FROM pod.preferences WHERE user_id = $1", [user])).rows[0] };
     });
     expectCliOk(await runMigrateCli(["up"], db.urls.migrator), db.urls.migrator);
     await expectMigration3(db);
     await withOwner(env, db, async (c) => {
-      expect(await userDataCounts(c)).toEqual(before.counts);
+      const counts = await userDataCounts(c);
+      expect(Object.fromEntries(LEGACY_TABLES.map((name) => [name, counts[name]]))).toEqual(before.counts);
+      for (const name of ["photo_uploads", "moment_photos", "photo_deletions"]) expect(counts[name], `${name}: no rows were created by the reflection upgrade`).toBe(0);
       expect((await c.query("SELECT * FROM pod.preferences WHERE user_id = $1", [before.user])).rows).toEqual([{ ...before.row, reflection_time: "20:00" }]);
     });
   }, CASE_TIMEOUT);

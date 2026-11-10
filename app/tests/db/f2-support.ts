@@ -32,6 +32,9 @@ export const USER_DATA_TABLES = [
   "design_versions",
   "credit_accounts",
   "emotion_ledger",
+  "photo_uploads",
+  "moment_photos",
+  "photo_deletions",
 ] as const;
 
 export const APPEND_ONLY_MESSAGE = "emotion_ledger is append-only";
@@ -216,9 +219,10 @@ export async function readMigrationRows(c: pg.Client): Promise<MigrationRow[] | 
 }
 
 /** 사용자 데이터 테이블별 행 수. owner 연결로 호출한다. */
-export async function userDataCounts(c: pg.Client): Promise<Record<string, number>> {
+export async function userDataCounts(c: pg.Client, tables: readonly (typeof USER_DATA_TABLES)[number][] = USER_DATA_TABLES): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
-  for (const t of USER_DATA_TABLES) {
+  for (const t of tables) {
+    expect(await relationExists(c, `pod.${t}`), `required user-data table pod.${t} must exist before counting`).toBe(true);
     const r = await c.query<{ n: number }>(`SELECT count(*)::int AS n FROM pod.${t}`);
     out[t] = r.rows[0]?.n ?? -1;
   }

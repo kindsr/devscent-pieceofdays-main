@@ -27,6 +27,7 @@ import {
 } from "../db/helpers";
 import { startMockIssuer, type AuthorizeOptions, type MockIssuer } from "../support/mock-oidc-issuer";
 import { AUTH_BASE, AUTH_PORT, CI_CLIENTS, CI_SESSION_KEY, E2E_ENV } from "./support";
+import { configurePhotoWorkers, startPhotoStore, type PhotoFixture } from "./photo-store-fixture";
 
 const APP_DIR = fileURLToPath(new URL("../..", import.meta.url));
 const MIGRATE_CLI = path.join(APP_DIR, "src", "server", "db", "migrate-cli.ts");
@@ -132,12 +133,19 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   let mock: MockIssuer | undefined;
   let control: Server | undefined;
   let child: ChildProcess | undefined;
+  let photos: PhotoFixture | undefined;
 
   const teardown = async () => {
-    await stopChild(child);
-    if (control) await new Promise<void>((r) => control!.close(() => r()));
-    if (mock) await mock.close();
-    await cleanupAll(env).finally(() => closeAllClients());
+    const failures: string[] = [];
+    try { await stopChild(child); } catch { failures.push("Next child"); }
+    const results = await Promise.allSettled([
+      control ? new Promise<void>((resolve, reject) => control!.close((error) => error ? reject(error) : resolve())) : Promise.resolve(),
+      mock?.close() ?? Promise.resolve(),
+      photos?.stop() ?? Promise.resolve(),
+      cleanupAll(env).finally(() => closeAllClients()),
+    ]);
+    results.forEach((result, index) => { if (result.status === "rejected") failures.push(["control", "issuer", "photo fixture", "PG clients"][index]!); });
+    if (failures.length) throw new Error(`[e2e-auth] owned teardown failed: ${failures.join(", ")}`);
   };
 
   try {
@@ -148,6 +156,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     });
     const db = await createDisposableDatabase(env, "b4auth");
     await migrateUp(db.urls.migrator);
+    photos = await startPhotoStore(); // Signed real S3 preflight must pass before any product RED is classified.
+    configurePhotoWorkers(photos, db.urls.purge, db.urls.app);
 
     mock = await startMockIssuer({
       clients: (["google", "kakao"] as const).map((p) => ({
@@ -162,7 +172,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     if (await portInUse(AUTH_PORT)) {
       throw new Error(`[e2e-auth] 127.0.0.1:${AUTH_PORT} is already in use; an existing server is never reused`);
     }
-    const redact = redactor([...mock.secrets(), db.urls.app, decodeURIComponent(new URL(db.urls.app).password), CI_SESSION_KEY]);
+    const redact = redactor([...mock.secrets(), db.urls.app, decodeURIComponent(new URL(db.urls.app).password), CI_SESSION_KEY, ...Object.values(photos.appEnv)]);
     const lines: string[] = [];
     const next = spawn(process.execPath, [NEXT_BIN, "dev", "-p", String(AUTH_PORT), "-H", "127.0.0.1"], {
       cwd: APP_DIR,
@@ -184,6 +194,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         POD_AUTH_MOCK_OIDC_ISSUER: mock.origin,
         POD_DATABASE_URL: db.urls.app,
         POD_WITHDRAWAL_ENABLED: "1",
+        POD_FULL_CHECK_ISOLATED: "1",
+        POD_PHOTOS_S3_ENDPOINT: photos.appEnv.POD_PHOTOS_S3_ENDPOINT,
+        POD_PHOTOS_S3_REGION: photos.appEnv.POD_PHOTOS_S3_REGION,
+        POD_PHOTOS_S3_BUCKET: photos.appEnv.POD_PHOTOS_S3_BUCKET,
+        POD_PHOTOS_S3_ACCESS_KEY_ID: photos.appEnv.POD_PHOTOS_S3_ACCESS_KEY_ID,
+        POD_PHOTOS_S3_SECRET_ACCESS_KEY: photos.appEnv.POD_PHOTOS_S3_SECRET_ACCESS_KEY,
       },
     });
     child = next;
@@ -200,7 +216,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     process.env[E2E_ENV.mockOrigin] = mock.origin;
     return teardown;
   } catch (err) {
-    await teardown().catch(() => undefined);
+    try { await teardown(); }
+    catch { throw new Error("[e2e-auth] setup failed and owned teardown also failed; not a product RED"); }
     throw err;
   }
 }

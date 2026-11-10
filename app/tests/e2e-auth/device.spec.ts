@@ -2,9 +2,11 @@
 // 기기별 context에서 각각 로그인하며 계정·세션·쿠키·저장 상태를 주입/복사하지 않는다.
 // 쓰기는 화면·실제 Server Action만, 계정/지급/날짜 확인은 기존 SELECT helper만 쓴다.
 // Chromium PC↔WebKit iPhone・WebKit PC↔Chromium Android emulation이며 실제 기기·Google 검증은 아니다.
+import { createHash } from "node:crypto";
 import { chromium, devices, expect, test, webkit, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { AUTH_BASE, TEXT, accountOf, expectLayoutOk } from "./support";
 import { DIARY_TEXT, dateLabel, momentsOf, signIn, statusWith, topAdd } from "./diary-support";
+import { syntheticPhoto } from "./photo-store-fixture";
 
 const dialog = (page: Page) => page.getByRole("dialog");
 const memo = (page: Page) => dialog(page).getByRole("textbox", { name: "메모" });
@@ -53,7 +55,13 @@ test("PC and phone log in independently to one account without another grant; a 
     await expect(memo(pc)).toBeVisible();
     await expectLayoutOk(pc, `${desktop}: create dialog`);
     await memo(pc).fill(initial);
+    await dialog(pc).getByLabel("사진 1장", { exact: true }).setInputFiles(await syntheticPhoto());
+    await expect(dialog(pc).getByRole("button", { name: "사진 선택 취소", exact: true })).toBeVisible();
+    const uploaded = pc.waitForResponse((response) => new URL(response.url()).pathname === "/photos/upload" && response.request().method() === "POST");
     await dialog(pc).getByRole("button", { name: "저장", exact: true }).click();
+    const uploadResponse = await uploaded;
+    expect(uploadResponse.status(), "real photo upload was confirmed before navigation").toBe(201);
+    expect(await uploadResponse.json()).toEqual({ ok: true, value: { id: expect.any(String), version: 1 } });
     await expect(dialog(pc)).toHaveCount(0);
     await expect(statusWith(pc, DIARY_TEXT.created)).toBeVisible();
     await expect(piece(pc, initial)).toHaveCount(1);
@@ -65,10 +73,26 @@ test("PC and phone log in independently to one account without another grant; a 
     await pc.goto(recordPath);
     await expect(piece(pc, initial)).toHaveCount(1);
     await expectLayoutOk(pc, `${desktop}: saved board`);
+    const pcImage = piece(pc, initial).getByRole("img", { name: "조각 사진", exact: true });
+    const photoPath = await pcImage.getAttribute("src");
+    expect(photoPath).toMatch(/^\/photos\/[0-9a-f-]{36}$/);
+    await expect.poll(() => pcImage.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(48);
+    const pcBytes = await pcContext.request.get(photoPath!, { maxRedirects: 0 });
+    expect(pcBytes.status()).toBe(200);
+    expect(pcBytes.headers()["content-type"]).toBe("image/jpeg");
+    expect(pcBytes.headers()["cache-control"]).toBe("private, no-store");
+    expect(pcBytes.headers()["x-content-type-options"]).toBe("nosniff");
+    const photoHash = createHash("sha256").update(await pcBytes.body()).digest("hex");
 
     await phone.goto(recordPath);
     await phone.reload();
     await expect(piece(phone, initial)).toHaveCount(1);
+    const phoneImage = piece(phone, initial).getByRole("img", { name: "조각 사진", exact: true });
+    await expect(phoneImage).toHaveAttribute("src", photoPath!);
+    await expect.poll(() => phoneImage.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(48);
+    const phoneBytes = await phoneContext.request.get(photoPath!, { maxRedirects: 0 });
+    expect(phoneBytes.status()).toBe(200);
+    expect(createHash("sha256").update(await phoneBytes.body()).digest("hex")).toBe(photoHash);
     await expectLayoutOk(phone, `${mobile}: reloaded PC creation`);
     await piece(phone, initial).getByRole("button", { name: /조각 수정$/ }).click();
     await expect(memo(phone)).toHaveValue(initial);
@@ -83,6 +107,10 @@ test("PC and phone log in independently to one account without another grant; a 
     await pc.reload();
     await expect(piece(pc, edited)).toHaveCount(1);
     await expect(piece(pc, initial)).toHaveCount(0);
+    await expect(piece(pc, edited).getByRole("img", { name: "조각 사진", exact: true })).toHaveAttribute("src", photoPath!);
+    const afterMemoEdit = await pcContext.request.get(photoPath!, { maxRedirects: 0 });
+    expect(afterMemoEdit.status()).toBe(200);
+    expect(createHash("sha256").update(await afterMemoEdit.body()).digest("hex"), "memo edit keeps original server photo bytes").toBe(photoHash);
     await expectLayoutOk(pc, `${desktop}: reloaded phone edit`);
 
     for (const [page, device] of [[pc, desktop], [phone, mobile]] as const) {
@@ -97,6 +125,9 @@ test("PC and phone log in independently to one account without another grant; a 
       await expect(page).toHaveURL(`${AUTH_BASE}${recordPath}`);
       await expect(day, `${device}: the requested day is selected`).toHaveAttribute("aria-current", "date");
       await expect(piece(page, edited)).toHaveCount(1);
+      const image = piece(page, edited).getByRole("img", { name: "조각 사진", exact: true });
+      await expect(image).toHaveAttribute("src", photoPath!);
+      await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(48);
       await expectLayoutOk(page, `${device}: day detail`);
     }
 
@@ -138,6 +169,10 @@ test("PC and phone log in independently to one account without another grant; a 
     await phone.getByRole("button", { name: "로그아웃", exact: true }).click();
     await expect(phone).toHaveURL(`${AUTH_BASE}/login?notice=signed_out`);
     await expect(phone.getByText(TEXT.signedOut, { exact: true })).toBeVisible();
+    const phoneDenied = await phoneContext.request.get(photoPath!, { maxRedirects: 0 });
+    expect(phoneDenied.status()).toBe(401);
+    expect(phoneDenied.headers()["content-type"]).not.toContain("image/");
+    expect(phoneDenied.headers()["cache-control"]).toBe("private, no-store");
     await phone.goto(recordPath);
     const phoneLogin = new URL(phone.url());
     expect([phoneLogin.pathname, phoneLogin.searchParams.get("returnTo")]).toEqual(["/login", recordPath]);
@@ -148,11 +183,15 @@ test("PC and phone log in independently to one account without another grant; a 
     await expect(pc.getByRole("button", { name: "로그아웃", exact: true }), "phone logout leaves the PC session active").toBeVisible();
     await pc.goto(recordPath);
     await expect(piece(pc, edited)).toHaveCount(1);
+    expect((await pcContext.request.get(photoPath!, { maxRedirects: 0 })).status(), "phone logout leaves PC photo access active").toBe(200);
     await expect(pc.locator("html")).toHaveAttribute("data-record-font", "serif");
     await pc.goto("/settings");
     await pc.getByRole("button", { name: "로그아웃", exact: true }).click();
     await expect(pc).toHaveURL(`${AUTH_BASE}/login?notice=signed_out`);
     await expect(pc.getByText(TEXT.signedOut, { exact: true })).toBeVisible();
+    const pcDenied = await pcContext.request.get(photoPath!, { maxRedirects: 0 });
+    expect(pcDenied.status()).toBe(401);
+    expect(pcDenied.headers()["content-type"]).not.toContain("image/");
     await pc.goto(recordPath);
     const pcLogin = new URL(pc.url());
     expect([pcLogin.pathname, pcLogin.searchParams.get("returnTo")]).toEqual(["/login", recordPath]);

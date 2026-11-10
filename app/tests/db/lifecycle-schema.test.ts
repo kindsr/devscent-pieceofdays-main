@@ -84,6 +84,7 @@ async function expectLifecycleApplied(db: DisposableDatabase): Promise<void> {
     { version: 1, name: "init" },
     { version: 2, name: "account_lifecycle" },
     { version: 3, name: "reflection_time" },
+    { version: 4, name: "private_photos" },
   ]);
 }
 
@@ -166,7 +167,10 @@ async function seedAllTables(c: pg.Client, uid: string): Promise<void> {
   );
 }
 
-type PerUser = Record<(typeof USER_DATA_TABLES)[number], number>;
+// The original lifecycle fixture seeds exactly these eight user-linked tables.
+// Photo journals/tombstones deliberately survive purge and are verified in photo-storage.test.ts.
+const LIFECYCLE_DATA_TABLES = ["users", "auth_identities", "preferences", "diary_moments", "day_summaries", "design_versions", "credit_accounts", "emotion_ledger"] as const;
+type PerUser = Record<(typeof LIFECYCLE_DATA_TABLES)[number], number>;
 
 /** 한 사용자에 속한 행 수(8개 테이블). owner 연결로 호출한다. */
 async function countsFor(c: pg.Client, uid: string): Promise<PerUser> {
@@ -184,8 +188,8 @@ async function countsFor(c: pg.Client, uid: string): Promise<PerUser> {
   return r.rows[0]!;
 }
 
-const ALL_ONE = Object.fromEntries(USER_DATA_TABLES.map((t) => [t, 1])) as PerUser;
-const ALL_ZERO = Object.fromEntries(USER_DATA_TABLES.map((t) => [t, 0])) as PerUser;
+const ALL_ONE = Object.fromEntries(LIFECYCLE_DATA_TABLES.map((t) => [t, 1])) as PerUser;
+const ALL_ZERO = Object.fromEntries(LIFECYCLE_DATA_TABLES.map((t) => [t, 0])) as PerUser;
 
 // ================================================================ 열·CHECK·인덱스
 
@@ -374,7 +378,7 @@ describe("0002: privileges and SECURITY DEFINER purge functions", () => {
       // 트리거 함수의 PUBLIC 회수는 유지된다
       const trig = await c.query<{ pub: boolean }>("SELECT has_function_privilege('public', $1, 'EXECUTE') AS pub", [TRIGGER_FN]);
       expect(trig.rows[0]?.pub).toBe(false);
-      // purge role: 스키마 USAGE만, 어떤 테이블·열 권한도 없다
+      // purge role keeps USAGE only over the original eight tables/meta; photo cleanup grants are checked separately.
       const sch = await c.query<{ usage: boolean; create: boolean }>(
         "SELECT has_schema_privilege($1, 'pod', 'USAGE') AS usage, has_schema_privilege($1, 'pod', 'CREATE') AS create",
         [CI_ROLES.purge],
@@ -383,11 +387,12 @@ describe("0002: privileges and SECURITY DEFINER purge functions", () => {
       const tbl = await c.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname IN ('pod', 'pod_meta') AND c.relkind IN ('r', 'p', 'v')
+            AND NOT (n.nspname = 'pod' AND c.relname = ANY($2::text[]))
             AND (has_table_privilege($1, c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
                  OR has_any_column_privilege($1, c.oid, 'SELECT, INSERT, UPDATE, REFERENCES'))`,
-        [CI_ROLES.purge],
+        [CI_ROLES.purge, ["photo_uploads", "moment_photos", "photo_deletions"]],
       );
-      expect(tbl.rows[0]?.n, "purge role has no table/column privileges").toBe(0);
+      expect(tbl.rows[0]?.n, "purge role has no table/column privileges on the original tables or meta").toBe(0);
     });
   });
 
