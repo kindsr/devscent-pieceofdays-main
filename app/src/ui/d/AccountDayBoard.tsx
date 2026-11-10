@@ -22,6 +22,7 @@ const ERRORS: Record<ActionError, string> = {
   invalid_date: "기록할 날짜를 확인해 주세요.",
   invalid_version: "기록을 다시 불러와 주세요.",
   invalid_font: "글꼴을 다시 골라 주세요.",
+  invalid_reflection_time: "회고할 시간을 다시 골라 주세요.",
 };
 
 /** 목록·한 줄은 최신 서버 props만 사용한다. 로컬에는 열린 초안과 편집 시작 시 기대 버전만 둔다. */

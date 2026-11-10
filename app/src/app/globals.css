@@ -169,6 +169,14 @@ html[data-record-font="hand"] { --font-record: var(--font-hand); }
 .set-link { margin-left: auto; font-size: 15px; }
 .settings { display: grid; gap: var(--s-2); max-width: 640px; }
 .settings h2 { font-size: 20px; font-weight: 800; }
+.reflection-settings { margin-bottom: var(--s-4); }
+.reflection-settings form { display: grid; gap: var(--s-1); }
+.reflection-settings label { font-weight: 700; }
+.reflection-settings input {
+  min-width: 0; min-height: 44px; max-width: 100%; padding: var(--s-1) var(--s-2);
+  border: var(--border); border-radius: 4px; background: var(--surface); color: var(--ink); font: inherit;
+}
+.reflection-settings input[aria-invalid="true"] { border-color: #8E2A12; }
 .font-pick { border: 0; padding: 0; margin: 0; display: grid; gap: var(--s-1); }
 .font-opt {
   display: grid; grid-template-columns: auto 1fr; gap: 0 var(--s-1); align-items: center; min-height: 44px;

@@ -10,6 +10,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import { setFontKey } from "@/server/account/preferences.pg";
+import { setReflectionTime } from "@/server/account/reflection-time.pg";
 import { loadAuthConfig } from "@/server/auth/config";
 import { assertSameOrigin } from "@/server/auth/session";
 import { getViewer } from "@/server/context";
@@ -25,6 +26,7 @@ export type ActionError =
   | "invalid_version"
   | "invalid_date"
   | "invalid_font"
+  | "invalid_reflection_time"
   | "not_found"
   | "conflict";
 export type ActionResult<T> = { ok: true; value: T } | { ok: false; error: ActionError };
@@ -102,4 +104,8 @@ export async function saveSummaryAction(
 
 export async function setFontAction(key: unknown): Promise<ActionResult<FontKey>> {
   return asUser((userId) => setFontKey(getAppDb(), userId, key));
+}
+
+export async function setReflectionTimeAction(time: unknown): Promise<ActionResult<string>> {
+  return asUser((userId) => setReflectionTime(getAppDb(), userId, time));
 }
