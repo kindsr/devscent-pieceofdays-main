@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 const APP = fileURLToPath(new URL("../..", import.meta.url));
 const WIDTHS = [375, 768, 1440];
 const SCENES = ["read", "empty", "compose", "delete", "settings"];
+const PHOTO_ID = "5ab3d8b9-91aa-4b3a-a3cb-58e766828ca0";
+const PHOTO_SIZE = { width: 640, height: 480 };
 const NAMES = SCENES.flatMap((scene) => WIDTHS.map((width) => `account-${scene}-${width}.png`));
 const SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -34,7 +36,7 @@ function copySources(destination) {
       for (const name of readdirSync(source)) copy(path.posix.join(relative, name));
       return;
     }
-    assert.ok(stat.isFile() && /\.(?:ts|tsx|css|json)$/.test(relative), "source copy allowlist");
+    assert.ok(stat.isFile() && /\.(?:ts|tsx|css|json|mjs|d\.mts)$/.test(relative), "source copy allowlist");
     assert.ok(!relative.split("/").some((name) => name.startsWith(".")), "hidden source refused");
     const bytes = readFileSync(source);
     const target = path.join(destination, relative);
@@ -70,20 +72,52 @@ export const dynamic = "force-dynamic";
 export default async function Page({ searchParams }: { searchParams: Promise<{ scene?: string }> }) {
   const empty = (await searchParams).scene === "empty";
   const day: DiaryDay = { date: "2026-11-02", summary: empty ? "" : "천천히 걸으며 모은 작은 하루.", summaryVersion: empty ? null : 1, moments: empty ? [] : [
-    { id: "visual-piece-01", time: "09:40", text: "창가에 앉아 따뜻한 차를 마셨다.\\n아직 식지 않은 잔을 두 손으로 감쌌다.", image: null, version: 1 },
+    { id: "visual-piece-01", time: "09:40", text: "창가에 앉아 따뜻한 차를 마셨다.\\n아직 식지 않은 잔을 두 손으로 감쌌다.", image: null, version: 1, photo: { src: "/photos/${PHOTO_ID}", width: ${PHOTO_SIZE.width}, height: ${PHOTO_SIZE.height} } },
     { id: "visual-piece-02", time: "12:15", text: "점심을 먹고 동네를 한 바퀴 걸었다. 바람에 잎이 흔들리고 멀리서 자전거 종소리가 들렸다. 기억하고 싶은 장면을 한 줄씩 모아 두었다.", image: null, version: 1 },
     { id: "visual-piece-03", time: "18:20", text: "집으로 돌아오는 길의 하늘이 연한 분홍빛이었다.", image: null, version: 1 },
     { id: "visual-piece-04", time: "21:05", text: "오늘 읽던 책을 덮고 내일의 빈칸을 남겼다.", image: null, version: 1 }
   ] };
-  return <AccountDayBoard day={day} isToday sub="오늘" showSettingsLink />;
+  return <AccountDayBoard day={day} isToday sub="오늘" showSettingsLink photosEnabled />;
 }
 `;
 const SETTINGS = `import { AccountFontSettings } from "@/ui/d/AccountFontSettings";
+import { AccountReflectionSettings } from "@/ui/d/AccountReflectionSettings";
 export default function Settings() {
   return <><header className="board-head"><h1 tabIndex={-1}>설정</h1><p className="sub">나에게 맞게</p></header>
+    <AccountReflectionSettings initialTime="20:00" />
     <AccountFontSettings initialFont="serif" /></>;
 }
 `;
+const PHOTO_ROUTE = `import { readFile } from "node:fs/promises";
+import path from "node:path";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export async function GET() {
+  const bytes = await readFile(path.join(process.cwd(), "visual-photo.jpg"));
+  return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });
+}
+`;
+
+async function syntheticPhoto() {
+  const { default: sharp } = await import("sharp");
+  const { width, height } = PHOTO_SIZE;
+  const pixels = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const offset = (y * width + x) * 3;
+    const sky = y < height * 0.62;
+    pixels[offset] = sky ? 150 + Math.floor(x * 35 / width) : 104 + Math.floor(y * 40 / height);
+    pixels[offset + 1] = sky ? 186 + Math.floor(x * 24 / width) : 135 + Math.floor(x * 30 / width);
+    pixels[offset + 2] = sky ? 207 + Math.floor(y * 20 / height) : 96 + Math.floor(y * 25 / height);
+  }
+  return sharp(pixels, { raw: { width, height, channels: 3 } }).jpeg({ quality: 85 }).toBuffer();
+}
+
+async function photoDecoded(locator) {
+  assert.deepEqual(await locator.evaluate(async (image) => {
+    await image.decode();
+    return { complete: image.complete, width: image.naturalWidth, height: image.naturalHeight };
+  }), { complete: true, ...PHOTO_SIZE }, "synthetic JPEG fully decoded at its original dimensions");
+}
 
 async function unusedPort() {
   const server = net.createServer();
@@ -169,6 +203,11 @@ async function capture() {
     writeFileSync(path.join(temporary, "src/app/page.tsx"), PAGE);
     mkdirSync(path.join(temporary, "src/app/settings"));
     writeFileSync(path.join(temporary, "src/app/settings/page.tsx"), SETTINGS);
+    const jpeg = await syntheticPhoto();
+    writeFileSync(path.join(temporary, "visual-photo.jpg"), jpeg);
+    const photoRoute = path.join(temporary, "src/app/photos", PHOTO_ID);
+    mkdirSync(photoRoute, { recursive: true });
+    writeFileSync(path.join(photoRoute, "route.ts"), PHOTO_ROUTE);
     verifySources(temporary, hashes);
     const env = { NODE_ENV: "development", NEXT_TELEMETRY_DISABLED: "1", CI: "true" };
     for (const key of ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL"]) if (process.env[key]) env[key] = process.env[key];
@@ -209,17 +248,23 @@ async function capture() {
           const page = await context.newPage();
           page.on("pageerror", () => violations.pageErrors++);
           await page.goto(scene === "settings" ? `${origin}/settings` : `${origin}/?scene=${scene}`, { waitUntil: "networkidle" });
+          if (["read", "compose", "delete"].includes(scene)) await photoDecoded(page.getByRole("img", { name: "조각 사진", exact: true }));
           if (scene === "compose") {
             await page.locator("main").getByRole("link", { name: "조각 추가", exact: true }).click();
             const memo = page.getByRole("dialog").getByRole("textbox", { name: "메모" });
             await expect(memo).toBeFocused();
             await memo.fill("잠깐 멈춰 오늘의 한 장면을 적어 두었다.");
+            await page.getByRole("dialog").getByLabel("사진 1장", { exact: true }).setInputFiles({ name: "synthetic-photo.jpg", mimeType: "image/jpeg", buffer: jpeg });
+            const preview = page.getByRole("dialog").getByRole("img", { name: "선택한 사진 미리보기", exact: true });
+            await expect(preview).toBeVisible();
+            await photoDecoded(preview);
           } else if (scene === "delete") {
             await page.getByRole("button", { name: /조각 삭제/ }).first().click();
             await expect(page.getByRole("dialog", { name: "조각 지우기" })).toBeVisible();
           } else if (scene === "empty") {
             await expect(page.getByText("메모 한 줄로 첫 조각을 붙여 보세요.", { exact: true })).toBeVisible();
           } else if (scene === "settings") {
+            await expect(page.getByLabel("매일 회고할 시간", { exact: true })).toHaveValue("20:00");
             await expect(page.getByRole("radio", { name: /^명조/ })).toBeChecked();
             await expect(page.locator("html")).toHaveAttribute("data-record-font", "serif");
           } else {
@@ -238,7 +283,7 @@ async function capture() {
     validatePngs();
     verifySources(temporary, hashes);
     assert.deepEqual(violations, { actionPosts: 0, externalRequests: 0, pageErrors: 0 });
-    console.log(`account visual: PNG15; scenes5; widths375/768/1440; actionPOST0; external0; cookie0; source/CSS byte-identical; checkout ${sha}`);
+    console.log(`account visual: PNG15; scenes5; widths375/768/1440; syntheticJPEG read/preview decoded; reflection20:00; actionPOST0; external0; cookie0; source/CSS byte-identical; checkout ${sha}`);
     complete = true;
   } catch {
     console.error(`account visual capture failed at ${phase}; no logs/HTML/trace artifacts were produced`);
