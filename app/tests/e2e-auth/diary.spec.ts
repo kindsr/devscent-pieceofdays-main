@@ -3,7 +3,7 @@
 // - 계정·세션은 실제 로그인으로만 만든다. 기록은 실제 화면과 실제 Server Action으로만 만든다.
 // - DB 직접 쓰기는 diary-support의 날짜 fixture(과거 날로 옮김)와 SELECT 권한 잠시 회수(finally 복원)뿐이다.
 // - Server Action은 fetch라 보류 중에도 화면을 볼 수 있다. 보류·중단은 page.route로 실제 요청에 건다(Next 내부 ID를 적지 않는다).
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page, type Request } from "@playwright/test";
 import { AUTH_BASE, TEXT, WIDTHS, expectLayoutOk } from "./support";
 import {
   DIARY_TEXT,
@@ -653,7 +653,20 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
   test.setTimeout(180_000);
   const bodies = collectBodies(page);
   const a = await signIn(page);
-  const tap = await tapActions(page);
+  type ActionBody = { url: string; type: string; text: string };
+  const actionBodies = new Map<Request, ActionBody>();
+  let actionCount = 0;
+  // Capture the real server body before browser refresh/navigation can discard it.
+  // This single handler both counts the original UI POST and delivers those same bytes.
+  await page.route((url) => url.origin === AUTH_BASE, async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST" || !(await request.headerValue("next-action"))) return route.fallback();
+    actionCount++;
+    const response = await route.fetch({ maxRedirects: 0 });
+    const buffer = await response.body();
+    actionBodies.set(request, { url: new URL(request.url()).pathname, type: response.headers()["content-type"] ?? "", text: buffer.toString("utf8") });
+    await route.fulfill({ response, body: buffer });
+  });
   const today = await serverSeoulToday();
   const completeAction = async (label: string, submit: () => Promise<void>): Promise<void> => {
     const [response] = await Promise.all([
@@ -662,8 +675,10 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
     ]);
     expect(response.status(), `${label}: successful action response`).toBe(200);
     expect(response.headers()["content-type"] ?? "", `${label}: actual RSC action response`).toContain("text/x-component");
-    const text = await response.text();
-    expect(text.toLowerCase().includes(a.userId.toLowerCase()), `${label}: complete action body must not contain the account id`).toBe(false);
+    expect(await response.finished(), `${label}: browser received the complete response`).toBeNull();
+    const captured = actionBodies.get(response.request());
+    expect(captured, `${label}: the original action body was captured and delivered`).toBeDefined();
+    expect(captured!.text.toLowerCase().includes(a.userId.toLowerCase()), `${label}: complete action body must not contain the account id`).toBe(false);
   };
 
   // 키보드만으로 작성
@@ -676,8 +691,9 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
   await expect(save, "reached by Tab").toBeFocused();
   expect(await save.evaluate((e) => getComputedStyle(e).outlineStyle), "visible focus ring").not.toBe("none");
   await completeAction("keyboard create", () => page.keyboard.press("Enter"));
+  await expect(statusWith(page, DIARY_TEXT.created)).toBeVisible();
   await expect(item(page, "키보드로 쓴 조각")).toHaveCount(1);
-  expect(tap.calls.length).toBe(1);
+  expect(actionCount).toBe(1);
 
   for (const w of WIDTHS) {
     await page.setViewportSize({ width: w, height: 900 });
@@ -696,6 +712,8 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
     await expectLayoutOk(page, `settings ${w}`);
   }
   await completeAction("account font", () => page.getByRole("radio", { name: /^명조/ }).click());
+  expect(actionCount, "one create and one font action, without retries").toBe(2);
+  await expect(page.getByRole("radio", { name: /^명조/ })).toBeEnabled();
   await expect(page.locator("html")).toHaveAttribute("data-record-font", "serif");
   await page.goto("/days");
   for (const w of WIDTHS) {
@@ -703,7 +721,7 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
     await expectLayoutOk(page, `calendar ${w}`);
   }
 
-  const seen = await bodies.bodies();
+  const seen = [...await bodies.bodies(), ...actionBodies.values()];
   expect(seen.some((b) => b.type.includes("text/html")), "document HTML collected").toBe(true);
   expect(seen.some((b) => b.type.includes("text/x-component")), "RSC/action responses collected").toBe(true);
   for (const b of seen) expect(b.text.toLowerCase().includes(a.userId.toLowerCase()), `${b.url} (${b.type}) must not contain the account id`).toBe(false);
