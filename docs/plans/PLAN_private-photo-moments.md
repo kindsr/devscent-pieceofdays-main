@@ -80,6 +80,14 @@ client `photo`는 `photo?: {src:string;width:number;height:number}`이며 src는
 - 실제 S3 인스턴스·전용 dev/prod 버킷/자격/통신은 메인이 비공개 운영 정본에서 별도 준비·검증한다. 공개 버킷이나 다른 서비스 버킷을 재사용하지 않는다. 실제 비용/키를 PR/로그/브라우저에 올리지 않는다.
 - 저장소 helper 수정이 설치본을 바꾸지 않는다. 설치본·DB0004 적용·migration 승인 상한·정적/OFF 변경은 별도 검토·실증 단계다. 현재 dev 자동배포 보류와 production 유지.
 
+### 4.1 helper/front RED의 구체 계약
+
+- 앱 환경에는 위 사진5키를 정확히0개 또는5개만 허용한다. 모든 키가 없는 기존 메모 앱 기동은 보존하고 부분/빈 설정은 거부한다. `POD_PHOTO_CLEANUP_DATABASE_URL`·격리시험 flag·ambient AWS 자격은 평상시 앱 환경에 허용하지 않는다.
+- 실제 helper endpoint는 HTTPS root URL만 허용한다. userinfo(빈 사용자 포함)·query/fragment(빈 구분자 포함)·하위 경로·공백·잘못된 port를 거부하며 정상 HTTPS 명시 port는 허용한다. region/bucket은 앱 parser의 문법과 일치시킨다. literal env의 기존 ASCII/인용/중복/64KiB 경계를 지키며 정상 비밀문자 `+`·`/`·`=`는 보존한다. 오류에 값 원문은 없다.
+- inner front는 `location = /photos/upload`에만 `client_max_body_size 9m`을 추가하고, `location ^~ /photos/`와 함께 기존 앱 upstream으로 전달한다. 두 location은 `access_log off`·`error_log /dev/null crit`를 사용한다. 일반1m·기존callback/static/Host/Origin/Cookie·보안/격리 설정은 보존한다.
+- 기존 root/parity/front 사례에 관련 하위 검증을 추가한다. direct inner front의 정확9MiB 수신 길이/hash·초과413·chunked·다른 경로1m, 실Next 권한 거부와 정상/413/502 사진 sentinel의 inner 로그0를 검증한다. 기존 양성 로그 대조와 immutable ID의 image6/front14/원문preview10을 보존한다. 실제 건수는 CI로 확인한다.
+- outer fixture는 이번 범위에서 바꾸지 않는다. main의 실제 개발 gateway 파일 읽기에서 사진 전용 location은 아직 없었고 상속 body limit·전체 로그 정책은 별도 실효 설정 확인 전이다. inner9MiB/로그0 통과만으로 실제 외곽 경로가 준비됐다고 주장하지 않는다. 외곽 변경은 정확한 제안·공통 nginx 경계 검토·실검증 후 별도 반영한다.
+
 ## 5. 역할을 나눈 검증 순서
 
 1. 앱 전용 dependency/lock 격리 CI 준비·artifact 정확검증. 제품 기능 구현 성공과 구분한다.
