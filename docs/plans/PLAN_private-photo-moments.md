@@ -56,6 +56,10 @@ client `photo`는 `photo?: {src:string;width:number;height:number}`이며 src는
 - 기존 purge_role의 `pod_meta` 직접 SELECT 거부는 유지한다.0004의 `pod.is_photo_cleanup_role()`만 owner SECURITY DEFINER·고정 `search_path=pg_catalog,pg_temp`로 qualified meta를 조회해 `SESSION_USER::name = purge_role` boolean을 반환한다. PUBLIC EXECUTE 회수·purge_role EXECUTE만 허용한다. CLI는 이 boolean만 사용하고 false/권한 오류이면고정exit1, 직접 meta조회/SETROLE/역할명 노출0.
 - 실제 migration 목록/테이블 기대는0004·11테이블로 확장한다. migration engine의 down 데이터 보호도 새 예약/metadata/삭제목록을 포함한다. 합성 CLI fixture의 임의 latest2와 기존0001~0003은 바꾸지 않는다.
 
+### Node CLI와 앱의 구현 공유
+
+`config-core.mjs`·`blob-store.s3-core.mjs`·`cleanup-core.mjs`는 Next alias/프레임워크 전용 import 없는 Node용 구현으로 둔다. 설정을 인자로 받아 전역에서 자격을 읽지 않으며, 앱의 `config.ts`·`blob-store.s3.ts`·`cleanup.ts`는 server-only wrapper를 유지한다. CLI가 동일 core를 재사용해 설정/SDK/SQL 로직을 복제하거나 서버 경계를 우회하지 않는다. standalone에 CLI·필요 core를 명시 COPY하고 SDK의 Node 접근에 필요한 최소 external package 설정만 추가한다.
+
 ## 3. 보관·실패·삭제
 
 - 사진 metadata는 user/moment 동일 소유자를 DB 제약으로 묶는다. 업로드 예약/객체 hash·치수·상태는 서버 전용이다. 원본 파일명·GPS는 저장하지 않는다.
