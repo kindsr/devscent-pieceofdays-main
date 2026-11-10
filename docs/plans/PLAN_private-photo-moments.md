@@ -53,6 +53,7 @@ client `photo`는 `photo?: {src:string;width:number;height:number}`이며 src는
 - `server/photos/read-photo.ts`의 `readPhoto(db,blobs,{userId,gen},photoId,signal?)` → `Result<{bytes:Buffer;contentType:"image/jpeg"},"not_found"|"unavailable">`. trusted caller만 사용자 문맥을 공급한다. 사진·계정·gen의 초기/최종 검증과 SHA256/길이 확인 후에만 bytes를 반환한다.
 - `server/photos/cleanup.ts`의 `cleanupPhotos(db,blobs,{limit,now?})` → `{processed,deleted,failed,busy}`. 1..100개 한정 batch, 외부 I/O 중 장기 DB tx0, 실패 재시도/활성 lease 건너뜀·tombstone 보존. 운영 Node CLI도 한 batch만 실행하고 자동 스케줄 설치0. 직접 Node로 실행하는 entry는 기존 migrate-cli처럼 framework 전용 import를 요구하지 않는 별도 entry로 두고, Next 앱의 server-only 경계를 약화하지 않는다.
 - CLI 경로는 `src/server/photos/cleanup-cli.mjs`, 명령은 `node .../cleanup-cli.mjs --limit <1..100>`다. 전용 `POD_PHOTO_CLEANUP_DATABASE_URL`과 사진 설정5키를 사용하고 DB meta의 purge_role로 접속했는지 확인한다. 앱 Pool의6연결 예산에 cleanup을 겹치지 않는다. 성공 stdout은 위 stats JSON1개, 실패는 고정 prefix와 exit1·원문비밀0. 자동 scheduler0이며 실제 purge credential은 앱 container의 평상시 환경에 넣지 않는다.
+- 기존 purge_role의 `pod_meta` 직접 SELECT 거부는 유지한다.0004의 `pod.is_photo_cleanup_role()`만 owner SECURITY DEFINER·고정 `search_path=pg_catalog,pg_temp`로 qualified meta를 조회해 `SESSION_USER::name = purge_role` boolean을 반환한다. PUBLIC EXECUTE 회수·purge_role EXECUTE만 허용한다. CLI는 이 boolean만 사용하고 false/권한 오류이면고정exit1, 직접 meta조회/SETROLE/역할명 노출0.
 - 실제 migration 목록/테이블 기대는0004·11테이블로 확장한다. migration engine의 down 데이터 보호도 새 예약/metadata/삭제목록을 포함한다. 합성 CLI fixture의 임의 latest2와 기존0001~0003은 바꾸지 않는다.
 
 ## 3. 보관·실패·삭제
@@ -64,6 +65,7 @@ client `photo`는 `photo?: {src:string;width:number;height:number}`이며 src는
 - 조각 삭제/30일 후 계정 purge의 같은 DB tx에서 객체 key를 영속 삭제 목록에 남긴다. 삭제 목록은 사용자 cascade로 사라지지 않는다. 조각 삭제 즉시 HTTP 사진 조회는 거부한다.
 - pending_deletion 동안 원본을 유지하고 일반 사진 읽기는 거부한다.720h 내 복구하면 사진도 다시 읽는다. 기존 purge 함수/migration0002는 고치지 않는다.
 - 서버 전용 batch cleanup이 삭제 성공 때만 목록을 완료하고, 실패/timeout은 재시도 대상으로 보존한다. 오래된 예약의 정리·실제 S3 삭제와 계정 purge 후 회수를 검증한다. 새 자동 스케줄러 설치나 삭제 보장 시간은 이 계획만으로 확정하지 않는다. 실제 운영 소비/재시도 체계가 없으면 사진 삭제/운영 활성화 완료로 세지 않는다.
+- 여기서 ‘완료’는 최근 객체 부재를 검증한 상태다. key tombstone과 후속 재검사 추적을 제거/중단하는 뜻이 아니며, 늦은 PUT로 객체가 다시 관측되면 다음 batch가 다시 지운다.
 - down은 CI·사용자 데이터/예약/삭제목록이 전부 빈 경우만 허용한다. 기존 기록 삭제/원장 권한 확대0. 실제 서비스에서는 앱 코드 복귀·기존 열 보존을 우선하며 자동 down0.
 
 ## 4. front·설정·운영 경계
