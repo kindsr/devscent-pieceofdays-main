@@ -304,7 +304,14 @@ test("C2 app-checks calls the local workflow at the caller SHA once, dev-push on
 
 test("C2 callee retains all Node24/26/app/db/auth jobs and commands, with no job/step if, soft failure, secret or deployment environment", () => {
   assert.deepEqual(sorted(Object.keys(APP_WORKFLOW.jobs)), ["app", "auth-e2e", "db"]);
-  assert.equal(digest(APP_TEXT.slice(APP_TEXT.indexOf("\njobs:\n") + 1)), "sha256:abbd831685a34952b274fcee2f7a8da1a8680a883100107ba6a41b26837bd48f", "accepted13764b3 complete callee jobs, including auth33, remain byte-identical");
+  const browsers = steps(APP_WORKFLOW.jobs["auth-e2e"]).filter((step) => step.name === "Playwright browser");
+  assert.equal(browsers.length, 1, "exactly one auth-e2e Playwright browser install step");
+  assert.equal(browsers[0].run, "npx playwright install --with-deps chromium webkit", "auth-e2e installs Chromium and WebKit for the PC/phone journey");
+  const jobsText = APP_TEXT.slice(APP_TEXT.indexOf("\njobs:\n") + 1);
+  const browserLine = "        run: npx playwright install --with-deps chromium webkit\n";
+  assert.equal(jobsText.split(browserLine).length - 1, 1, "only one complete Chromium+WebKit install line is permitted");
+  const normalizedJobs = jobsText.replace(browserLine, "        run: npx playwright install --with-deps chromium\n");
+  assert.equal(digest(normalizedJobs), "sha256:abbd831685a34952b274fcee2f7a8da1a8680a883100107ba6a41b26837bd48f", "accepted13764b3 complete callee jobs, including auth33, remain byte-identical except the one auth browser install line");
   for (const current of Object.values(APP_WORKFLOW.jobs)) {
     assert.equal(current.if, undefined, "every callee job runs for workflow_call, regardless of event name or paths");
     assert.equal(current["continue-on-error"], undefined);

@@ -655,6 +655,16 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
   const a = await signIn(page);
   const tap = await tapActions(page);
   const today = await serverSeoulToday();
+  const completeAction = async (label: string, submit: () => Promise<void>): Promise<void> => {
+    const [response] = await Promise.all([
+      page.waitForResponse((res) => new URL(res.url()).origin === AUTH_BASE && res.request().method() === "POST" && Boolean(res.request().headers()["next-action"])),
+      submit(),
+    ]);
+    expect(response.status(), `${label}: successful action response`).toBe(200);
+    expect(response.headers()["content-type"] ?? "", `${label}: actual RSC action response`).toContain("text/x-component");
+    const text = await response.text();
+    expect(text.toLowerCase().includes(a.userId.toLowerCase()), `${label}: complete action body must not contain the account id`).toBe(false);
+  };
 
   // 키보드만으로 작성
   await topAdd(page).focus();
@@ -665,7 +675,7 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
   for (let i = 0; i < 12 && !(await save.evaluate((e) => e === document.activeElement)); i++) await page.keyboard.press("Tab");
   await expect(save, "reached by Tab").toBeFocused();
   expect(await save.evaluate((e) => getComputedStyle(e).outlineStyle), "visible focus ring").not.toBe("none");
-  await page.keyboard.press("Enter");
+  await completeAction("keyboard create", () => page.keyboard.press("Enter"));
   await expect(item(page, "키보드로 쓴 조각")).toHaveCount(1);
   expect(tap.calls.length).toBe(1);
 
@@ -685,7 +695,7 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
     await page.setViewportSize({ width: w, height: 900 });
     await expectLayoutOk(page, `settings ${w}`);
   }
-  await page.getByRole("radio", { name: /^명조/ }).click();
+  await completeAction("account font", () => page.getByRole("radio", { name: /^명조/ }).click());
   await expect(page.locator("html")).toHaveAttribute("data-record-font", "serif");
   await page.goto("/days");
   for (const w of WIDTHS) {
