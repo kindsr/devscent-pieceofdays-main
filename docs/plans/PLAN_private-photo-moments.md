@@ -29,10 +29,22 @@
 
 정규화 API 근거: [Sharp constructor](https://sharp.pixelplumbing.com/api-constructor/), [방향 보정](https://sharp.pixelplumbing.com/api-operation/), [출력과 메타데이터](https://sharp.pixelplumbing.com/api-output/). S3 API는 [AWS 공식 SDK](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/)를 사용하고 서명 프로토콜을 직접 구현하지 않는다. Next [multipart Route Handler](https://nextjs.org/docs/app/api-reference/file-conventions/route#request-body-formdata)를 쓰며 기존 Server Action의 전역1MB 제한을 넓히지 않는다.
 
+### 2.1 RED 전 공개 API 구체화
+
+- multipart 필드는 정확 `photo`(File1개), `memo`(문자열), `requestId`(소문자 UUIDv4)다. 중복/알 수 없는 필드·잘못된 boundary·형식은400. `Content-Length` 선검사와 실제 스트림 누적9MiB 제한을 함께 적용하고, 읽기15초 초과/취소 때 reader를 정리한다. 제한 전 원본 `formData()` 호출0.
+- `normalizePhoto(bytes: Uint8Array)` → `Result<{bytes: Buffer; sha256: string; width: number; height: number; contentType: "image/jpeg"}, PhotoError>`. `sha256`은 정규화 bytes의64소문자hex. 단일 정규화 slot, 겹친 호출은 `busy`, 처리5초 제한. 원본8MiB/40MP와 출력4MiB·2560px 제한을 모두 검사하며 애니메이션/여러 page는 이번 단계에서 거부한다.
+- `createPhotoMoment(db, blobs, {userId,gen}, {requestId,memo,photo})` → `Result<MomentRef, PhotoError>`. 원본 조각 쓰기와 같은 trim/300자·서울 날짜/시각을 사용한다. 사용자 상태/gen은 예약과 최종확정의 짧은 DB tx 안에서 다시 확인한다.
+- 업로드 응답: 새 확정201, 같은 요청의 확정 결과 재조회200. 양쪽 `{ok:true,value:{id,version}}`. 잘못된 메모/파일/필드는400, 크기 초과413, 로그인 없음401, Origin 거부403, 다른 입력의 같은 requestId409, 처리 중/미설정/저장 오류503. 실패 JSON은 `{ok:false,error:<고정코드>}`만. 오류코드 집합: `invalid_request`, `invalid_body`, `invalid_photo`, `photo_too_large`, `not_signed_in`, `forbidden`, `conflict`, `busy`, `unavailable`.
+- `parsePhotoConfig(env)` → `Result<PhotoConfig|null,"invalid_photo_config">`. 정확 env키는 `POD_PHOTOS_S3_ENDPOINT`, `POD_PHOTOS_S3_REGION`, `POD_PHOTOS_S3_BUCKET`, `POD_PHOTOS_S3_ACCESS_KEY_ID`, `POD_PHOTOS_S3_SECRET_ACCESS_KEY`다. 모두 없으면 null, 일부만 있으면 오류. endpoint는 userinfo/query/fragment 없는 root URL, 실제 실행은 HTTPS. 격리시험의 loopback HTTP는 production에서 금지한다. 비공개 반환형은 서버 안에서만 사용한다.
+- blob port의 `put(key,photo,signal): Promise<void>`, `get(key,signal): Promise<Buffer|null>`, `delete(key,signal): Promise<void>`. key는 서버 생성 사진 prefix의 UUID.jpg만. get은 실제 스트림4MiB 상한·timeout을 지키고 missing만null, 기타 실패는 고정 저장 오류. SDK의 암묵적 다회 재시도를 켜지 않는다.
+- private GET은 최초 권한 확인 뒤 bounded get·hash/치수 검증, 응답 직전 소유/active/gen 재확인으로 연결한다.200 이외는 사진 bytes 없는 고정 응답(401/404/503)이며 성공/실패 모두 no-store·nosniff다. 타인id/없는id는같은404, key·사진 hash·사용자 UUID를 응답하지 않는다.
+
 ## 3. 보관·실패·삭제
 
 - 사진 metadata는 user/moment 동일 소유자를 DB 제약으로 묶는다. 업로드 예약/객체 hash·치수·상태는 서버 전용이다. 원본 파일명·GPS는 저장하지 않는다.
 - PUT 이전의 예약과 실패 상태를 영속 기록한다. PUT 실패/응답 손실/최종 DB 실패에도 미참조 객체를 추적하고 재시도·회수할 수 있어야 한다. 실제 저장 실패를 메모만 성공으로 바꾸지 않는다.
+- idempotency fingerprint는 정규화 사진 hash+trim한 메모+계약버전1의 canonical JSON SHA256이다. 동일 계정/requestId에 같은 fingerprint가 ready이면 동일 MomentRef, 아직 유효한 예약이면busy, 다르면conflict다. 만료 예약의 재시도는 새 lease token을 채택하며 이전 token의 늦은 확정이 새 결과를 덮지 못한다.
+- 정리는 유효한 업로드 lease를 회수하지 않는다. 요청 취소/timeout 이후 늦은 PUT 가능성을 처리하려고 key journal/삭제 tombstone을 물리적 DELETE 응답만으로 즉시 제거하지 않는다. 재확인 가능한 key를 보존하고 예약 소멸·늦은 응답·계정 cascade 후에도 다시 삭제/부재 확인할 수 있어야 한다. 사용자 연결·메모 원문은 purge 후 남기지 않는다. 실제 저장소 동작과 이 경합은 별도 CI로 확인한다.
 - 조각 삭제/30일 후 계정 purge의 같은 DB tx에서 객체 key를 영속 삭제 목록에 남긴다. 삭제 목록은 사용자 cascade로 사라지지 않는다. 조각 삭제 즉시 HTTP 사진 조회는 거부한다.
 - pending_deletion 동안 원본을 유지하고 일반 사진 읽기는 거부한다.720h 내 복구하면 사진도 다시 읽는다. 기존 purge 함수/migration0002는 고치지 않는다.
 - 서버 전용 batch cleanup이 삭제 성공 때만 목록을 완료하고, 실패/timeout은 재시도 대상으로 보존한다. 오래된 예약의 정리·실제 S3 삭제와 계정 purge 후 회수를 검증한다. 새 자동 스케줄러 설치나 삭제 보장 시간은 이 계획만으로 확정하지 않는다. 실제 운영 소비/재시도 체계가 없으면 사진 삭제/운영 활성화 완료로 세지 않는다.
