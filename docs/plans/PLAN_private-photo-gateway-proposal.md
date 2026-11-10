@@ -23,6 +23,7 @@
 - 후속 d8f085c는 경로/optional loader 준비다. 후보가 없으면 기존 outer bytes와 missing-hash 실패가 유지되며 행위 단언은 바꾸지 않았다. 이 준비 commit을 관측된 RED head라고 보고하지 않는다.
 - 공개 source snippet은35줄·SHA256 `cd87bde7055d11f07abbb3c08b9d2a70fb0437ecc30b9d992ef1c9a4a7c47b77`이다. 독립 source 검토에서 정확 두 location과 기존 proxy11개·인증/IP/헤더 상속 보존을 확인했다. 실제 include의 `nosniff always` 유지가 필수 전제이며, 실제 적용 전 원본/include hash를 다시 확인한다.
 - main은 비공개 동결 원본과 제안 사본·정확 diff를 준비했다. 삽입한 두 블록을 제거하면 원본 bytes가 정확히 복원되고, 들여쓰기 외 공개 snippet 내용은 같다. 실제 파일 변경·nginx 검사/reload·전체 HTTPS 검증은 아직0이다.
+- f45ced8의 outer/front 및 image CI는 각각6/14/원문10을 끝까지 통과했다. 별도 앱 auth는 기존UUID/RSC의 browser_finished 단계 ERR_ABORTED로40pass/1fail이므로 전체GREEN으로 세지 않는다. 공식 Playwright source에서 decoded body와 원본 프레이밍 헤더가 함께 전달되는 경로를 확인해 시험 한 사례의 프레이밍만 보완한다. 기존 완료/보안 단언은 유지하고 실제 취소 원인은 미확정으로 남기며 후속 같은SHA CI로 판정한다.
 
 ## 3. 실제 반영 경계
 
