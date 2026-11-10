@@ -264,12 +264,35 @@ out.wrapper = ["/app/runtime-startup.mjs", "/app/src/server/runtime-mode.ts"].ma
 out.staticFiles = fs.existsSync("/app/.next/static") ? fs.readdirSync("/app/.next/static", { recursive: true }).length : 0;
 out.public = fs.existsSync("/app/public") ? fs.readdirSync("/app/public").sort() : null;
 out.migrate = ["migrate-cli.ts", "migrate.ts", "sql-policy.ts"].map((f) => fs.existsSync("/app/src/server/db/" + f));
+out.photoCleanup = ["cleanup-cli.mjs", "cleanup-core.mjs", "config-core.mjs", "blob-store.s3-core.mjs"].map((f) => fs.existsSync("/app/src/server/photos/" + f));
 out.migrations = fs.existsSync("/app/migrations") ? fs.readdirSync("/app/migrations").sort() : null;
 try { require.resolve("pg", { paths: ["/app/src/server/db"] }); out.pg = true; } catch { out.pg = false; }
 console.log(JSON.stringify(out));`;
 
-test("image files: standalone server, static and public assets, the fixed migrate CLI with migrations and pg; no .env*, tests or build artifacts", { timeout: CASE_TIMEOUT }, async () => {
-  const ctx = requireInputs();
+// Dependency/native ABI and memory probe only. This does not import or emulate normalizePhoto.
+const SHARP_MEMORY_PROBE = `(async () => {
+  const fs = require("node:fs"), sharp = require("sharp");
+  const started = performance.now(), input = fs.readFileSync(process.argv[1]);
+  const original = await sharp(input).metadata();
+  const output = await sharp(input, { limitInputPixels: 40000000, sequentialRead: true })
+    .autoOrient().resize({ width: 2560, height: 2560, fit: "inside", withoutEnlargement: true })
+    .flatten({ background: "#ffffff" }).jpeg({ quality: 85 }).toBuffer();
+  const decoded = await sharp(output).metadata();
+  const number = (name) => Number(fs.readFileSync("/sys/fs/cgroup/" + name, "utf8").trim());
+  console.log(JSON.stringify({ inputFormat: original.format, inputWidth: original.width, inputHeight: original.height,
+    inputBytes: input.length, outputFormat: decoded.format, width: decoded.width, height: decoded.height, outputBytes: output.length,
+    jpegSignature: output[0] === 255 && output[1] === 216 && output[2] === 255 && output.at(-2) === 255 && output.at(-1) === 217,
+    memoryMax: number("memory.max"), swapMax: number("memory.swap.max"), cgroupPeakBytes: number("memory.peak"),
+    maxRssBytes: process.resourceUsage().maxRSS * 1024, elapsedMs: Math.ceil(performance.now() - started) }));
+})().catch(() => { console.error("sharp-dependency-probe: failed"); process.exitCode = 1; });`;
+
+test("image files: standalone assets and migrate/cleanup CLI runtime; Sharp dependency/native 512MiB probe; no .env*, tests or build artifacts", { timeout: CASE_TIMEOUT }, async () => {
+  const input = requireInputs();
+  assert.equal(process.env.CI, "true", "photo image probes generate synthetic fixtures in CI only");
+  assert.equal(process.env.GITHUB_ACTIONS, "true", "photo image probes require Actions");
+  const image = await inspectImage(input.image);
+  assert.match(image.Id, /^sha256:[0-9a-f]{64}$/, "all file/runtime probes use one immutable image ID");
+  const ctx = { ...input, image: image.Id };
   const r = await dockerOk(
     ["run", "--rm", "--network", "none", "--read-only", "--user", ctx.user, "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--entrypoint", "node", ctx.image, "-e", FS_SCRIPT],
     "file listing",
@@ -282,8 +305,96 @@ test("image files: standalone server, static and public assets, the fixed migrat
   assert.ok(fsInfo.staticFiles > 0, ".next/static copied");
   assert.deepEqual(fsInfo.public, readdirSync(path.join(APP_DIR, "public")).sort(), "public copied as in the repository");
   assert.deepEqual(fsInfo.migrate, [true, true, true], "migrate-cli.ts, migrate.ts, sql-policy.ts at /app/src/server/db");
+  assert.deepEqual(fsInfo.photoCleanup, [true, true, true, true], "raw cleanup CLI and its three pure cores are packaged");
   assert.deepEqual(fsInfo.migrations, readdirSync(path.join(APP_DIR, "migrations")).sort(), "migrations identical to the repository list");
   assert.equal(fsInfo.pg, true, "pg resolvable for the migrate CLI");
+  const owner = randomBytes(16).toString("hex");
+  const label = `pod.photo-image-owner=${owner}`;
+  const tmp = mkdtempSync(path.join(tmpdir(), "pod-photo-image-input-"));
+  chmodSync(tmp, 0o700);
+  const runNode = async (tag, argv, envPairs = [], extra = []) => {
+    const name = uniqueName(tag);
+    const args = hardenedArgs(ctx, name, { envPairs, extra: ["--label", label, "--entrypoint", "node", ...extra] });
+    const created = await dockerOk(["create", ...args.slice(2), ...argv], `${tag}: create`);
+    const id = created.stdout.trim();
+    assert.match(id, /^[0-9a-f]{64}$/);
+    await dockerOk(["start", id], `${tag}: start`);
+    const waited = await docker(["wait", id], 90_000);
+    assert.equal(waited.code, 0, `${tag}: bounded container exit`);
+    const info = JSON.parse((await dockerOk(["inspect", id], `${tag}: inspect`)).stdout)[0];
+    assert.equal(info.Image, ctx.image, `${tag}: same immutable image`);
+    assert.equal(info.Config.Labels["pod.photo-image-owner"], owner, `${tag}: owned container`);
+    return { code: Number(waited.stdout.trim()), info, logs: await dockerOk(["logs", id], `${tag}: logs`) };
+  };
+  try {
+    const fakeDsn = "postgres://ci_only_cleanup:ci-only-image-db-password@127.0.0.1:9/ci_only_photos";
+    rememberUrl(fakeDsn);
+    const complete = [`POD_PHOTO_CLEANUP_DATABASE_URL=${fakeDsn}`, "POD_PHOTOS_S3_ENDPOINT=https://photo-ci-only.invalid",
+      "POD_PHOTOS_S3_REGION=us-east-1", "POD_PHOTOS_S3_BUCKET=ci-only-photo-image", "POD_PHOTOS_S3_ACCESS_KEY_ID=ci-only-image-access",
+      "POD_PHOTOS_S3_SECRET_ACCESS_KEY=ci-only-image-secret-not-production"];
+    for (const pair of complete) secrets.add(pair.slice(pair.indexOf("=") + 1));
+    for (const [tag, envPairs] of [["cleanup-empty", []], ["cleanup-configured", complete]]) {
+      const result = await runNode(tag, ["src/server/photos/cleanup-cli.mjs", "--limit", "1"], envPairs);
+      assert.equal(result.code, 1, `${tag}: fixed failure exit, not an import/loader failure`);
+      assert.equal(result.logs.stdout, "", `${tag}: no success stdout`);
+      assert.equal(redact(result.logs.stderr), "photo-cleanup: unavailable\n", `${tag}: exactly one fixed stderr line`);
+      assert.doesNotMatch(result.logs.output, /ERR_MODULE_NOT_FOUND|Cannot find module|SyntaxError|ReferenceError|\n\s+at /, `${tag}: eager CLI/core/SDK imports must work`);
+      assert.equal(result.info.State.OOMKilled, false);
+    }
+
+    const { default: sharp } = await import("sharp"); // CI fixture generation is outside every measured container.
+    for (const format of ["jpeg", "png", "webp"]) {
+      const create = { width: 8000, height: 5000, channels: format === "png" ? 4 : 3, background: { r: 92, g: 136, b: 174, alpha: 0.5 } };
+      let generator = sharp({ create });
+      if (format === "jpeg") generator = generator.withMetadata({ orientation: 6 });
+      let bytes = await generator[format]().toBuffer();
+      assert.ok(bytes.length > 0 && bytes.length <= 8 * 1024 * 1024, `${format}: synthetic 40MP input fits 8MiB`);
+      if (format === "jpeg") { const padded = Buffer.alloc(8 * 1024 * 1024); bytes.copy(padded); bytes = padded; }
+      const filename = `input.${format}`;
+      writeFileSync(path.join(tmp, filename), bytes, { mode: 0o600, flag: "wx" });
+      const result = await runNode(`sharp-${format}`, ["-e", SHARP_MEMORY_PROBE, `/photo-inputs/${filename}`], [],
+        ["--memory", "512m", "--memory-swap", "512m", "--mount", `type=bind,src=${tmp},dst=/photo-inputs,readonly`]);
+      assert.equal(result.info.HostConfig.Memory, 536870912, `${format}: whole-container memory limit`);
+      assert.equal(result.info.HostConfig.MemorySwap, 536870912, `${format}: no additional swap`);
+      assert.equal(result.info.State.OOMKilled, false, `${format}: no OOM kill`);
+      assert.equal(result.code, 0, `${format}: native probe completed within the limit`);
+      assert.equal(result.logs.stderr, "", `${format}: no loader/native errors`);
+      const mount = result.info.Mounts.filter((entry) => entry.Destination === "/photo-inputs");
+      assert.equal(mount.length, 1);
+      assert.equal(mount[0].Source, tmp);
+      assert.equal(mount[0].RW, false, "synthetic inputs are read-only");
+      const metrics = JSON.parse(result.logs.stdout);
+      assert.equal(metrics.memoryMax, 536870912, `${format}: actual cgroup v2 memory.max`);
+      assert.equal(metrics.swapMax, 0, `${format}: actual cgroup swap.max`);
+      for (const key of ["cgroupPeakBytes", "maxRssBytes", "elapsedMs"]) assert.ok(Number.isSafeInteger(metrics[key]) && metrics[key] > 0, `${format}: numeric ${key}`);
+      assert.ok(metrics.cgroupPeakBytes <= 536870912 && metrics.maxRssBytes <= 536870912);
+      assert.equal(metrics.inputFormat, format);
+      assert.equal(metrics.inputWidth * metrics.inputHeight, 40_000_000);
+      assert.equal(metrics.inputBytes, bytes.length);
+      assert.equal(metrics.outputFormat, "jpeg");
+      assert.deepEqual([metrics.width, metrics.height], format === "jpeg" ? [1600, 2560] : [2560, 1600]);
+      assert.ok(metrics.outputBytes > 0 && metrics.outputBytes <= 4 * 1024 * 1024);
+      assert.equal(metrics.jpegSignature, true);
+      console.log(`Sharp dependency/native memory probe only: ${JSON.stringify({ image: ctx.image, ...metrics })}`);
+    }
+  } finally {
+    const failures = [];
+    try {
+      const ids = (await dockerOk(["ps", "-aq", "--filter", `label=${label}`], "owned photo probe lookup")).stdout.trim().split(/\s+/).filter(Boolean);
+      for (const id of ids) {
+        try {
+          assert.match(id, /^[0-9a-f]{12,64}$/);
+          const info = JSON.parse((await dockerOk(["inspect", id], "owned photo probe inspect")).stdout)[0];
+          assert.equal(info.Config.Labels["pod.photo-image-owner"], owner);
+          assert.equal(info.Image, ctx.image);
+          await dockerOk(["rm", "-f", "-v", id], "owned photo probe removal", 60_000);
+        } catch { failures.push("owned container removal"); }
+      }
+      assert.equal((await dockerOk(["ps", "-aq", "--filter", `label=${label}`], "owned photo probe remnants")).stdout.trim(), "");
+    } catch { failures.push("owned container lookup/remnants"); }
+    finally { try { rmSync(tmp, { recursive: true }); } catch { failures.push("owned synthetic inputs"); } }
+    assert.deepEqual(failures, [], "photo image probe resources were removed");
+  }
 });
 
 // ================================================================= 3. 제한 기동(env 없음)
