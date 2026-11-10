@@ -1,5 +1,7 @@
 # pieceofdays app (F1 화면·F2 DB·F3 도메인·F4 인증 기반)
 
+2026-11-10 회고 시간 설정: [PR81](https://github.com/kindsr/devscent-pieceofdays-main/pull/81)에서 사용자 메뉴 → 설정의 계정별 회고 시각을 구현했다. 초기값은 한국 시간20:00이며 변경·저장·다른 기기의 같은 계정 재조회, 실패 초안 보존·읽기 실패 안내를 제공한다. migration0003은 시간 열과 해당 UPDATE 권한만 추가하며 기존 글꼴·디자인·기록 시각을 보존한다. 실제 CI 결과는 검증 중이며 서비스 DB 적용·게시와 구분한다. 현재 dev는 제한된 C2 검증 창 이후 정적 화면/OFF로 복귀했고 실제 Google B5·사진·AI 하루 이야기 완료를 뜻하지 않는다. [설정 구현 계획](../docs/plans/PLAN_reflection-time-settings.md)·[사진 후속 계획](../docs/plans/PLAN_private-photo-moments.md).
+
 2026-11-08 현재 서버 준비: [실제 C1 게시](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42484654242)와 같은 SHA의 [필수 앱 검사](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42484654196)를 확인했다. 게시 이미지의 익명 pull·소스 라벨·manifest/config 연결을 대조했고, 그 이미지로 실제 dev DB migration 0001·0002와 앱 역할 TCP 접속·DDL/원장 변경 거부를 확인했다. 검토된 helper 설치·두 환경 probe·첫 야간 백업을 확인하고 dev 외곽 콜백의 안전 로그·단일 no-referrer를 반영했다. [C2 전환 PR72](https://github.com/kindsr/devscent-pieceofdays-main/pull/72)는 구조128·PR local 이미지/프런트·기존 회귀와 독립 검토를 통과했다. OAuth 키·최종 env·실제 앱 콜백 통합은 아직 대기다. 현재 내부 프런트는 정적 버전이므로 외곽 검증을 전체 앱 로그 비기록이나 실제 로그인 성공으로 세지 않는다. 아래 각 단계의 기록은 작성 당시 상태이며 현재 사이트는 아직 정적 체험판이다.
 
 2026-11-08 F6a2: [PR65](https://github.com/kindsr/devscent-pieceofdays-main/pull/65) exact `03b4182`의 독립 검토 PASS와 [실제 조합 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42479241084)를 수락했다. 같은 불변 앱 이미지 ID로 기존 이미지6·프런트14·원문 preview10을 skip0으로 통과했다. 실제 nginx/Next의 정적 응답·Host/Origin·콜백 헤더/로그·장애·브라우저 기록 보존을 확인했다. 별도 observer로 query 수신 바이트를 대조하며 실제 OAuth 성공 증거로 세지 않는다. registry 게시·실제 게이트웨이 설정·서비스 DB·앱 전환은 아직 없다.
@@ -23,8 +25,8 @@ Next.js App Router 앱 골격과 PostgreSQL 18 스키마·마이그레이션 실
 
 | 경로 | 내용 |
 |---|---|
-| `src/app/` | 경로: `/` 오늘, `/days` 모아보기, `/days/[date]` 특정 날, `/settings` 기록 글꼴·계정, `/login`·`/account/withdraw`·`/account/restore` 인증 화면, `/auth/` 인증 route 5개, `/dev/konva-smoke` 시험 fixture |
-| `src/app/actions/diary.ts` | S3a Server Actions 5개: config·Origin·요청 사용자 확인 뒤 기존 F3 쓰기 호출. S3b 계정 화면이 직접 호출한다 |
+| `src/app/` | 경로: `/` 오늘, `/days` 모아보기, `/days/[date]` 특정 날, `/settings` 회고 시간·기록 글꼴·계정, `/login`·`/account/withdraw`·`/account/restore` 인증 화면, `/auth/` 인증 route 5개, `/dev/konva-smoke` 시험 fixture |
+| `src/app/actions/diary.ts` | Server Actions 6개: config·Origin·요청 사용자 확인 뒤 기록·한 줄·글꼴·회고 시간 쓰기. 계정 화면이 직접 호출한다 |
 | `src/ui/d/` | D 화면 컴포넌트(상단, 조각 보드·하루 한 줄·작성/수정 팝업, 달력, 글꼴 설정). 스타일은 `src/app/globals.css`(D `style.css`에서 옮김) |
 | `src/ui/decorate/` | Konva 클라이언트 전용 모듈. 지금은 호환 스모크만 있고 꾸미기 편집기 UI는 없다(별도 아트보드 필요) |
 | `src/server/runtime-mode.ts` | 로컬 고정 사용자 모드 판정과 운영 거부, 고정 사용자+실제 인증 동시 사용·운영 단계 mock issuer 거부. 원본 순수 검사를 `next.config.ts`와 standalone `runtime-startup.mjs`가 호출 |
