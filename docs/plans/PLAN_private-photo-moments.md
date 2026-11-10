@@ -9,7 +9,8 @@
 
 - 기존 텍스트 조각은 보존한다. 계정 조각 쓰기에 선택 사진1장을 더한다. 메모1~300자·기존 발생 시각/서울 날짜 정책은 그대로다.
 - JPEG/PNG/WebP 원본 최대8MiB, 요청 전체9MiB(분할 전송도 실제 읽은 바이트 제한), 최대40,000,000픽셀. 실제 decode 후 긴변2560px 이내·JPEG quality85·최대4MiB로 정규화한다. 방향을 보정하고 EXIF/GPS 등 메타데이터를 제거한다. SVG/HTML/손상/위장/초과 이미지는 고정 오류로 거부한다.
-- 파일 선택·파일명과 제한 안내·미리보기·선택 취소를 제공한다. 접근 가능한 이름은 파일 입력 ‘사진 1장’, 취소 버튼 ‘사진 선택 취소’, 저장 사진 img ‘조각 사진’이다. `accept`만으로 서버 검증을 대신하지 않는다. HEIC의 자동 변환을 가정하지 않고 미지원 형식 안내를 제공한다.
+- 파일 선택·파일명과 제한 안내·미리보기·선택 취소를 제공한다. 접근 가능한 이름은 파일 입력 ‘사진 1장’, 취소 버튼 ‘사진 선택 취소’, 저장 사진 img ‘조각 사진’이다. `accept`만으로 서버 검증을 대신하지 않는다. HEIC의 자동 변환을 가정하지 않고 미지원 형식 안내를 제공한다。
+- 저장 확인 실패는 ‘사진 저장을 확인하지 못했어요. 고른 사진과 메모는 그대로 두었어요. 다시 시도해 주세요.’로 안내한다. 미설정은 ‘사진 저장을 준비 중이에요. 지금은 메모로 남길 수 있어요.’로 알리고 사진 입력을 닫는다. 미설정 상태에서도 기존 텍스트 기록은 사용 가능하다.
 - 저장 중 중복/닫기 잠금, 실패 시 File·메모 초안 보존. 성공 후 서버 재조회가 끝나야 닫고 성공으로 표시한다. 단순 메모 수정은 기존 사진을 보존한다. 사진 교체·다중 사진·크롭은 이 단계 밖이다.
 - 기존 D 디자인을 재사용한다. PC↔iPhone/Android 에뮬레이션, 키보드,375/768/1440 폭을 검증한다. 실기기와 에뮬레이션 결과를 구분한다.
 
@@ -24,6 +25,8 @@
 | 업로드 | `app/photos/upload/route.ts`: POST. 설정·정확 Origin·매 요청 viewer·저장 설정을 확인한 뒤 bounded multipart 읽기. 검증된 사용자만 사용하며 userId/key를 클라이언트에서 받지 않음. 성공은 `{ok:true,value:{id,version}}`, 실패는 고정 코드와4xx/503. 실제 객체/DB 성공 전201 금지 |
 | 조회 | `app/photos/[id]/route.ts`: GET. active/gen·소유자+ready 확인 후 private bytes. 타인/로그아웃/탈퇴 시0bytes. `Cache-Control: private, no-store`, 고정 JPEG Content-Type·nosniff. 공개 S3 URL·공용 이미지 최적화 캐시0 |
 | 기존 조회 | shared `DiaryMoment`에 선택 `photo` 참조를 추가. 기존 `image: SampleImageKey|null`과 fixture는 보존. PG 조회·AccountDayBoard·MonthCalendar가 실제 `/photos/<opaque id>`와 치수만 사용. 기존 무사진 DTO 기대는 불필요하게 변경하지 않음 |
+
+client `photo`는 `photo?: {src:string;width:number;height:number}`이며 src는 상대 `/photos/<UUID>`다. 무사진일 때 property를 생략해 기존 DTO shape를 보존한다. 별도 owner/key/hash는 client에 없다.
 
 라이브러리 구현 기본값(메인 제안): 기존 lock의 **sharp0.35.5**를 직접 의존성으로 고정, S3는 **@aws-sdk/client-s3 3.1165.0**(2026-11-09 발행, Node>=20, Apache2). Sharp 본체 Apache2, bundled libvips LGPL3+는 기존 Next 의존성과 구분해 기록한다. 호스트 설치를 하지 않고 CI의 격리 lock 생성·정확2파일 artifact 회수/해시 대조 후 기존 `npm ci`·라이선스/의존성 검사로 검증한다.
 
@@ -46,9 +49,10 @@
 - uploads 필드: `id` UUID, `user_id` nullable(계정 purge 때 SET NULL), `request_id` UUID, `fingerprint`64hex, `object_key`, `status`(staged/ready/abandoned), `lease_token`, `lease_until`, 생성/갱신 시각. object_key는 유일하고 `(user_id,request_id)`는 staged/ready에 한정한 부분 유일 제약이다. 만료 후 재시도는 이전 행을abandoned로 남기고 **새id·새key**를 예약한다. 이전 key를 재사용해 늦은 PUT/DELETE가 새 사진을 지우거나 덮게 하지 않는다. 원본 메모·사진 bytes·파일명0. 계정 purge 후 journal/key 자체가 cascade로 없어지지 않게 한다.
 - moment_photos 필드: `id`(uploads FK), `user_id`, 유일한 `moment_id`, `sha256`, `mime_type`(image/jpeg), `byte_length`(1..4MiB), `width/height`(1..2560), 생성시각. `(moment_id,user_id)`는 같은 소유자의 diary_moments를 참조한다. 사용자·조각 cascade는 확정 metadata를 지우고 DELETE trigger가 journal의 key를 같은 tx의 photo_deletions에 남긴다.
 - deletions는 사진 id/key·재시도시각·최근부재검증시각·시도횟수만 남기며 user FK/원문을 두지 않는다. 성공 DELETE만으로 key를 즉시 버리지 않고 늦은 PUT도 재확인할 수 있게 한다. staging TTL·업로드 lease token을 통해 사용 중인 PUT 회수와 늦은 확정 덮어쓰기를 차단한다.
-- 앱은 새 세 테이블의 필요한 DML과 기존 user/조각 권한만 쓴다. uploads/삭제 tombstone의 무조건 DELETE 권한을 주지 않는다. trigger 함수는 PUBLIC EXECUTE를 회수하며, 원장·기존 role·PUBLIC 권한을 넓히지 않는다.
+- 앱은 새 세 테이블의 필요한 DML과 기존 user/조각 권한만 쓴다. uploads/삭제 tombstone의 무조건 DELETE 권한을 주지 않는다. cleanup 전용 실행은 기존 purge role에 새 사진 세 테이블의 batch에 필요한 SELECT/열 UPDATE·queue INSERT만 부여한다. 기존 사용자8테이블·원장·PUBLIC 권한은 넓히지 않는다. trigger 함수의 PUBLIC EXECUTE를 회수한다.
 - `server/photos/read-photo.ts`의 `readPhoto(db,blobs,{userId,gen},photoId,signal?)` → `Result<{bytes:Buffer;contentType:"image/jpeg"},"not_found"|"unavailable">`. trusted caller만 사용자 문맥을 공급한다. 사진·계정·gen의 초기/최종 검증과 SHA256/길이 확인 후에만 bytes를 반환한다.
 - `server/photos/cleanup.ts`의 `cleanupPhotos(db,blobs,{limit,now?})` → `{processed,deleted,failed,busy}`. 1..100개 한정 batch, 외부 I/O 중 장기 DB tx0, 실패 재시도/활성 lease 건너뜀·tombstone 보존. 운영 Node CLI도 한 batch만 실행하고 자동 스케줄 설치0. 직접 Node로 실행하는 entry는 기존 migrate-cli처럼 framework 전용 import를 요구하지 않는 별도 entry로 두고, Next 앱의 server-only 경계를 약화하지 않는다.
+- CLI 경로는 `src/server/photos/cleanup-cli.mjs`, 명령은 `node .../cleanup-cli.mjs --limit <1..100>`다. 전용 `POD_PHOTO_CLEANUP_DATABASE_URL`과 사진 설정5키를 사용하고 DB meta의 purge_role로 접속했는지 확인한다. 앱 Pool의6연결 예산에 cleanup을 겹치지 않는다. 성공 stdout은 위 stats JSON1개, 실패는 고정 prefix와 exit1·원문비밀0. 자동 scheduler0이며 실제 purge credential은 앱 container의 평상시 환경에 넣지 않는다.
 - 실제 migration 목록/테이블 기대는0004·11테이블로 확장한다. migration engine의 down 데이터 보호도 새 예약/metadata/삭제목록을 포함한다. 합성 CLI fixture의 임의 latest2와 기존0001~0003은 바꾸지 않는다.
 
 ## 3. 보관·실패·삭제
