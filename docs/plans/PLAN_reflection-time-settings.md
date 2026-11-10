@@ -6,7 +6,7 @@
 
 ## 1. 사용자 흐름·화면
 
-기존 D 설정 화면의 글꼴 위에 ‘회고 시간’ 구역을 추가한다. 기존 색·간격·입력·버튼을 재사용하고 화면 전체를 다시 디자인하지 않는다.
+로그인한 계정의 상단 ‘사용자 메뉴’에 ‘설정’ 링크를 둔다. 글꼴 전용 링크나 URL 직접 입력에만 의존하지 않는다. 기존 D 설정 화면의 글꼴 위에 ‘회고 시간’ 구역을 추가한다. 기존 색·간격·입력·버튼을 재사용하고 화면 전체를 다시 디자인하지 않는다.
 
 ```text
 설정 / 나에게 맞게
@@ -36,6 +36,7 @@
 | `app/src/app/actions/diary.ts` | `setReflectionTimeAction(unknown)` 추가. 기존 설정→Origin→매 요청 viewer→DB 순서와 `asUser` 재사용. 클라이언트가 보낸 userId를 사용하지 않음. 실패는 고정 오류 코드, 원문/비밀 로그0 |
 | `app/src/app/settings/page.tsx` | 사용자별 동적 조회. 글꼴/시간의 읽기 오류를 각 구역에서 처리. userId 등 비공개 식별자를 client props로 넘기지 않음 |
 | `app/src/ui/d/AccountReflectionSettings.tsx` | `initialTime: string`만 받는 편집기. 서버 성공 후 refresh. 오류/기본값/시간대 안내 |
+| `app/src/ui/d/TopBar.tsx` | 계정용 `사용자 메뉴` navigation의 `설정` 링크(`/settings`), 현재 설정 경로 표시. 기존 조각 추가·주 메뉴·fixture/로그아웃 분기 유지. CSS는 기존 상단 grid 안에서만 배치 |
 
 기존 preferences 조회 shape·기존 5개 action의 동작은 보존한다. action 오류 union의 확장 때문에 AccountDayBoard의 오류 사전1항목만 함께 추가한다. 기존 메모 발생 시각·날짜·글꼴·디자인·지급·세션은 바꾸지 않는다.
 
@@ -61,7 +62,7 @@ RED 소유 범위:
 - 기존 `app/tests/unit/diary-actions.test.ts`: 정확5→6 export·가드 공통 호출에 새 action 추가, 새 입력 실패 사례
 - 신규 `app/tests/db/reflection-time.test.ts`
 - 기존 `app/tests/db/migrate.test.ts`, `lifecycle-schema.test.ts`: 실제 기본 migration 목록/체크섬을3까지 갱신. 임의 probe fixture는 보존
-- 신규 `app/tests/e2e-auth/reflection.spec.ts`: 실제 mock OIDC·일회용 PG·UI로 기본/저장/재접속/계정 분리·실패 검증
+- 신규 `app/tests/e2e-auth/reflection.spec.ts`: 실제 mock OIDC·일회용 PG·사용자 메뉴의 설정 진입으로 기본/저장/재접속/계정 분리·실패 검증. 최초612 RED 이후 실제 진입 누락은 이 파일 첫 사례만 별도 RED로 고정하고 독립 GREEN으로 보완
 - 기존 `app/tests/e2e-auth/device.spec.ts`: 기존 두 교차 엔진 여정에 PC→폰·폰→PC 회고 시간 readback만 추가
 
 GREEN 소유는 §2·3의 제품/SQL과 최소 CSS다. DB 하네스·workflow·package/lock·기존 CLI/제품 보안 규칙은 편집하지 않는다. RED가 실제 새 schema 때문에 추가 영향을 확인하면 메인에 보고하고 정당한 기대 변경을 RED 단계에서 먼저 명시한다.
