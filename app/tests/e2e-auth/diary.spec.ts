@@ -657,9 +657,20 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
   const bodies = collectBodies(page);
   const a = await signIn(page);
   type ActionBody = { url: string; type: string; text: string };
-  type ActionStage = { fetchReturned: boolean; bodyBuffered: boolean; fulfillStarted: boolean; fulfillReturned: boolean; handlerFailed: boolean; bodyBytes: number };
+  type Encoding = "none" | "identity" | "gzip" | "br" | "deflate" | "other";
+  type ActionStage = {
+    fetchReturned: boolean; bodyBuffered: boolean; fulfillStarted: boolean; fulfillReturned: boolean; handlerFailed: boolean; bodyBytes: number;
+    rawEncoding: Encoding | null; rawContentLengthPresent: boolean; rawContentLength: number | null;
+    transferChunked: boolean; transferSupported: boolean; rawLengthMatchesBody: boolean | null; normalizedDelivery: boolean;
+  };
   const actionBodies = new Map<Request, ActionBody>();
   const actionStages = new Map<Request, ActionStage>();
+  const framing = (stage?: ActionStage) => ({
+    rawEncoding: stage?.rawEncoding ?? null, rawContentLengthPresent: stage?.rawContentLengthPresent ?? false,
+    rawContentLength: stage?.rawContentLength ?? null, transferChunked: stage?.transferChunked ?? false,
+    transferSupported: stage?.transferSupported ?? false, bodyBytes: stage?.bodyBytes ?? 0,
+    rawLengthMatchesBody: stage?.rawLengthMatchesBody ?? null, normalizedDelivery: stage?.normalizedDelivery ?? false,
+  });
   let actionCount = 0;
   // Capture the real server body before browser refresh/navigation can discard it.
   // This single handler both counts the original UI POST and delivers those same bytes.
@@ -667,7 +678,12 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
     const request = route.request();
     if (request.method() !== "POST" || !(await request.headerValue("next-action"))) return route.fallback();
     actionCount++;
-    const stage: ActionStage = { fetchReturned: false, bodyBuffered: false, fulfillStarted: false, fulfillReturned: false, handlerFailed: false, bodyBytes: 0 };
+    const actionNumber = actionCount;
+    const stage: ActionStage = {
+      fetchReturned: false, bodyBuffered: false, fulfillStarted: false, fulfillReturned: false, handlerFailed: false, bodyBytes: 0,
+      rawEncoding: null, rawContentLengthPresent: false, rawContentLength: null, transferChunked: false,
+      transferSupported: false, rawLengthMatchesBody: null, normalizedDelivery: false,
+    };
     actionStages.set(request, stage);
     try {
       const response = await route.fetch({ maxRedirects: 0 });
@@ -675,12 +691,37 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
       const buffer = await response.body();
       stage.bodyBuffered = true;
       stage.bodyBytes = buffer.length;
-      actionBodies.set(request, { url: new URL(request.url()).pathname, type: response.headers()["content-type"] ?? "", text: buffer.toString("utf8") });
+      const raw = response.headers();
+      const encoding = raw["content-encoding"]?.trim().toLowerCase();
+      stage.rawEncoding = encoding === undefined ? "none" : ["identity", "gzip", "br", "deflate"].includes(encoding) ? encoding as Encoding : "other";
+      stage.rawContentLengthPresent = raw["content-length"] !== undefined;
+      const length = raw["content-length"];
+      stage.rawContentLength = length !== undefined && /^[0-9]+$/.test(length) && Number.isSafeInteger(Number(length)) ? Number(length) : null;
+      const transfer = raw["transfer-encoding"]?.trim().toLowerCase();
+      stage.transferChunked = transfer === "chunked";
+      stage.transferSupported = transfer === undefined || stage.transferChunked;
+      stage.rawLengthMatchesBody = stage.rawContentLength === null ? null : stage.rawContentLength === buffer.length;
+      expect(stage.rawEncoding !== "other" && stage.transferSupported, "only supported upstream body encodings are delivered").toBe(true);
+      expect(response.status(), "upstream action status").toBe(200);
+      expect((raw["content-type"] ?? "").includes("text/x-component"), "upstream action is RSC").toBe(true);
+      const text = buffer.toString("utf8");
+      expect(text.toLowerCase().includes(a.userId.toLowerCase()), "complete upstream action body must not contain the account id").toBe(false);
+      actionBodies.set(request, { url: new URL(request.url()).pathname, type: raw["content-type"] ?? "", text });
+      // APIResponse.body is decoded. Keep every non-framing header and send these same bytes
+      // with their actual length, rather than reusing compression or transfer framing.
+      const framingHeaders = new Set(["content-encoding", "transfer-encoding", "content-length"]);
+      const headers: Record<string, string> = {};
+      for (const [name, value] of Object.entries(raw)) if (!framingHeaders.has(name.toLowerCase())) headers[name] = value;
+      headers["content-length"] = String(buffer.length);
+      expect(Object.entries(raw).every(([name, value]) => framingHeaders.has(name.toLowerCase()) || headers[name] === value), "non-framing response headers remain unchanged").toBe(true);
       stage.fulfillStarted = true;
-      await route.fulfill({ response, body: buffer });
+      await route.fulfill({ response, headers, body: buffer });
       stage.fulfillReturned = true;
+      stage.normalizedDelivery = true;
+      console.info("RSC action framing", JSON.stringify({ action: actionNumber === 1 ? "keyboard_create" : actionNumber === 2 ? "account_font" : "other", actionNumber, ...framing(stage) }));
     } catch {
       stage.handlerFailed = true;
+      console.error("RSC action framing failure", JSON.stringify({ action: actionNumber === 1 ? "keyboard_create" : actionNumber === 2 ? "account_font" : "other", actionNumber, ...framing(stage) }));
       throw new Error("RSC action interception failed; raw request and response details withheld");
     }
   });
@@ -722,10 +763,10 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
       console.error("RSC action diagnostic", JSON.stringify({
         action: label === "keyboard create" ? "keyboard_create" : "account_font", reason, phase, actionCount,
         trackedRequests: actionStages.size, responseSeen, status200, rscType, finishedSettled, finishedNull, sameRequestMatched: Boolean(matched && stage),
-        fetchReturned: stage?.fetchReturned ?? false, bodyBuffered: stage?.bodyBuffered ?? false, bodyBytes: stage?.bodyBytes ?? 0,
+        fetchReturned: stage?.fetchReturned ?? false, bodyBuffered: stage?.bodyBuffered ?? false,
         mapPresent: Boolean(matched && actionBodies.has(matched)), fulfillStarted: stage?.fulfillStarted ?? false, fulfillReturned: stage?.fulfillReturned ?? false,
         handlerFailed: stage?.handlerFailed ?? false, terminalMatched: Boolean(end), requestFinished: end?.finished ?? false,
-        requestFailed: end?.failed ?? false, failureCode: end?.failureCode ?? "none",
+        requestFailed: end?.failed ?? false, failureCode: end?.failureCode ?? "none", ...framing(stage),
       }));
     };
     page.on("requestfinished", onFinished);
@@ -757,6 +798,21 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
       expect(captured!.text.toLowerCase().includes(a.userId.toLowerCase()), `${label}: complete action body must not contain the account id`).toBe(false);
     } catch {
       diagnose("verification_failed");
+      const unknownUi = { writeDialogVisible: null, errorPresent: null, fixtureMemoVisible: null, fontIsSerif: null, hashIsWrite: null };
+      const ui = page.evaluate(() => {
+        const visible = (element: Element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
+        return {
+          writeDialogVisible: [...document.querySelectorAll("dialog[open]")].some(visible),
+          errorPresent: [...document.querySelectorAll('[role="alert"]')].some(visible),
+          fixtureMemoVisible: [...document.querySelectorAll("li.piece p")].some((element) => element.textContent === "키보드로 쓴 조각" && visible(element)),
+          fontIsSerif: document.documentElement.getAttribute("data-record-font") === "serif",
+          hashIsWrite: location.hash === "#write",
+        };
+      }).catch(() => unknownUi);
+      let uiDeadline: ReturnType<typeof setTimeout> | undefined;
+      const snapshot = await Promise.race([ui, new Promise<typeof unknownUi>((resolve) => { uiDeadline = setTimeout(() => resolve(unknownUi), 250); })]);
+      clearTimeout(uiDeadline);
+      console.error("RSC action UI diagnostic", JSON.stringify(snapshot));
       throw new Error(`RSC action verification failed at ${phase}; safe diagnostic recorded`);
     } finally {
       clearTimeout(deadline);
