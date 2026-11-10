@@ -34,7 +34,7 @@ function copySources(destination) {
       for (const name of readdirSync(source)) copy(path.posix.join(relative, name));
       return;
     }
-    assert.ok(stat.isFile() && /\.(?:ts|tsx|css|json)$/.test(relative), "source copy allowlist");
+    assert.ok(stat.isFile() && /\.(?:ts|tsx|css|json|mjs|d\.mts)$/.test(relative), "source copy allowlist");
     assert.ok(!relative.split("/").some((name) => name.startsWith(".")), "hidden source refused");
     const bytes = readFileSync(source);
     const target = path.join(destination, relative);
