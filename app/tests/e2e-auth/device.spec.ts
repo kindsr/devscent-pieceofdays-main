@@ -1,8 +1,8 @@
 // PC·휴대폰 계정 기록 여정. 실제 mock OIDC·일회용 PG18 하네스만 사용한다.
 // 기기별 context에서 각각 로그인하며 계정·세션·쿠키·저장 상태를 주입/복사하지 않는다.
 // 쓰기는 화면·실제 Server Action만, 계정/지급/날짜 확인은 기존 SELECT helper만 쓴다.
-// Chromium/Android·WebKit/iPhone emulation이며 실제 기기·실제 Google 검증은 아니다.
-import { devices, expect, test, type BrowserContext, type Page } from "@playwright/test";
+// Chromium PC↔WebKit iPhone・WebKit PC↔Chromium Android emulation이며 실제 기기·Google 검증은 아니다.
+import { chromium, devices, expect, test, webkit, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { AUTH_BASE, TEXT, accountOf, expectLayoutOk } from "./support";
 import { DIARY_TEXT, dateLabel, serverSeoulToday, signIn, topAdd } from "./diary-support";
 
@@ -14,15 +14,17 @@ test("PC and phone log in independently to one account without another grant; a 
   test.setTimeout(180_000);
   if (browserName !== "chromium" && browserName !== "webkit") throw new Error("device journey requires Chromium or WebKit");
   const desktop = browserName === "webkit" ? "Desktop Safari" : "Desktop Chrome";
-  const mobile = browserName === "webkit" ? "iPhone 13" : "Pixel 7";
+  const mobile = browserName === "webkit" ? "Pixel 7" : "iPhone 13";
   expect(devices[desktop], "desktop descriptor exists").toBeDefined();
   expect(devices[mobile], "phone descriptor exists").toBeDefined();
   const contexts: BrowserContext[] = [];
+  let mobileBrowser: Browser | undefined;
 
   try {
     const pcContext = await browser.newContext({ ...devices[desktop], baseURL: AUTH_BASE });
     contexts.push(pcContext);
-    const phoneContext = await browser.newContext({ ...devices[mobile], baseURL: AUTH_BASE });
+    mobileBrowser = await (browserName === "webkit" ? chromium : webkit).launch();
+    const phoneContext = await mobileBrowser.newContext({ ...devices[mobile], baseURL: AUTH_BASE });
     contexts.push(phoneContext);
     const pc = await pcContext.newPage();
     const phone = await phoneContext.newPage();
@@ -127,6 +129,10 @@ test("PC and phone log in independently to one account without another grant; a 
     await expect(pc.getByRole("heading", { level: 1, name: TEXT.loginTitle })).toBeVisible();
     await expectLayoutOk(pc, `${desktop}: signed out`);
   } finally {
-    await Promise.all(contexts.map((context) => context.close()));
+    try {
+      await Promise.all(contexts.map((context) => context.close()));
+    } finally {
+      await mobileBrowser?.close();
+    }
   }
 });
