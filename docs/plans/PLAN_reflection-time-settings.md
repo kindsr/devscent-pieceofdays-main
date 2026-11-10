@@ -45,7 +45,7 @@
 - `pod.preferences.reflection_time TEXT NOT NULL DEFAULT '20:00'`. 길이5와 ASCII시분 범위 CHECK로 앱을 통하지 않는 잘못된 값도 거부한다. 기존 행은20:00으로 확장한다.
 - 환경 테이블의 app_role에 **UPDATE(reflection_time)**만 추가한다. 기존 SELECT/INSERT, 글꼴/디자인 열 권한은 보존한다. user_id UPDATE·원장 수정·PUBLIC 권한을 넓히지 않는다.
 - 신규 시간 upsert는 글꼴/디자인을 덮지 않으며 기존 글꼴/디자인 upsert도 시간을 보존한다. 계정 삭제 시 기존 preferences cascade가 적용된다.
-- down은 새 열/제약만 제거한다. 기록/계정/사진/원장 삭제 없음. 저장 시간은 down 때 손실되므로 실제 서비스에서 자동 down하지 않는다. 앱 코드 복귀 후 열을 남기는 방법이 우선이다.
+- down은 기존0002처럼 첫 문장에서 `ci` 환경·사용자8테이블 전부 비었음을 확인하고 그 외는 거부한다. 새 UPDATE 열 권한을 회수한 뒤 새 열/제약만 제거한다. 기록/계정/원장 삭제 없음. 실제 서비스에서는 down하지 않고 앱 코드 복귀 후 열을 남기는 방법이 우선이다.
 - 실제 DB는 아직 migration2다. 이번 PR은 CI 일회용 DB에서만 검증한다. 실제 migration3 적용·배포 승인 상한 변경·앱 활성화는 설치/배포 검토 단계로 분리하며 현재 dev 정적/OFF 보류를 유지한다.
 - image label latest는 migration 이름에서 동적 계산되어3이 된다. 합성 CLI fixture의 임의 latest2는 그대로 둔다. 구조128 사례/워크플로 권한·배포 조건은 변경하지 않는다.
 
