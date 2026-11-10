@@ -24,6 +24,8 @@ COPY --from=build /app/src/server/runtime-mode.ts ./src/server/runtime-mode.ts
 # 고정 migrate CLI: 원래 상대 배치 유지 → 기본 경로 ../../../migrations = /app/migrations
 COPY --from=build /app/src/server/db/migrate-cli.ts /app/src/server/db/migrate.ts /app/src/server/db/sql-policy.ts ./src/server/db/
 COPY --from=build /app/migrations ./migrations
+# 직접 Node로 실행하는 사진 cleanup과 공유 순수 core. Next 번들/server-only alias를 요구하지 않는다.
+COPY --from=build /app/src/server/photos/cleanup-cli.mjs /app/src/server/photos/cleanup-core.mjs /app/src/server/photos/config-core.mjs /app/src/server/photos/blob-store.s3-core.mjs ./src/server/photos/
 # migrate CLI(ESM import "pg")가 쓰는 pg 런타임 의존성 전체(lock 기준 14개). standalone trace의 부분 복사를 보완한다.
 COPY --from=deps /app/node_modules/pg ./node_modules/pg
 COPY --from=deps /app/node_modules/pg-cloudflare ./node_modules/pg-cloudflare

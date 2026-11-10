@@ -21,15 +21,26 @@ const isVersion = (v: unknown): v is number => Number.isSafeInteger(v) && (v as 
 const codePoints = (s: string) => Array.from(s).length;
 const isFkViolation = (err: unknown) => (err as Partial<DatabaseError> | null)?.code === "23503";
 
-type MomentRow = { date: string; id: string; time: string; text: string; version: number };
+type MomentRow = {
+  date: string; id: string; time: string; text: string; version: number;
+  photo_id: string | null; photo_width: number | null; photo_height: number | null;
+};
 type SummaryRow = { date: string; body: string; version: number };
 
-const MOMENT_COLUMNS = `to_char(local_date, 'YYYY-MM-DD') AS date, id::text AS id,
-       to_char(occurred_at AT TIME ZONE time_zone, 'HH24:MI') AS time, body AS text, version`;
+const MOMENT_COLUMNS = `to_char(m.local_date, 'YYYY-MM-DD') AS date, m.id::text AS id,
+       to_char(m.occurred_at AT TIME ZONE m.time_zone, 'HH24:MI') AS time, m.body AS text, m.version,
+       p.id::text AS photo_id, p.width AS photo_width, p.height AS photo_height`;
+const MOMENT_FROM = `pod.diary_moments m LEFT JOIN pod.moment_photos p
+  ON p.moment_id = m.id AND p.user_id = m.user_id
+  AND EXISTS (SELECT 1 FROM pod.photo_uploads u WHERE u.id = p.id AND u.user_id = m.user_id AND u.status = 'ready')`;
 const SUMMARY_COLUMNS = "to_char(local_date, 'YYYY-MM-DD') AS date, body, version";
 
 function toMoment(r: MomentRow): DiaryMoment {
-  return { id: r.id, time: r.time, text: r.text, image: null, version: r.version };
+  return {
+    id: r.id, time: r.time, text: r.text, image: null, version: r.version,
+    ...(r.photo_id && r.photo_width !== null && r.photo_height !== null
+      ? { photo: { src: `/photos/${r.photo_id}`, width: r.photo_width, height: r.photo_height } } : {}),
+  };
 }
 
 /** 날짜별로 묶는다. 조각은 쿼리 순서(occurred_at, id)를 유지한다. */
@@ -52,7 +63,7 @@ function groupDays(moments: MomentRow[], summaries: SummaryRow[]): DiaryDay[] {
   return [...days.values()];
 }
 
-export function createPgDiaryStore(db: Db, opts: { now?: () => Date } = {}): DiaryStore & DiaryWriteStore {
+export function createPgDiaryStore(db: Pick<Db, "query">, opts: { now?: () => Date } = {}): DiaryStore & DiaryWriteStore {
   const now = opts.now ?? (() => new Date());
 
   async function momentExists(userId: string, id: string): Promise<boolean> {
@@ -72,8 +83,8 @@ export function createPgDiaryStore(db: Db, opts: { now?: () => Date } = {}): Dia
     async getDay(userId, date) {
       if (!isUuid(userId) || parseLocalDate(date) === null) return null;
       const moments = await db.query<MomentRow>(
-        `SELECT ${MOMENT_COLUMNS} FROM pod.diary_moments
-          WHERE user_id = $1::uuid AND local_date = $2::date ORDER BY occurred_at, id`,
+        `SELECT ${MOMENT_COLUMNS} FROM ${MOMENT_FROM}
+          WHERE m.user_id = $1::uuid AND m.local_date = $2::date ORDER BY m.occurred_at, m.id`,
         [userId, date],
       );
       const summaries = await db.query<SummaryRow>(
@@ -88,14 +99,14 @@ export function createPgDiaryStore(db: Db, opts: { now?: () => Date } = {}): Dia
       if (!Number.isInteger(year) || year < 1 || year > 9999) return [];
       if (!Number.isInteger(month) || month < 1 || month > 12) return [];
       const first = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-01`;
-      const range = "local_date >= $2::date AND local_date < ($2::date + interval '1 month')::date";
+      const range = "m.local_date >= $2::date AND m.local_date < ($2::date + interval '1 month')::date";
       const moments = await db.query<MomentRow>(
-        `SELECT ${MOMENT_COLUMNS} FROM pod.diary_moments
-          WHERE user_id = $1::uuid AND ${range} ORDER BY local_date, occurred_at, id`,
+        `SELECT ${MOMENT_COLUMNS} FROM ${MOMENT_FROM}
+          WHERE m.user_id = $1::uuid AND ${range} ORDER BY m.local_date, m.occurred_at, m.id`,
         [userId, first],
       );
       const summaries = await db.query<SummaryRow>(
-        `SELECT ${SUMMARY_COLUMNS} FROM pod.day_summaries WHERE user_id = $1::uuid AND ${range} ORDER BY local_date`,
+        `SELECT ${SUMMARY_COLUMNS} FROM pod.day_summaries m WHERE user_id = $1::uuid AND ${range} ORDER BY local_date`,
         [userId, first],
       );
       return groupDays(moments.rows, summaries.rows);

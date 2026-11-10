@@ -9,6 +9,8 @@ export default function config(phase: string): NextConfig {
   return {
     // 앱 이미지(PLAN_dev-app-deployment §4)는 standalone 출력을 runtime-startup.mjs로 시작한다.
     output: "standalone",
+    // 앱 wrapper와 직접 Node cleanup CLI가 같은 SDK의 Node 런타임 패키지를 사용한다.
+    serverExternalPackages: ["@aws-sdk/client-s3"],
     reactStrictMode: true,
     poweredByHeader: false,
     devIndicators: false,

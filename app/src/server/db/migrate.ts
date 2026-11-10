@@ -29,6 +29,9 @@ export const USER_DATA_TABLES = [
   "design_versions",
   "credit_accounts",
   "emotion_ledger",
+  "photo_uploads",
+  "moment_photos",
+  "photo_deletions",
 ] as const;
 
 /** 실행기가 의도적으로 거부한 경우(종료 코드 1). 메시지에 URL·비밀번호를 넣지 않는다. */

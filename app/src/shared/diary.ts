@@ -1,4 +1,5 @@
 import type { LocalDate } from "./local-date";
+import type { PhotoRef } from "./photos";
 
 /** UI와 서버가 함께 쓰는 기록 타입(PLAN_mvp-domain-storage §1·§3). 서버 모듈을 import하지 않는다. */
 
@@ -6,7 +7,7 @@ import type { LocalDate } from "./local-date";
 export type SampleImageKey = "window" | "noodle" | "ginkgo";
 
 /** version·summaryVersion: 낙관적 잠금 기대 버전. 한 줄이 없으면 summaryVersion은 null이다. */
-export type DiaryMoment = { id: string; time: string; text: string; image: SampleImageKey | null; version: number };
+export type DiaryMoment = { id: string; time: string; text: string; image: SampleImageKey | null; version: number; photo?: PhotoRef };
 export type DiaryDay = { date: LocalDate; summary: string; summaryVersion: number | null; moments: DiaryMoment[] };
 
 /** 일기 저장 port. 모든 함수는 userId를 첫 인자로 받고 소유자 기록만 돌려준다. PostgreSQL 구현은 F2 이후. */
