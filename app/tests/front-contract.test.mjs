@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { expect } from "@playwright/test";
-import { APP_DIR, BASE, BASIC, PROVIDERS, FrontHarness, callbackInput, command, docker, hash, protect, request, values } from "./support/front-harness.mjs";
+import { ANCESTOR_HIDDEN_HEADERS, APP_DIR, BASE, BASIC, PROVIDERS, FrontHarness, callbackInput, command, docker, hash, protect, request, values } from "./support/front-harness.mjs";
 
 const h = new FrontHarness();
 const OPTIONS = { timeout: 300_000 };
@@ -28,6 +28,15 @@ function security(r, referrer = "no-referrer") {
   assert.equal(r.headers["x-frame-options"], "SAMEORIGIN");
   assert.equal(r.headers["x-content-type-options"], "nosniff");
   assert.equal(r.headers["strict-transport-security"], "max-age=31536000");
+}
+// Outer photo responses: exactly one existing safe value per security header (raw, unfolded)
+// and no upstream banner. Duplicates or observer values mean the ancestor hide list was lost.
+function photoEdgeHeaders(r) {
+  for (const [name, expected] of [["X-Robots-Tag", ["noindex, nofollow"]], ["X-Frame-Options", ["SAMEORIGIN"]],
+    ["X-Content-Type-Options", ["nosniff"]], ["Referrer-Policy", ["strict-origin-when-cross-origin"]],
+    ["Strict-Transport-Security", ["max-age=31536000"]], ["X-Powered-By", []]]) {
+    assert.deepEqual(values(r.rawHeaders, name), expected, `outer photo ${name}: exactly the inherited safe value, no upstream value`);
+  }
 }
 function expired(r) {
   assert.equal(r.status, 303, "real B4 missing/invalid-flow callback");
@@ -114,13 +123,15 @@ test("01 exact helper configuration and the complete outer fragment pass real ng
   const photoLocations = [...photoFragment.matchAll(/location\s+(=|\^~)\s+(\S+)\s*\{([^{}]*)\}/g)];
   assert.deepEqual(photoLocations.map((m) => [m[1], m[2]]).sort(), [["=", "/photos/upload"], ["^~", "/photos/"]].sort(), "exactly the two reviewed photo locations");
   assert.equal([...photoFragment.matchAll(/\blocation\s/g)].length, 2, "no additional outer routes");
+  const httpLevel = outer.slice(0, outer.indexOf("\nserver {"));
+  assert.deepEqual([...httpLevel.matchAll(/\bproxy_hide_header\s+([^;]+);/g)].map((m) => m[1].trim()), ANCESTOR_HIDDEN_HEADERS, "the actual outer fixture models the five ancestor (http-level) hidden upstream headers");
   for (const location of photoLocations) {
     const body = location[3];
     assert.deepEqual([...body.matchAll(/client_max_body_size\s+([^;]+);/g)].map((m) => m[1]), [location[1] === "=" ? "9m" : "1m"]);
     assert.match(body, /\baccess_log\s+off\s*;/);
     assert.match(body, /\berror_log\s+\/dev\/null\s+crit\s*;/);
     assert.deepEqual([...body.matchAll(/proxy_pass\s+([^;]+);/g)].map((m) => m[1]), ["$pieceofdays_dev_web"]);
-    assert.deepEqual([...body.matchAll(/\bproxy_hide_header\s+([^;]+);/g)].map((m) => m[1].trim()), ["X-Content-Type-Options"], "hide only the upstream nosniff once; retain the server's single security header");
+    assert.deepEqual([...body.matchAll(/\bproxy_hide_header\s+([^;]+);/g)].map((m) => m[1].trim()), [], "no local proxy_hide_header: a local list would replace the five inherited ancestor hides");
     assert.doesNotMatch(body, /\b(add_header|auth_basic|auth_basic_user_file|allow|deny|satisfy|return|rewrite)\s/, "photo proposal inherits server security and does not bypass Basic/IP");
   }
 });
@@ -225,6 +236,7 @@ test("05 receiving-byte observer proves query, Origin, Cookie and fixed Host thr
     const outerGet = gatewayPhotoInput();
     const outerResponse = await h.edgeRequest(outerGet.target, { headers: { ...outerGet.headers, Host: "forged.invalid", "X-Forwarded-Host": "forwarded.invalid", "X-Forwarded-Proto": "http" } });
     receivedPhoto(outerResponse, outerGet, Buffer.alloc(0), "GET");
+    photoEdgeHeaders(outerResponse);
     security(outerResponse, "strict-origin-when-cross-origin");
     await h.noSentinels(outerGet.sentinels);
     for (const chunked of [false, true]) {
@@ -235,11 +247,13 @@ test("05 receiving-byte observer proves query, Origin, Cookie and fixed Host thr
         ...(chunked ? {} : { "Content-Length": String(body.length) }) };
       const r = await h.edgeRequest(input.target, { method: "POST", headers, body, chunked });
       receivedPhoto(r, { ...input, headers }, body, "POST");
+      photoEdgeHeaders(r);
       security(r, "strict-origin-when-cross-origin");
       await h.noSentinels(input.sentinels);
       const over = gatewayPhotoInput("upload");
       const rejected = await h.edgeRequest(over.target, { method: "POST", headers: { ...over.headers, ...(chunked ? {} : { "Content-Length": String(boundary.length) }) }, body: boundary, chunked });
       assert.equal(rejected.status, 413, "outer→front exact upload rejects 9MiB+1 including chunked input");
+      photoEdgeHeaders(rejected);
       security(rejected, "strict-origin-when-cross-origin");
       await h.noSentinels(over.sentinels);
       for (const target of [`/photos/${randomUUID()}`, "/photos/upload/", "/login"]) {
@@ -247,6 +261,7 @@ test("05 receiving-byte observer proves query, Origin, Cookie and fixed Host thr
         const body = boundary.subarray(0, 1024 * 1024 + 1);
         const r = await h.edgeRequest(`${target}?probe=${input.marker}%2Bvalue`, { method: "POST", headers: { ...input.headers, ...(chunked ? {} : { "Content-Length": String(body.length) }) }, body, chunked });
         assert.equal(r.status, 413, "outer photo prefix and ordinary paths retain the 1MiB limit");
+        if (target.startsWith("/photos/")) photoEdgeHeaders(r);
         security(r, "strict-origin-when-cross-origin");
         if (target.startsWith("/photos/")) await h.noSentinels([target, ...input.sentinels.slice(1)]);
       }
@@ -336,6 +351,7 @@ test("07 fake HTTPS provider configuration: real login/assets/links, no-store an
   const outerGet = await h.edgeRequest(outerInput.target, { headers: outerInput.headers });
   assert.equal(outerGet.status, 401, "outer Basic permits the request but actual Next still requires a signed-in photo owner");
   privatePhoto(outerGet);
+  photoEdgeHeaders(outerGet);
   security(outerGet, "strict-origin-when-cross-origin");
   assert.equal(outerGet.headers.location, undefined);
   assert.equal(outerGet.headers["set-cookie"], undefined);
@@ -350,6 +366,7 @@ test("07 fake HTTPS provider configuration: real login/assets/links, no-store an
     assert.equal(r.status, origin === BASE ? 401 : 403, "both proxies preserve the actual Next Origin/viewer-before-body guard");
     assert.deepEqual(JSON.parse(r.body), { ok: false, error: origin === BASE ? "not_signed_in" : "forbidden" });
     privatePhoto(r);
+    photoEdgeHeaders(r);
     security(r, "strict-origin-when-cross-origin");
     assert.equal(r.headers.location, undefined);
     assert.equal(r.headers["set-cookie"], undefined);
@@ -438,6 +455,7 @@ test("11 outer server Basic/IP restrictions and default security headers are inh
       const input = gatewayPhotoInput(kind);
       const r = await request(h.outerPort, input.target, { method: kind === "upload" ? "POST" : "GET", headers: { ...input.headers, ...(authorization ? { Authorization: authorization } : {}) } });
       assert.equal(r.status, 401, "photo locations inherit server Basic authentication");
+      photoEdgeHeaders(r);
       security(r, "strict-origin-when-cross-origin");
       await h.noSentinels(input.sentinels);
     }
@@ -487,6 +505,7 @@ test("13 BOTH proxies with app-down and front-down preserve safe 502 access reco
         const input = gatewayPhotoInput(kind);
         const r = await h.edgeRequest(input.target, { method: kind === "upload" ? "POST" : "GET", headers: input.headers });
         assert.equal(r.status, 502, "whole-chain photo request gets a real 502 for the selected app/front outage");
+        photoEdgeHeaders(r);
         security(r, "strict-origin-when-cross-origin");
         await h.noSentinels(input.sentinels);
       }

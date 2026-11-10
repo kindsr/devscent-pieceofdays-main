@@ -17,6 +17,10 @@ export const REPO_DIR = path.resolve(APP_DIR, "..");
 export const BASE = "https://dev.pieceofdays.com";
 export const PROVIDERS = ["google", "kakao"];
 export const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+// Public-safe model of the actual http-level security include (main-confirmed 2026-11-10):
+// these five upstream headers are hidden by an ANCESTOR of the dev server. A location that
+// declares its own proxy_hide_header replaces this whole inherited list in nginx.
+export const ANCESTOR_HIDDEN_HEADERS = ["X-Powered-By", "X-Frame-Options", "X-Content-Type-Options", "Referrer-Policy", "Strict-Transport-Security"];
 const FAKE_PASSWORD = "ci-front-only-not-a-secret";
 export const BASIC = `Basic ${Buffer.from(`ci:${FAKE_PASSWORD}`).toString("base64")}`;
 const SESSION_SECRET = "f6a2-ci-only-session-key-not-a-secret-000000";
@@ -357,7 +361,7 @@ export class FrontHarness {
       photoFragment = Buffer.concat([photoFragment, Buffer.from("\n")]);
     }
     writeFileSync(path.join(this.tmp, "outer.conf"), Buffer.concat([
-      Buffer.from(`${format}\nserver { listen 80; server_name dev.pieceofdays.com; ${background}\n${locations}\n`),
+      Buffer.from(`${format}\n${ANCESTOR_HIDDEN_HEADERS.map((name) => `proxy_hide_header ${name};`).join(" ")}\nserver { listen 80; server_name dev.pieceofdays.com; ${background}\n${locations}\n`),
       photoFragment,
       Buffer.from(`location / { proxy_pass $pieceofdays_dev_web; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto $scheme; }\n}\n`),
     ]));
