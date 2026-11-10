@@ -86,12 +86,15 @@ test("PC and phone log in independently to one account without another grant; a 
 
     for (const [page, device] of [[pc, desktop], [phone, mobile]] as const) {
       await page.getByRole("link", { name: "모아보기", exact: true }).click();
+      await expect(page, `${device}: calendar list navigation completed`).toHaveURL(`${AUTH_BASE}/days`);
       await expect(page.getByRole("heading", { level: 1, name: "모아보기", exact: true })).toBeVisible();
       const day = page.getByRole("link", { name: `${dateLabel(recordDate)}, 조각 1개`, exact: true });
       await expect(day).toBeVisible();
+      await expect(day, `${device}: the list has no selected day`).not.toHaveAttribute("aria-current", "date");
       await expectLayoutOk(page, `${device}: calendar`);
       await day.click();
       await expect(page).toHaveURL(`${AUTH_BASE}${recordPath}`);
+      await expect(day, `${device}: the requested day is selected`).toHaveAttribute("aria-current", "date");
       await expect(piece(page, edited)).toHaveCount(1);
       await expectLayoutOk(page, `${device}: day detail`);
     }
