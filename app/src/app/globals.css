@@ -45,6 +45,9 @@ h1, h2, h3, p { margin: 0; }
 .seg a { display: flex; align-items: center; justify-content: center; min-height: 44px; text-decoration: none; font-weight: 700; }
 .seg a + a { border-left: var(--border); }
 .seg a[aria-current] { background: var(--ink); color: var(--surface); }
+.account-menu { grid-area: add; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s-1); min-width: 0; }
+.account-menu > .text-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
+.account-menu .btn-add { flex: none; }
 .btn-add, .btn-main {
   grid-area: add; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: 44px; padding: 0 16px; border: var(--border); border-radius: var(--r);

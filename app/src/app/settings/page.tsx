@@ -45,7 +45,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       {viewer.kind === "user" ? reflectionTime !== null ? <AccountReflectionSettings initialTime={reflectionTime} /> : (
         <section className="notice" aria-labelledby="reflection-failed-h">
           <h2 id="reflection-failed-h">회고 시간을 불러오지 못했어요</h2>
-          <p>잠시 뒤 다시 열어 주세요.</p>
+          <p>회고 시간을 확인할 수 없어요. 잠시 뒤 설정을 다시 열어 주세요.</p>
         </section>
       ) : null}
       {viewer.kind === "fixture" ? <FontSettings /> : font ? <FontSettings mode="account" initialFont={font} /> : viewer.kind === "user" ? (
