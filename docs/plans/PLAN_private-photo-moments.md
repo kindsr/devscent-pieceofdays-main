@@ -37,7 +37,19 @@
 - 업로드 응답: 새 확정201, 같은 요청의 확정 결과 재조회200. 양쪽 `{ok:true,value:{id,version}}`. 잘못된 메모/파일/필드는400, 크기 초과413, 로그인 없음401, Origin 거부403, 다른 입력의 같은 requestId409, 처리 중/미설정/저장 오류503. 실패 JSON은 `{ok:false,error:<고정코드>}`만. 오류코드 집합: `invalid_request`, `invalid_body`, `invalid_photo`, `photo_too_large`, `not_signed_in`, `forbidden`, `conflict`, `busy`, `unavailable`.
 - `parsePhotoConfig(env)` → `Result<PhotoConfig|null,"invalid_photo_config">`. 정확 env키는 `POD_PHOTOS_S3_ENDPOINT`, `POD_PHOTOS_S3_REGION`, `POD_PHOTOS_S3_BUCKET`, `POD_PHOTOS_S3_ACCESS_KEY_ID`, `POD_PHOTOS_S3_SECRET_ACCESS_KEY`다. 모두 없으면 null, 일부만 있으면 오류. endpoint는 userinfo/query/fragment 없는 root URL, 실제 실행은 HTTPS. 격리시험의 loopback HTTP는 production에서 금지한다. 비공개 반환형은 서버 안에서만 사용한다.
 - blob port의 `put(key,photo,signal): Promise<void>`, `get(key,signal): Promise<Buffer|null>`, `delete(key,signal): Promise<void>`. key는 서버 생성 사진 prefix의 UUID.jpg만. get은 실제 스트림4MiB 상한·timeout을 지키고 missing만null, 기타 실패는 고정 저장 오류. SDK의 암묵적 다회 재시도를 켜지 않는다.
+- `PhotoConfig`의 서버 전용 필드는 `endpoint`, `region`, `bucket`, `accessKeyId`, `secretAccessKey` 문자열5개다. `createS3BlobStore(config)`로 위 port를 만든다. prefix는 `photos/<소문자UUID>.jpg`로 고정한다.
 - private GET은 최초 권한 확인 뒤 bounded get·hash/치수 검증, 응답 직전 소유/active/gen 재확인으로 연결한다.200 이외는 사진 bytes 없는 고정 응답(401/404/503)이며 성공/실패 모두 no-store·nosniff다. 타인id/없는id는같은404, key·사진 hash·사용자 UUID를 응답하지 않는다.
+
+### 2.2 DB·조회·삭제 공개 경계
+
+- 신규 `0004_private_photos`는 `pod.photo_uploads`(예약·key journal), `pod.moment_photos`(확정 사진), `pod.photo_deletions`(재시도 가능한 삭제 tombstone)를 만든다. 기존 사용자8테이블은 변경 없이 보존하며, `diary_moments(id,user_id)`의 소유자 복합FK를 위한 UNIQUE만 추가한다.
+- uploads 필드: `id` UUID, `user_id` nullable(계정 purge 때 SET NULL), `request_id` UUID, `fingerprint`64hex, `object_key`, `status`(staged/ready/abandoned), `lease_token`, `lease_until`, 생성/갱신 시각. `(user_id,request_id)`와 object_key는 각각 유일하다. 원본 메모·사진 bytes·파일명0. 계정 purge 후 journal/key 자체가 cascade로 없어지지 않게 한다.
+- moment_photos 필드: `id`(uploads FK), `user_id`, 유일한 `moment_id`, `sha256`, `mime_type`(image/jpeg), `byte_length`(1..4MiB), `width/height`(1..2560), 생성시각. `(moment_id,user_id)`는 같은 소유자의 diary_moments를 참조한다. 사용자·조각 cascade는 확정 metadata를 지우고 DELETE trigger가 journal의 key를 같은 tx의 photo_deletions에 남긴다.
+- deletions는 사진 id/key·재시도시각·최근부재검증시각·시도횟수만 남기며 user FK/원문을 두지 않는다. 성공 DELETE만으로 key를 즉시 버리지 않고 늦은 PUT도 재확인할 수 있게 한다. staging TTL·업로드 lease token을 통해 사용 중인 PUT 회수와 늦은 확정 덮어쓰기를 차단한다.
+- 앱은 새 세 테이블의 필요한 DML과 기존 user/조각 권한만 쓴다. uploads/삭제 tombstone의 무조건 DELETE 권한을 주지 않는다. trigger 함수는 PUBLIC EXECUTE를 회수하며, 원장·기존 role·PUBLIC 권한을 넓히지 않는다.
+- `readPhoto(db,blobs,{userId,gen},photoId,signal?)` → `Result<{bytes:Buffer;contentType:"image/jpeg"},"not_found"|"unavailable">`. trusted caller만 사용자 문맥을 공급한다. 사진·계정·gen의 초기/최종 검증과 SHA256/길이 확인 후에만 bytes를 반환한다.
+- `cleanupPhotos(db,blobs,{limit,now?})` → `{processed,deleted,failed,busy}`. 1..100개 한정 batch, 외부 I/O 중 장기 DB tx0, 실패 재시도/활성 lease 건너뜀·tombstone 보존. 운영 Node CLI도 한 batch만 실행하고 자동 스케줄 설치0. 직접 Node로 실행하는 entry는 기존 migrate-cli처럼 framework 전용 import를 요구하지 않는 별도 entry로 두고, Next 앱의 server-only 경계를 약화하지 않는다.
+- 실제 migration 목록/테이블 기대는0004·11테이블로 확장한다. migration engine의 down 데이터 보호도 새 예약/metadata/삭제목록을 포함한다. 합성 CLI fixture의 임의 latest2와 기존0001~0003은 바꾸지 않는다.
 
 ## 3. 보관·실패·삭제
 
@@ -64,6 +76,13 @@
 3. GREEN: 해당 제품만 구현·시험 byte0. 실제 일회용 S3 호환 저장소+PG의 CI 저장/조회/삭제, 두 교차 엔진의 파일 UI/다른 기기 조회를 검증한다. 메모/글꼴/회고 시간/계정 기존 검사 보존.
 4. helper RED→GREEN: 정확 env·사진 prefix/상한만, root/parity와 동일 immutable 이미지의 image/front/원문 preview 회귀. 이전 고정 건수에 사례가 늘면 소비자 literal만 명시 조율하며 skip/기대 완화0.
 5. 메인 실제 저장소/후보 이미지/설치본/DB/HTTPS/삭제 소비를 검증한 뒤 게시를 판단한다. mock 성공만으로 실제 사용자 사진 보관 완료를 주장하지 않는다.
+
+### 격리 CI fixture·준비 결과
+
+- dependency proof [PR82](https://github.com/kindsr/devscent-pieceofdays-main/pull/82) source907b265, [run42857304451](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42857304451)에서 실제 설치/Sharp 합성 decode·방향/축소/metadata 제거·S3 send0·원본hash/정리/정확2artifact를 통과했다. 메인이 ZIP raw sha256 `431d8233d90601ab0abe64ea2be11d22341c9e1ded07108c9439712fa7177c5d`·2JSON·기존 dependency version/resolved/integrity 변경0/삭제0를 직접 대조했다. 이 artifact pair만19c1746에 반영했고 호스트 설치0.
+- 실제 HTTP S3 roundtrip의 CI fixture는 **SeaweedFS4.53**, linux/amd64 `chrislusf/seaweedfs:4.53@sha256:972ba30c529dfc72a6a12ed427e94d99c7b6a6e59d97bfa52be0a849f43e2cc9`다. 공식tag/source revision `4ab66fb76da83700739f5839e62fcaf15fb7d02a`·manifest rawhash/OCI label 일치를 읽기 확인했다. Apache2, `mini -dir=/data`·가짜 AWS key/secret/S3_BUCKET으로 사설 초기 bucket을 구성한다. 실제 실행/SDK roundtrip은 아직 미검증이며 provider 운영 선택이 아니다.
+- 기존 auth globalSetup의 명시 child env allowlist에 가짜 사진 설정5키만 더하고, 소유한 loopback publish Docker fixture1개를 추적·finally 정리한다. 준비성은 HeadBucket→가짜 Put/Get/hash/Delete/Get404와 익명/잘못된 자격 거부로 확인한다. handler/UI는 실제 이 endpoint를 사용한다. mock backend만으로 이를 대체하지 않는다.
+- 기존 auth callee/workflow 본문을 바꾸지 않고 같은 SHA의 필수 auth 검사에 새 사진 사례·기존 두 device 여정 사진 readback을 포함한다. Playwright config의 WebKit 기존 device 제한도 보존한다. 소유 helper·globalSetup 변경은 RED 시험 범위로 명시한다. 호스트 Docker/npm/브라우저0, 실행은 Actions만.
 
 ## 6. AI 단계와의 연결
 
