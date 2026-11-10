@@ -24,6 +24,7 @@
 - 공개 source snippet은35줄·SHA256 `cd87bde7055d11f07abbb3c08b9d2a70fb0437ecc30b9d992ef1c9a4a7c47b77`이다. 독립 source 검토에서 정확 두 location과 기존 proxy11개·인증/IP/헤더 상속 보존을 확인했다. 실제 include의 `nosniff always` 유지가 필수 전제이며, 실제 적용 전 원본/include hash를 다시 확인한다.
 - main은 비공개 동결 원본과 제안 사본·정확 diff를 준비했다. 삽입한 두 블록을 제거하면 원본 bytes가 정확히 복원되고, 들여쓰기 외 공개 snippet 내용은 같다. 실제 파일 변경·nginx 검사/reload·전체 HTTPS 검증은 아직0이다.
 - f45ced8의 outer/front 및 image CI는 각각6/14/원문10을 끝까지 통과했다. 별도 앱 auth는 기존UUID/RSC의 browser_finished 단계 ERR_ABORTED로40pass/1fail이므로 전체GREEN으로 세지 않는다. 공식 Playwright source에서 decoded body와 원본 프레이밍 헤더가 함께 전달되는 경로를 확인해 시험 한 사례의 프레이밍만 보완한다. 기존 완료/보안 단언은 유지하고 실제 취소 원인은 미확정으로 남기며 후속 같은SHA CI로 판정한다.
+- 프레이밍 보완0108b57도 font의 browser_finished에서40pass/1fail이었다. 같은 응답의 전체 원본문과 단일nosniff/정규화는 확인됐고 UI font는serif였으나 그 case의후속PG/UUID 증거는 미도달이었다. 독립 검토 후 해당 observer의 EOF 관문을 원서버 전체 응답/동일 요청·Buffer 전달과 항상 필수인 UI/freshPG 검증으로 교체한다. 생성1행·memo/version·글꼴 영속화, 기존HTML/RSC·호출수·keyboard/layout 및 엄격RSC GET은 모두 요구한다. 종료/실패event는 진단으로 분리하고 특정abort를허용해통과하는fallback은없다. 원서버 비직렬화 보안의도와 실제UI/DB성공을 검증하며 browser전체EOF 증명과 혼동하지 않는다.
 
 ## 3. 실제 반영 경계
 
