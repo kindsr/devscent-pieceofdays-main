@@ -7,11 +7,13 @@ import { createMomentAction, updateMomentAction, deleteMomentAction, saveSummary
 import type { DiaryMoment } from "@/shared/diary";
 import { dateLabel } from "@/shared/local-date";
 import type { DayBoardProps } from "./DayBoard";
+import { PhotoInput } from "./PhotoInput";
 
 type Compose = { mode: "add" } | { mode: "edit" | "delete"; id: string; version: number; time: string };
 type SummaryDraft = { date: string; text: string; version: number | null; missing?: boolean };
 type Latest = { text: string; missing: boolean };
 const NOTE = ["y", "m", "p"] as const;
+const PHOTO_FAILURE = "사진 저장을 확인하지 못했어요. 고른 사진과 메모는 그대로 두었어요. 다시 시도해 주세요.";
 const ERRORS: Record<ActionError, string> = {
   forbidden: "요청을 확인할 수 없어요. 화면을 다시 열고 시도해 주세요.",
   not_signed_in: "다시 로그인해 주세요. 쓰던 글은 그대로 두었어요.",
@@ -26,7 +28,7 @@ const ERRORS: Record<ActionError, string> = {
 };
 
 /** 목록·한 줄은 최신 서버 props만 사용한다. 로컬에는 열린 초안과 편집 시작 시 기대 버전만 둔다. */
-export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, headingLevel = 1 }: DayBoardProps) {
+export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, headingLevel = 1, photosEnabled = false }: DayBoardProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const busy = useRef(false);
@@ -34,6 +36,10 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
   const [compose, setCompose] = useState<Compose | null>(null);
   const [text, setText] = useState("");
   const addDraft = useRef("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoFailure, setPhotoFailure] = useState("");
+  const photoRequestId = useRef<string | null>(null);
+  const savedPhoto = useRef<{ id: string; version: number } | null>(null);
   const [summaryDraft, setSummaryDraft] = useState<SummaryDraft | null>(null);
   const [error, setError] = useState<ActionError | null>(null);
   const [validation, setValidation] = useState("");
@@ -53,6 +59,7 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
     setCompose({ mode: "add" });
     setText(addDraft.current);
     setError(null);
+    setPhotoFailure("");
     setValidation("");
     setLatest(null);
   }, [isToday]);
@@ -84,6 +91,24 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
   useEffect(() => {
     if (pending) return;
     busy.current = false;
+    const saved = savedPhoto.current;
+    if (saved) {
+      savedPhoto.current = null;
+      if (day.moments.some((moment) => moment.id === saved.id && moment.photo)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 서버 refresh가 끝난 뒤 실제 사진 조각을 확인해야 작성창을 닫는다.
+        setLastNewId(saved.id);
+        addDraft.current = "";
+        photoRequestId.current = null;
+        setText("");
+        setPhotoFile(null);
+        setCompose(null);
+        clearWriteHash();
+        focusAfter.current = "heading";
+        setLive("조각을 저장했어요.");
+      } else {
+        setPhotoFailure(PHOTO_FAILURE);
+      }
+    }
     if (!reloadRequested.current) return;
     reloadRequested.current = false;
     // 사용자 재조회가 끝났을 때만 서버 버전을 채택한다. 자동 props 갱신은 열린 기대 버전을 바꾸지 않는다.
@@ -102,6 +127,7 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
 
   function resetError() {
     setError(null);
+    setPhotoFailure("");
     setValidation("");
     setLatest(null);
     setLive("");
@@ -175,6 +201,10 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
           setLive("조각을 고쳤어요.");
         });
       } else {
+        if (photoFile) {
+          submitPhoto(photoFile);
+          return;
+        }
         run(() => createMomentAction(text), (value) => {
           setLastNewId(value.id);
           addDraft.current = "";
@@ -186,6 +216,37 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
         });
       }
     }
+  }
+
+  function submitPhoto(file: File) {
+    if (!photosEnabled || busy.current) return;
+    busy.current = true;
+    setError(null);
+    setPhotoFailure("");
+    setValidation("");
+    setLive("");
+    const requestId = photoRequestId.current ?? crypto.randomUUID();
+    photoRequestId.current = requestId;
+    startTransition(async () => {
+      try {
+        const form = new FormData();
+        form.set("photo", file);
+        form.set("memo", text);
+        form.set("requestId", requestId);
+        const response = await fetch("/photos/upload", { method: "POST", body: form, credentials: "same-origin", cache: "no-store", redirect: "error" });
+        const result: unknown = await response.json();
+        if (!response.ok || !result || typeof result !== "object" || !("ok" in result) || result.ok !== true || !("value" in result)
+          || !result.value || typeof result.value !== "object" || !("id" in result.value) || typeof result.value.id !== "string"
+          || !("version" in result.value) || !Number.isSafeInteger(result.value.version)) {
+          setPhotoFailure(PHOTO_FAILURE);
+          return;
+        }
+        savedPhoto.current = { id: result.value.id, version: result.value.version as number };
+        startTransition(() => router.refresh());
+      } catch {
+        setPhotoFailure(PHOTO_FAILURE);
+      }
+    });
   }
 
   function submitSummary(e: FormEvent) {
@@ -206,9 +267,9 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
     startTransition(() => router.refresh());
   }
 
-  const errorContent = validation || error ? (
+  const errorContent = validation || photoFailure || error ? (
     <div className="diary-error">
-      <p className="err" role="alert" id={`account-error-${day.date}`}>{validation || (error && ERRORS[error])}</p>
+      <p className="err" role="alert" id={`account-error-${day.date}`}>{validation || photoFailure || (error && ERRORS[error])}</p>
       {error === "not_signed_in" ? <Link className="text-btn" href="/login">로그인</Link> : null}
       {error && ["conflict", "unavailable", "not_found", "invalid_version"].includes(error) ? (
         <button className="text-btn" type="button" disabled={pending} onClick={reload}>다시 불러오기</button>
@@ -277,7 +338,10 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
           {summary}
           <ul className="pieces" aria-label={`${label}의 조각`}>
             {day.moments.map((p, i) => (
-              <li key={p.id} className={`piece note ${NOTE[i % NOTE.length]}${p.id === lastNewId ? " is-new" : ""}`}>
+              <li key={p.id} className={`piece ${p.photo ? "photo" : `note ${NOTE[i % NOTE.length]}`}${p.id === lastNewId ? " is-new" : ""}`}>
+                {/* 비공개 경로를 공용 이미지 최적화/캐시에 보내지 않는다. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {p.photo ? <img src={p.photo.src} width={p.photo.width} height={p.photo.height} alt="조각 사진" /> : null}
                 <div className="piece-meta">
                   <time>{p.time}</time>
                   <button className="piece-edit" type="button" disabled={pending} data-edit={p.id} aria-label={`${label} ${p.time} 조각 수정`} onClick={() => openMoment(p, "edit")}>수정</button>
@@ -304,8 +368,16 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
                   aria-invalid={!!validation || undefined} aria-describedby={errorContent ? `account-error-${day.date}` : undefined}
                   placeholder="짧게 한 줄이면 충분해요" onChange={(e) => {
                     setText(e.target.value);
-                    if (compose.mode === "add") addDraft.current = e.target.value;
+                    if (compose.mode === "add") {
+                      addDraft.current = e.target.value;
+                      photoRequestId.current = null;
+                    }
                   }} />
+                {compose.mode === "add" ? <PhotoInput file={photoFile} enabled={photosEnabled} disabled={pending} onChange={(file) => {
+                  setPhotoFile(file);
+                  photoRequestId.current = null;
+                  setPhotoFailure("");
+                }} /> : null}
               </>
             )}
             {errorContent}
@@ -313,7 +385,7 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
             <p role="status" aria-live="polite">{pending ? "저장 중…" : ""}</p>
             <div className="pop-actions">
               <button className="btn-ghost" type="button" disabled={pending} onClick={cancel}>{compose.mode === "delete" ? "취소" : "닫기"}</button>
-              <button className="btn-main" type="submit" disabled={pending || !!latest?.missing}>{compose.mode === "delete" ? "지우기" : compose.mode === "edit" ? "고치기" : "저장"}</button>
+              <button className="btn-main" type="submit" disabled={pending || !!latest?.missing}>{pending && compose.mode === "add" && photoFile ? "저장 중…" : compose.mode === "delete" ? "지우기" : compose.mode === "edit" ? "고치기" : "저장"}</button>
             </div>
           </form>
         </dialog>

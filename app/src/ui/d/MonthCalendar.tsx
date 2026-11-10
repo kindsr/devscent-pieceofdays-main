@@ -14,7 +14,7 @@ export function MonthCalendar({ year, month, days, today, picked, includeSummary
     const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const day = byDate.get(iso);
     if (day && (day.moments.length || (includeSummary && day.summary.trim()))) {
-      const cover = day.moments.find((m) => m.image);
+      const cover = day.moments.find((m) => m.photo || m.image);
       cells.push(
         <li key={iso}>
           <Link className="cell" href={`/days/${iso}`} aria-current={picked === iso ? "date" : undefined} aria-label={day.moments.length ? `${dateLabel(iso)}, 조각 ${day.moments.length}개` : `${dateLabel(iso)} 하루 한 줄`}>
@@ -22,7 +22,7 @@ export function MonthCalendar({ year, month, days, today, picked, includeSummary
               {d}
             </span>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {cover?.image ? <img src={SAMPLE_IMAGES[cover.image].src} alt="" /> : null}
+            {cover?.photo ? <img src={cover.photo.src} alt="" width={cover.photo.width} height={cover.photo.height} /> : cover?.image ? <img src={SAMPLE_IMAGES[cover.image].src} alt="" /> : null}
           </Link>
         </li>,
       );

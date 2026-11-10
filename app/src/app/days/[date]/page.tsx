@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getDiaryContext } from "@/server/context";
+import { parsePhotoConfig } from "@/server/photos/config";
 import { readDaysView } from "@/server/diary/view-data";
 import { parseLocalDate } from "@/shared/local-date";
 import { DaysView } from "@/ui/d/DaysView";
@@ -20,5 +21,6 @@ export default async function DayPage({ params }: PageProps<"/days/[date]">) {
   } catch {
     return <NotConnected title="모아보기" readFailed />;
   }
-  return <DaysView {...data} mode={ctx.kind} />;
+  const photos = ctx.kind === "account" ? parsePhotoConfig(process.env) : null;
+  return <DaysView {...data} mode={ctx.kind} photosEnabled={!!(photos?.ok && photos.value)} />;
 }

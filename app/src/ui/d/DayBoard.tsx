@@ -53,6 +53,7 @@ export type DayBoardProps = {
   sub: string;
   showSettingsLink?: boolean;
   headingLevel?: 1 | 2;
+  photosEnabled?: boolean;
 };
 
 export function DayBoard({ mode = "fixture", ...props }: DayBoardProps & { mode?: "fixture" | "account" }) {

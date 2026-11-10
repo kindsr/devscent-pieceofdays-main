@@ -252,3 +252,14 @@ html[data-record-font="hand"] { --font-record: var(--font-hand); }
 .diary-latest { border-top: var(--border); padding-top: var(--s-2); white-space: pre-wrap; }
 .account-board .oneline .err { font-family: var(--font-ui); }
 .btn-main:disabled, .piece-edit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 사진 선택은 기존 작성 팝업 안에 둔다. 긴 파일명도 화면 폭 안에서 읽는다. */
+.photo-input { display: grid; gap: var(--s-1); min-width: 0; }
+.photo-input input { width: 100%; min-width: 0; min-height: 44px; font: inherit; color: var(--ink); }
+.photo-input input::file-selector-button {
+  min-height: 44px; margin-right: var(--s-1); padding: 0 var(--s-2); font: inherit;
+  border: var(--border); border-radius: 4px; background: var(--surface); color: var(--ink); cursor: pointer;
+}
+.photo-filename { overflow-wrap: anywhere; word-break: break-word; font-size: 14px; }
+.photo-preview { display: block; width: auto; max-width: 100%; height: auto; max-height: 180px; object-fit: contain; justify-self: start; }
+.photo-input .text-btn { justify-self: start; }

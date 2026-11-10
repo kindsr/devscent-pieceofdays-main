@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getDiaryContext } from "@/server/context";
+import { parsePhotoConfig } from "@/server/photos/config";
 import type { DiaryDay } from "@/shared/diary";
 import { DayBoard } from "@/ui/d/DayBoard";
 import { NotConnected } from "@/ui/d/NotConnected";
@@ -16,5 +17,6 @@ export default async function TodayPage() {
   } catch {
     return <NotConnected title="오늘" readFailed />;
   }
-  return <DayBoard day={day} mode={ctx.kind} isToday sub="오늘" showSettingsLink />;
+  const photos = ctx.kind === "account" ? parsePhotoConfig(process.env) : null;
+  return <DayBoard day={day} mode={ctx.kind} photosEnabled={!!(photos?.ok && photos.value)} isToday sub="오늘" showSettingsLink />;
 }
