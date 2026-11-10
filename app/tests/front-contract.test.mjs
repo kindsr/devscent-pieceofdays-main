@@ -105,7 +105,7 @@ test("01 exact helper configuration and the complete outer fragment pass real ng
   for (const record of await h.logs()) t.diagnostic(`${record.sink}: stdout and stderr positive collection controls observed`);
   assert.equal(typeof h.photoFragmentHash, "string", "the actual outer fixture must expose the public photo fragment hash (not implemented yet)");
   assert.match(h.photoFragmentHash, /^[0-9a-f]{64}$/, "photo fragment hash is a raw SHA256");
-  const photoFragmentPath = path.join(APP_DIR, "tests/fixtures/front/outer-photos.conf");
+  const photoFragmentPath = path.join(APP_DIR, "..", "deploy/nginx/snippets/dev-private-photos.conf");
   assert.ok(existsSync(photoFragmentPath), "the reviewed public photo snippet must exist before reading it");
   const photoFragment = readFileSync(photoFragmentPath, "utf8");
   assert.ok(photoFragment.trim().length > 0, "photo proposal is not an empty placeholder");

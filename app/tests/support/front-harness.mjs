@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -346,7 +346,21 @@ export class FrontHarness {
     const locations = fragment.slice(start);
     const security = 'add_header X-Robots-Tag "noindex, nofollow" always; add_header X-Frame-Options "SAMEORIGIN" always; add_header X-Content-Type-Options "nosniff" always; add_header Referrer-Policy "strict-origin-when-cross-origin" always; add_header Strict-Transport-Security "max-age=31536000" always;';
     const background = `set $pieceofdays_dev_web http://${this.frontIP}:80; auth_basic "CI dev fixture"; auth_basic_user_file /etc/nginx/ci.htpasswd; allow ${this.ingressSubnet}; deny all; ${security}`;
-    writeFileSync(path.join(this.tmp, "outer.conf"), `${format}\nserver { listen 80; server_name dev.pieceofdays.com; ${background}\n${locations}\nlocation / { proxy_pass $pieceofdays_dev_web; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto $scheme; }\n}\n`);
+    const photoPath = path.join(REPO_DIR, "deploy/nginx/snippets/dev-private-photos.conf");
+    const photoStat = lstatSync(photoPath, { throwIfNoEntry: false });
+    let photoFragment = Buffer.alloc(0);
+    delete this.photoFragmentHash;
+    if (photoStat) {
+      assert.ok(photoStat.isFile() && !photoStat.isSymbolicLink(), "public photo proposal must be a regular non-symlink file");
+      photoFragment = readFileSync(photoPath);
+      this.photoFragmentHash = hash(photoFragment);
+      photoFragment = Buffer.concat([photoFragment, Buffer.from("\n")]);
+    }
+    writeFileSync(path.join(this.tmp, "outer.conf"), Buffer.concat([
+      Buffer.from(`${format}\nserver { listen 80; server_name dev.pieceofdays.com; ${background}\n${locations}\n`),
+      photoFragment,
+      Buffer.from(`location / { proxy_pass $pieceofdays_dev_web; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto $scheme; }\n}\n`),
+    ]));
     const sha = createHash("sha1").update(FAKE_PASSWORD).digest("base64");
     writeFileSync(path.join(this.tmp, "htpasswd"), `ci:{SHA}${sha}\n`, { mode: 0o644 });
   }
