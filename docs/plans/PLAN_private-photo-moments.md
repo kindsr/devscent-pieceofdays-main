@@ -9,7 +9,7 @@
 
 - 기존 텍스트 조각은 보존한다. 계정 조각 쓰기에 선택 사진1장을 더한다. 메모1~300자·기존 발생 시각/서울 날짜 정책은 그대로다.
 - JPEG/PNG/WebP 원본 최대8MiB, 요청 전체9MiB(분할 전송도 실제 읽은 바이트 제한), 최대40,000,000픽셀. 실제 decode 후 긴변2560px 이내·JPEG quality85·최대4MiB로 정규화한다. 방향을 보정하고 EXIF/GPS 등 메타데이터를 제거한다. SVG/HTML/손상/위장/초과 이미지는 고정 오류로 거부한다.
-- 파일 선택·파일명과 제한 안내·미리보기·선택 취소를 제공한다. `accept`만으로 서버 검증을 대신하지 않는다. HEIC의 자동 변환을 가정하지 않고 미지원 형식 안내를 제공한다.
+- 파일 선택·파일명과 제한 안내·미리보기·선택 취소를 제공한다. 접근 가능한 이름은 파일 입력 ‘사진 1장’, 취소 버튼 ‘사진 선택 취소’, 저장 사진 img ‘조각 사진’이다. `accept`만으로 서버 검증을 대신하지 않는다. HEIC의 자동 변환을 가정하지 않고 미지원 형식 안내를 제공한다.
 - 저장 중 중복/닫기 잠금, 실패 시 File·메모 초안 보존. 성공 후 서버 재조회가 끝나야 닫고 성공으로 표시한다. 단순 메모 수정은 기존 사진을 보존한다. 사진 교체·다중 사진·크롭은 이 단계 밖이다.
 - 기존 D 디자인을 재사용한다. PC↔iPhone/Android 에뮬레이션, 키보드,375/768/1440 폭을 검증한다. 실기기와 에뮬레이션 결과를 구분한다.
 
@@ -33,7 +33,7 @@
 
 - multipart 필드는 정확 `photo`(File1개), `memo`(문자열), `requestId`(소문자 UUIDv4)다. 중복/알 수 없는 필드·잘못된 boundary·형식은400. `Content-Length` 선검사와 실제 스트림 누적9MiB 제한을 함께 적용하고, 읽기15초 초과/취소 때 reader를 정리한다. 제한 전 원본 `formData()` 호출0.
 - `normalizePhoto(bytes: Uint8Array)` → `Result<{bytes: Buffer; sha256: string; width: number; height: number; contentType: "image/jpeg"}, PhotoError>`. `sha256`은 정규화 bytes의64소문자hex. 단일 정규화 slot, 겹친 호출은 `busy`, 처리5초 제한. 원본8MiB/40MP와 출력4MiB·2560px 제한을 모두 검사하며 애니메이션/여러 page는 이번 단계에서 거부한다.
-- `createPhotoMoment(db, blobs, {userId,gen}, {requestId,memo,photo})` → `Result<MomentRef, PhotoError>`. 원본 조각 쓰기와 같은 trim/300자·서울 날짜/시각을 사용한다. 사용자 상태/gen은 예약과 최종확정의 짧은 DB tx 안에서 다시 확인한다.
+- `server/photos/create-moment.ts`의 `createPhotoMoment(db, blobs, {userId,gen}, {requestId,memo,photo})` → `Result<{moment:MomentRef;replayed:boolean}, PhotoError>`. 원본 조각 쓰기와 같은 trim/300자·서울 날짜/시각을 사용한다. 사용자 상태/gen은 예약과 최종확정의 짧은 DB tx 안에서 다시 확인한다.
 - 업로드 응답: 새 확정201, 같은 요청의 확정 결과 재조회200. 양쪽 `{ok:true,value:{id,version}}`. 잘못된 메모/파일/필드는400, 크기 초과413, 로그인 없음401, Origin 거부403, 다른 입력의 같은 requestId409, 처리 중/미설정/저장 오류503. 실패 JSON은 `{ok:false,error:<고정코드>}`만. 오류코드 집합: `invalid_request`, `invalid_body`, `invalid_photo`, `photo_too_large`, `not_signed_in`, `forbidden`, `conflict`, `busy`, `unavailable`.
 - `parsePhotoConfig(env)` → `Result<PhotoConfig|null,"invalid_photo_config">`. 정확 env키는 `POD_PHOTOS_S3_ENDPOINT`, `POD_PHOTOS_S3_REGION`, `POD_PHOTOS_S3_BUCKET`, `POD_PHOTOS_S3_ACCESS_KEY_ID`, `POD_PHOTOS_S3_SECRET_ACCESS_KEY`다. 모두 없으면 null, 일부만 있으면 오류. endpoint는 userinfo/query/fragment 없는 root URL, 실제 실행은 HTTPS. 격리시험의 loopback HTTP는 production에서 금지한다. 비공개 반환형은 서버 안에서만 사용한다.
 - blob port의 `put(key,photo,signal): Promise<void>`, `get(key,signal): Promise<Buffer|null>`, `delete(key,signal): Promise<void>`. key는 서버 생성 사진 prefix의 UUID.jpg만. get은 실제 스트림4MiB 상한·timeout을 지키고 missing만null, 기타 실패는 고정 저장 오류. SDK의 암묵적 다회 재시도를 켜지 않는다.
@@ -47,8 +47,8 @@
 - moment_photos 필드: `id`(uploads FK), `user_id`, 유일한 `moment_id`, `sha256`, `mime_type`(image/jpeg), `byte_length`(1..4MiB), `width/height`(1..2560), 생성시각. `(moment_id,user_id)`는 같은 소유자의 diary_moments를 참조한다. 사용자·조각 cascade는 확정 metadata를 지우고 DELETE trigger가 journal의 key를 같은 tx의 photo_deletions에 남긴다.
 - deletions는 사진 id/key·재시도시각·최근부재검증시각·시도횟수만 남기며 user FK/원문을 두지 않는다. 성공 DELETE만으로 key를 즉시 버리지 않고 늦은 PUT도 재확인할 수 있게 한다. staging TTL·업로드 lease token을 통해 사용 중인 PUT 회수와 늦은 확정 덮어쓰기를 차단한다.
 - 앱은 새 세 테이블의 필요한 DML과 기존 user/조각 권한만 쓴다. uploads/삭제 tombstone의 무조건 DELETE 권한을 주지 않는다. trigger 함수는 PUBLIC EXECUTE를 회수하며, 원장·기존 role·PUBLIC 권한을 넓히지 않는다.
-- `readPhoto(db,blobs,{userId,gen},photoId,signal?)` → `Result<{bytes:Buffer;contentType:"image/jpeg"},"not_found"|"unavailable">`. trusted caller만 사용자 문맥을 공급한다. 사진·계정·gen의 초기/최종 검증과 SHA256/길이 확인 후에만 bytes를 반환한다.
-- `cleanupPhotos(db,blobs,{limit,now?})` → `{processed,deleted,failed,busy}`. 1..100개 한정 batch, 외부 I/O 중 장기 DB tx0, 실패 재시도/활성 lease 건너뜀·tombstone 보존. 운영 Node CLI도 한 batch만 실행하고 자동 스케줄 설치0. 직접 Node로 실행하는 entry는 기존 migrate-cli처럼 framework 전용 import를 요구하지 않는 별도 entry로 두고, Next 앱의 server-only 경계를 약화하지 않는다.
+- `server/photos/read-photo.ts`의 `readPhoto(db,blobs,{userId,gen},photoId,signal?)` → `Result<{bytes:Buffer;contentType:"image/jpeg"},"not_found"|"unavailable">`. trusted caller만 사용자 문맥을 공급한다. 사진·계정·gen의 초기/최종 검증과 SHA256/길이 확인 후에만 bytes를 반환한다.
+- `server/photos/cleanup.ts`의 `cleanupPhotos(db,blobs,{limit,now?})` → `{processed,deleted,failed,busy}`. 1..100개 한정 batch, 외부 I/O 중 장기 DB tx0, 실패 재시도/활성 lease 건너뜀·tombstone 보존. 운영 Node CLI도 한 batch만 실행하고 자동 스케줄 설치0. 직접 Node로 실행하는 entry는 기존 migrate-cli처럼 framework 전용 import를 요구하지 않는 별도 entry로 두고, Next 앱의 server-only 경계를 약화하지 않는다.
 - 실제 migration 목록/테이블 기대는0004·11테이블로 확장한다. migration engine의 down 데이터 보호도 새 예약/metadata/삭제목록을 포함한다. 합성 CLI fixture의 임의 latest2와 기존0001~0003은 바꾸지 않는다.
 
 ## 3. 보관·실패·삭제
