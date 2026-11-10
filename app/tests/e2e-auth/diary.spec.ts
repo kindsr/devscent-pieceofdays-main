@@ -656,15 +656,18 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
   test.setTimeout(180_000);
   const bodies = collectBodies(page);
   const a = await signIn(page);
-  type ActionBody = { url: string; type: string; text: string };
+  type ActionBody = { url: string; type: string; text: string; buffer: Buffer };
   type Encoding = "none" | "identity" | "gzip" | "br" | "deflate" | "other";
   type ActionStage = {
     fetchReturned: boolean; bodyBuffered: boolean; fulfillStarted: boolean; fulfillReturned: boolean; handlerFailed: boolean; bodyBytes: number;
     rawEncoding: Encoding | null; rawContentLengthPresent: boolean; rawContentLength: number | null;
     transferChunked: boolean; transferSupported: boolean; rawLengthMatchesBody: boolean | null; normalizedDelivery: boolean;
+    originValidated: boolean; sameBufferSubmitted: boolean;
   };
   const actionBodies = new Map<Request, ActionBody>();
   const actionStages = new Map<Request, ActionStage>();
+  const actionDeliveries = new Map<Request, Promise<void>>();
+  const observerCleanups: (() => void)[] = [];
   const framing = (stage?: ActionStage) => ({
     rawEncoding: stage?.rawEncoding ?? null, rawContentLengthPresent: stage?.rawContentLengthPresent ?? false,
     rawContentLength: stage?.rawContentLength ?? null, transferChunked: stage?.transferChunked ?? false,
@@ -683,8 +686,14 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
       fetchReturned: false, bodyBuffered: false, fulfillStarted: false, fulfillReturned: false, handlerFailed: false, bodyBytes: 0,
       rawEncoding: null, rawContentLengthPresent: false, rawContentLength: null, transferChunked: false,
       transferSupported: false, rawLengthMatchesBody: null, normalizedDelivery: false,
+      originValidated: false, sameBufferSubmitted: false,
     };
     actionStages.set(request, stage);
+    let resolveDelivery!: () => void;
+    let rejectDelivery!: (error: Error) => void;
+    const delivered = new Promise<void>((resolve, reject) => { resolveDelivery = resolve; rejectDelivery = reject; });
+    void delivered.catch(() => undefined);
+    actionDeliveries.set(request, delivered);
     try {
       const response = await route.fetch({ maxRedirects: 0 });
       stage.fetchReturned = true;
@@ -704,9 +713,12 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
       expect(stage.rawEncoding !== "other" && stage.transferSupported, "only supported upstream body encodings are delivered").toBe(true);
       expect(response.status(), "upstream action status").toBe(200);
       expect((raw["content-type"] ?? "").includes("text/x-component"), "upstream action is RSC").toBe(true);
+      expect(buffer.length > 0, "complete upstream action body is nonempty").toBe(true);
       const text = buffer.toString("utf8");
       expect(text.toLowerCase().includes(a.userId.toLowerCase()), "complete upstream action body must not contain the account id").toBe(false);
-      actionBodies.set(request, { url: new URL(request.url()).pathname, type: raw["content-type"] ?? "", text });
+      stage.originValidated = true;
+      const captured = { url: new URL(request.url()).pathname, type: raw["content-type"] ?? "", text, buffer };
+      actionBodies.set(request, captured);
       // APIResponse.body is decoded. Keep every non-framing header and send these same bytes
       // with their actual length, rather than reusing compression or transfer framing.
       const framingHeaders = new Set(["content-encoding", "transfer-encoding", "content-length"]);
@@ -714,63 +726,63 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
       for (const [name, value] of Object.entries(raw)) if (!framingHeaders.has(name.toLowerCase())) headers[name] = value;
       headers["content-length"] = String(buffer.length);
       expect(Object.entries(raw).every(([name, value]) => framingHeaders.has(name.toLowerCase()) || headers[name] === value), "non-framing response headers remain unchanged").toBe(true);
+      stage.sameBufferSubmitted = captured.buffer === buffer;
+      expect(stage.sameBufferSubmitted, "the validated buffer is submitted to the same UI request").toBe(true);
       stage.fulfillStarted = true;
-      await route.fulfill({ response, headers, body: buffer });
+      await route.fulfill({ response, headers, body: captured.buffer });
       stage.fulfillReturned = true;
       stage.normalizedDelivery = true;
+      resolveDelivery();
       console.info("RSC action framing", JSON.stringify({ action: actionNumber === 1 ? "keyboard_create" : actionNumber === 2 ? "account_font" : "other", actionNumber, ...framing(stage) }));
     } catch {
       stage.handlerFailed = true;
+      rejectDelivery(new Error("RSC action delivery failed; raw request and response details withheld"));
       console.error("RSC action framing failure", JSON.stringify({ action: actionNumber === 1 ? "keyboard_create" : actionNumber === 2 ? "account_font" : "other", actionNumber, ...framing(stage) }));
       throw new Error("RSC action interception failed; raw request and response details withheld");
     }
   });
   const today = await serverSeoulToday();
-  const completeAction = async (label: "keyboard create" | "account font", submit: () => Promise<void>): Promise<void> => {
+  const completeAction = async (label: "keyboard create" | "account font", submit: () => Promise<void>, verifyOutcome: () => Promise<void>): Promise<void> => {
     type Terminal = { finished: boolean; failed: boolean; failureCode: "none" | "net::ERR_ABORTED" | "net::ERR_FAILED" | "other" };
     const terminal = new Map<Request, Terminal>();
-    const failures = new Map<Request, { promise: Promise<never>; reject: (error: Error) => void }>();
     let matched: Request | undefined;
     let responseSeen = false, status200 = false, rscType = false;
-    let finishedSettled = false, finishedNull = false;
+    let finishedSettled = false, finishedNull = false, finishedRejected = false;
+    let deliveryVerified = false, outcomeVerified = false, observing = true;
     let phase = "waiting_response";
     const isAction = (request: Request) => new URL(request.url()).origin === AUTH_BASE && request.method() === "POST" && Boolean(request.headers()["next-action"]);
-    const failureFor = (request: Request) => {
-      let failure = failures.get(request);
-      if (!failure) {
-        let reject!: (error: Error) => void;
-        const promise = new Promise<never>((_resolve, fail) => { reject = fail; });
-        void promise.catch(() => undefined); // terminal events can precede the response waiter.
-        failure = { promise, reject };
-        failures.set(request, failure);
-      }
-      return failure;
-    };
     const onFinished = (request: Request) => {
       if (!isAction(request)) return;
       terminal.set(request, { finished: true, failed: false, failureCode: "none" });
+      if (matched === request) diagnose("browser_terminal");
     };
     const onFailed = (request: Request) => {
       if (!isAction(request)) return;
       const rawCode = request.failure()?.errorText;
       const failureCode = rawCode === "net::ERR_ABORTED" || rawCode === "net::ERR_FAILED" ? rawCode : "other";
       terminal.set(request, { finished: false, failed: true, failureCode });
-      failureFor(request).reject(new Error(`RSC action browser request failed: ${failureCode}`));
+      if (matched === request) diagnose("browser_terminal");
     };
-    const diagnose = (reason: "verification_failed" | "case_deadline") => {
+    const diagnose = (reason: "verified" | "verification_failed" | "case_deadline" | "browser_terminal" | "finished_observed") => {
       const stage = matched ? actionStages.get(matched) : undefined;
       const end = matched ? terminal.get(matched) : undefined;
-      console.error("RSC action diagnostic", JSON.stringify({
+      console.info("RSC action diagnostic", JSON.stringify({
         action: label === "keyboard create" ? "keyboard_create" : "account_font", reason, phase, actionCount,
-        trackedRequests: actionStages.size, responseSeen, status200, rscType, finishedSettled, finishedNull, sameRequestMatched: Boolean(matched && stage),
+        trackedRequests: actionStages.size, responseSeen, status200, rscType, finishedSettled, finishedNull, finishedRejected, sameRequestMatched: Boolean(matched && stage),
         fetchReturned: stage?.fetchReturned ?? false, bodyBuffered: stage?.bodyBuffered ?? false,
         mapPresent: Boolean(matched && actionBodies.has(matched)), fulfillStarted: stage?.fulfillStarted ?? false, fulfillReturned: stage?.fulfillReturned ?? false,
+        originValidated: stage?.originValidated ?? false, sameBufferSubmitted: stage?.sameBufferSubmitted ?? false, deliveryVerified, outcomeVerified,
         handlerFailed: stage?.handlerFailed ?? false, terminalMatched: Boolean(end), requestFinished: end?.finished ?? false,
         requestFailed: end?.failed ?? false, failureCode: end?.failureCode ?? "none", ...framing(stage),
       }));
     };
     page.on("requestfinished", onFinished);
     page.on("requestfailed", onFailed);
+    observerCleanups.push(() => {
+      observing = false;
+      page.off("requestfinished", onFinished);
+      page.off("requestfailed", onFailed);
+    });
     // Diagnostic only: the existing case deadline remains the failing upper bound.
     const deadline = setTimeout(() => diagnose("case_deadline"), Math.max(1, 180_000 - (Date.now() - caseStartedAt) - 250));
     try {
@@ -785,17 +797,35 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
       rscType = (response.headers()["content-type"] ?? "").includes("text/x-component");
       phase = "status_and_type";
       expect(response.status(), `${label}: successful action response`).toBe(200);
-      expect(response.headers()["content-type"] ?? "", `${label}: actual RSC action response`).toContain("text/x-component");
-      phase = "browser_finished";
+      expect(rscType, `${label}: actual RSC action response`).toBe(true);
+      // Browser EOF is observed separately. This contract requires the original server
+      // body, the same-buffer delivery and non-optimistic UI plus fresh PG evidence.
       const finished = response.finished();
       void finished.catch(() => undefined);
-      void finished.then((value) => { finishedSettled = true; finishedNull = value === null; }, () => { finishedSettled = true; });
-      expect(await Promise.race([finished, failureFor(matched).promise]), `${label}: browser received the complete response`).toBeNull();
+      void finished.then((value) => {
+        finishedSettled = true; finishedNull = value === null;
+        if (observing) diagnose("finished_observed");
+      }, () => {
+        finishedSettled = true; finishedRejected = true;
+        if (observing) diagnose("finished_observed");
+      });
+      phase = "same_request_delivery";
+      const delivery = actionDeliveries.get(matched);
+      expect(Boolean(delivery), `${label}: delivery belongs to the same UI request`).toBe(true);
+      await delivery!;
+      const stage = actionStages.get(matched);
+      expect(Boolean(stage?.originValidated && stage.sameBufferSubmitted && stage.fulfillReturned && !stage.handlerFailed), `${label}: validated original bytes were submitted and fulfill returned`).toBe(true);
+      deliveryVerified = true;
       phase = "captured_body";
       const captured = actionBodies.get(response.request());
       expect(captured, `${label}: the original action body was captured and delivered`).toBeDefined();
       phase = "uuid_absent";
       expect(captured!.text.toLowerCase().includes(a.userId.toLowerCase()), `${label}: complete action body must not contain the account id`).toBe(false);
+      phase = "positive_ui_and_fresh_pg";
+      await verifyOutcome();
+      outcomeVerified = true;
+      phase = "verified";
+      diagnose("verified");
     } catch {
       diagnose("verification_failed");
       const unknownUi = { writeDialogVisible: null, errorPresent: null, fixtureMemoVisible: null, fontIsSerif: null, hashIsWrite: null };
@@ -816,57 +846,75 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
       throw new Error(`RSC action verification failed at ${phase}; safe diagnostic recorded`);
     } finally {
       clearTimeout(deadline);
-      page.off("requestfinished", onFinished);
-      page.off("requestfailed", onFailed);
     }
   };
 
-  // 키보드만으로 작성
-  await topAdd(page).focus();
-  await page.keyboard.press("Enter");
-  await expect(memo(page)).toBeFocused();
-  await page.keyboard.type("키보드로 쓴 조각");
-  const save = composer(page).getByRole("button", { name: "저장" });
-  for (let i = 0; i < 12 && !(await save.evaluate((e) => e === document.activeElement)); i++) await page.keyboard.press("Tab");
-  await expect(save, "reached by Tab").toBeFocused();
-  expect(await save.evaluate((e) => getComputedStyle(e).outlineStyle), "visible focus ring").not.toBe("none");
-  await completeAction("keyboard create", () => page.keyboard.press("Enter"));
-  await expect(statusWith(page, DIARY_TEXT.created)).toBeVisible();
-  await expect(item(page, "키보드로 쓴 조각")).toHaveCount(1);
-  expect(actionCount).toBe(1);
+  try {
+    // 키보드만으로 작성
+    await topAdd(page).focus();
+    await page.keyboard.press("Enter");
+    await expect(memo(page)).toBeFocused();
+    await page.keyboard.type("키보드로 쓴 조각");
+    const save = composer(page).getByRole("button", { name: "저장" });
+    for (let i = 0; i < 12 && !(await save.evaluate((e) => e === document.activeElement)); i++) await page.keyboard.press("Tab");
+    await expect(save, "reached by Tab").toBeFocused();
+    expect(await save.evaluate((e) => getComputedStyle(e).outlineStyle), "visible focus ring").not.toBe("none");
+    await completeAction("keyboard create", () => page.keyboard.press("Enter"), async () => {
+      await expect(statusWith(page, DIARY_TEXT.created)).toBeVisible();
+      await expect(composer(page)).toHaveCount(0);
+      await expect(item(page, "키보드로 쓴 조각")).toHaveCount(1);
+      await expect(item(page, "키보드로 쓴 조각").getByRole("button", { name: /조각 수정$/ })).toBeEnabled();
+      const rows = await momentsOf(a.userId);
+      expect(rows.length === 1 && rows[0]?.body === "키보드로 쓴 조각" && rows[0]?.version === 1, "fresh PG contains exactly the created memo at version one").toBe(true);
+    });
+    expect(actionCount).toBe(1);
 
-  for (const w of WIDTHS) {
-    await page.setViewportSize({ width: w, height: 900 });
-    await expectLayoutOk(page, `board ${w}`);
-    await item(page, "키보드로 쓴 조각").getByRole("button", { name: /조각 수정$/ }).click();
-    await expectLayoutOk(page, `edit dialog ${w}`);
-    await page.keyboard.press("Escape");
-    await expect(composer(page)).toHaveCount(0);
-  }
-  await page.getByRole("link", { name: "모아보기" }).click(); // 클라이언트 이동(RSC)
-  await expect(page.getByRole("heading", { level: 1, name: "모아보기" })).toBeVisible();
-  await page.goto(`/days/${today}`);
-  await page.goto("/settings");
-  for (const w of WIDTHS) {
-    await page.setViewportSize({ width: w, height: 900 });
-    await expectLayoutOk(page, `settings ${w}`);
-  }
-  await completeAction("account font", () => page.getByRole("radio", { name: /^명조/ }).click());
-  expect(actionCount, "one create and one font action, without retries").toBe(2);
-  await expect(page.getByRole("radio", { name: /^명조/ })).toBeEnabled();
-  await expect(page.locator("html")).toHaveAttribute("data-record-font", "serif");
-  await page.goto("/days");
-  for (const w of WIDTHS) {
-    await page.setViewportSize({ width: w, height: 900 });
-    await expectLayoutOk(page, `calendar ${w}`);
-  }
+    for (const w of WIDTHS) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await expectLayoutOk(page, `board ${w}`);
+      await item(page, "키보드로 쓴 조각").getByRole("button", { name: /조각 수정$/ }).click();
+      await expectLayoutOk(page, `edit dialog ${w}`);
+      await page.keyboard.press("Escape");
+      await expect(composer(page)).toHaveCount(0);
+    }
+    await page.getByRole("link", { name: "모아보기" }).click(); // 클라이언트 이동(RSC)
+    await expect(page.getByRole("heading", { level: 1, name: "모아보기" })).toBeVisible();
+    await page.goto(`/days/${today}`);
+    await page.goto("/settings");
+    for (const w of WIDTHS) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await expectLayoutOk(page, `settings ${w}`);
+    }
+    await expect(page.getByRole("radio", { name: /^고딕/ })).toBeChecked();
+    const initialFont = await fontOf(a.userId).catch(() => { throw new Error("Initial font PG observation failed; raw details withheld"); });
+    expect(initialFont === null, "fresh account has no stored font before the UI action").toBe(true);
+    await completeAction("account font", () => page.getByRole("radio", { name: /^명조/ }).click(), async () => {
+      await expect(statusWith(page, DIARY_TEXT.fontSaved)).toBeVisible();
+      await expect(page.getByRole("radio", { name: /^명조/ })).toBeEnabled();
+      await expect(page.getByRole("radio", { name: /^명조/ })).toBeChecked();
+      await expect(page.locator("html")).toHaveAttribute("data-record-font", "serif");
+      expect((await fontOf(a.userId)) === "serif", "fresh PG contains the selected serif font").toBe(true);
+    });
+    expect(actionCount, "one create and one font action, without retries").toBe(2);
+    await page.goto("/days");
+    for (const w of WIDTHS) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await expectLayoutOk(page, `calendar ${w}`);
+    }
 
-  const seen = [...await bodies.bodies(), ...actionBodies.values()];
-  expect(seen.some((b) => b.type.includes("text/html")), "document HTML collected").toBe(true);
-  expect(seen.some((b) => b.type.includes("text/x-component")), "RSC/action responses collected").toBe(true);
-  for (const b of seen) expect(b.text.toLowerCase().includes(a.userId.toLowerCase()), `${b.url} (${b.type}) must not contain the account id`).toBe(false);
-  for (const path of ["/", "/days", `/days/${today}`, "/settings"]) {
-    const res = await page.request.get(path, { headers: { RSC: "1" } });
-    expect((await res.text()).toLowerCase(), `RSC ${path}`).not.toContain(a.userId.toLowerCase());
+    const seen = [...await bodies.bodies(), ...actionBodies.values()];
+    expect(seen.some((b) => b.type.includes("text/html")), "document HTML collected").toBe(true);
+    expect(seen.some((b) => b.type.includes("text/x-component")), "RSC/action responses collected").toBe(true);
+    for (const b of seen) expect(b.text.toLowerCase().includes(a.userId.toLowerCase()), `${b.url} (${b.type}) must not contain the account id`).toBe(false);
+    for (const path of ["/", "/days", `/days/${today}`, "/settings"]) {
+      const res = await page.request.get(path, { headers: { RSC: "1" } });
+      expect(res.status(), `RSC ${path}: successful response`).toBe(200);
+      expect((res.headers()["content-type"] ?? "").includes("text/x-component"), `RSC ${path}: actual RSC response`).toBe(true);
+      const text = await res.text();
+      expect(text.length > 0, `RSC ${path}: complete nonempty body`).toBe(true);
+      expect(text.toLowerCase().includes(a.userId.toLowerCase()), `RSC ${path}: account id absent`).toBe(false);
+    }
+  } finally {
+    for (const cleanup of observerCleanups) cleanup();
   }
 });
