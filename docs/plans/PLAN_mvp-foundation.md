@@ -1,5 +1,7 @@
 # PLAN — MVP 기반 구축 (Next.js 앱·DB·인증 소유권·개인용 꾸미기 Lite)
 
+> **2026-11-10 범위 정정:** 아래는 당시 기반 구축 계획이다. 사용자가 재확인한 핵심은 사진·짧은 메모·시간 기반 AI 하루 이야기다. 최신 [PRD](../PRD.md)·[MVP](../product/03_MVP.md)·[핵심 구현 계획](PLAN_ai-daily-story-core.md)을 따른다. F1~F6의 구현/검증 이력은 보존하되 사진·AI가 없는 상태를 제품/MVP 완료로 세지 않는다.
+
 - 상태: **계획.** 기준 `dev` `efe6b0f`. 사용자가 스택을 선택했으므로 프레임워크·패키지 설치는 허용된다(F1에서 §1.1 호환 확인 후 설치). 이 PR 시점에는 아직 설치·구현하지 않았다. 서버 DB·버킷 생성과 공용 서버 설정은 별도 의존성이다(§8).
 - 골격의 가정: [01_PRD_ANALYSIS](../product/01_PRD_ANALYSIS.md) §2 — **비공개 기본, 하루 정리는 직접 작성(A), 짧은 글 중심.** PRD Q1~Q3 답을 기다리지 않고 이 가정을 드러낸 채 UI·도메인·저장 port 골격까지 만든다. 범위 정의는 [03_MVP](../product/03_MVP.md)에 있다.
 - 근거: [00_TECH_STACK_DECISION](../product/00_TECH_STACK_DECISION.md)(사용자 선택, 2026-11-02), [PLAN_product-evolution](PLAN_product-evolution.md) 단계 1, [DECORATION_MARKET_ARCHITECTURE](../product/DECORATION_MARKET_ARCHITECTURE.md), [PRD 초안](../PRD.md).

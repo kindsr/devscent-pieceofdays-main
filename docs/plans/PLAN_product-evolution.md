@@ -1,5 +1,7 @@
 # PLAN — 제품 확장 단계 (MVP+꾸미기 라이트 → 꾸미기 확장 → 마켓 → 추가 사용처)
 
+> **2026-11-10 제품 범위 정정:** 사진·짧은 메모·시간 기반 AI 하루 이야기는 핵심 요구다. 아래 직접 정리 가정과 AI 후속 범위는 당시 계획이며 최신 [PRD](../PRD.md)·[MVP](../product/03_MVP.md)·[핵심 계획](PLAN_ai-daily-story-core.md)으로 대체한다. 기반 구현·꾸미기/마켓 요구와 이력은 보존하며 AI 회고가 없는 상태를 제품 완료로 세지 않는다.
+
 - 상태: **계획 초안. 구현 착수 아님.** 기준 `dev` `cb52350`. 구조는 [DECORATION_MARKET_ARCHITECTURE](../product/DECORATION_MARKET_ARCHITECTURE.md), 스택 후보는 [TECH_STACK_OPTIONS](../product/TECH_STACK_OPTIONS.md).
 - 전제: 2026-11-02 사용자가 스택 A안을 선택했다 → [00_TECH_STACK_DECISION](../product/00_TECH_STACK_DECISION.md). 단계 1의 실행 계획은 [PLAN_mvp-foundation](PLAN_mvp-foundation.md)이다.
 - 표기: [확정]/[권고]/[미정]은 구조 문서와 같다.
