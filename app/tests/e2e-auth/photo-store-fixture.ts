@@ -117,7 +117,7 @@ export async function startPhotoStore(): Promise<PhotoFixture> {
   let client: S3Client | undefined;
   let creationAttempted = false;
   const docker = async (args: string[]) => (await exec("docker", args, {
-    env: { PATH: process.env.PATH ?? "" }, timeout: 120_000, maxBuffer: 1024 * 1024,
+    env: { PATH: process.env.PATH ?? "", NODE_ENV: "test" }, timeout: 120_000, maxBuffer: 1024 * 1024,
   })).stdout.trim();
   const ownedIds = async () => (await docker(["ps", "-aq", "--filter", `label=${LABEL}=${owner}`])).split(/\s+/).filter(Boolean);
   const stop = async () => {

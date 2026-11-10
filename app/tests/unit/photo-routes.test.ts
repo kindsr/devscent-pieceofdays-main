@@ -27,7 +27,7 @@ const h = vi.hoisted(() => ({
   configs: [] as unknown[], factories: [] as unknown[], logs: [] as unknown[][],
 }));
 
-vi.mock("next/headers", () => ({ headers: async () => new Headers(h.headers), cookies: async () => ({ get: () => undefined, getAll: () => [] }) }));
+vi.mock("next/headers", () => ({ headers: async () => new Headers([...h.headers]), cookies: async () => ({ get: () => undefined, getAll: () => [] }) }));
 vi.mock("@/server/context", () => ({
   getViewer: async () => {
     h.events.push("viewer");
@@ -158,7 +158,7 @@ function request(body: ReadableStream<Uint8Array> | null, opts: { origin?: strin
   if (opts.length !== undefined) headers.set("content-length", opts.length);
   headers.set("x-user-id", OTHER); headers.set("cookie", `userId=${OTHER}; objectKey=photos/ci-only-spoof.jpg`);
   h.headers = new Map(headers);
-  const init: RequestInit & { duplex: "half" } = { method: "POST", headers, body, signal: opts.signal, duplex: "half" };
+  const init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> & { duplex: "half" } = { method: "POST", headers, body, signal: opts.signal, duplex: "half" };
   return new NextRequest(`${BASE}/photos/upload?userId=${OTHER}`, init);
 }
 
