@@ -650,11 +650,14 @@ test("the browser clock does not decide the record date or time: with a far-futu
 // ================================================================= 식별자 비직렬화·화면
 
 test("the account UUID never reaches document HTML, RSC or action responses; board, dialog, calendar and settings have no overflow and ≥44px targets at 375/768/1440; keyboard-only create", async ({ page }) => {
+  const caseStartedAt = Date.now();
   test.setTimeout(180_000);
   const bodies = collectBodies(page);
   const a = await signIn(page);
   type ActionBody = { url: string; type: string; text: string };
+  type ActionStage = { fetchReturned: boolean; bodyBuffered: boolean; fulfillStarted: boolean; fulfillReturned: boolean; handlerFailed: boolean; bodyBytes: number };
   const actionBodies = new Map<Request, ActionBody>();
+  const actionStages = new Map<Request, ActionStage>();
   let actionCount = 0;
   // Capture the real server body before browser refresh/navigation can discard it.
   // This single handler both counts the original UI POST and delivers those same bytes.
@@ -662,23 +665,102 @@ test("the account UUID never reaches document HTML, RSC or action responses; boa
     const request = route.request();
     if (request.method() !== "POST" || !(await request.headerValue("next-action"))) return route.fallback();
     actionCount++;
-    const response = await route.fetch({ maxRedirects: 0 });
-    const buffer = await response.body();
-    actionBodies.set(request, { url: new URL(request.url()).pathname, type: response.headers()["content-type"] ?? "", text: buffer.toString("utf8") });
-    await route.fulfill({ response, body: buffer });
+    const stage: ActionStage = { fetchReturned: false, bodyBuffered: false, fulfillStarted: false, fulfillReturned: false, handlerFailed: false, bodyBytes: 0 };
+    actionStages.set(request, stage);
+    try {
+      const response = await route.fetch({ maxRedirects: 0 });
+      stage.fetchReturned = true;
+      const buffer = await response.body();
+      stage.bodyBuffered = true;
+      stage.bodyBytes = buffer.length;
+      actionBodies.set(request, { url: new URL(request.url()).pathname, type: response.headers()["content-type"] ?? "", text: buffer.toString("utf8") });
+      stage.fulfillStarted = true;
+      await route.fulfill({ response, body: buffer });
+      stage.fulfillReturned = true;
+    } catch {
+      stage.handlerFailed = true;
+      throw new Error("RSC action interception failed; raw request and response details withheld");
+    }
   });
   const today = await serverSeoulToday();
-  const completeAction = async (label: string, submit: () => Promise<void>): Promise<void> => {
-    const [response] = await Promise.all([
-      page.waitForResponse((res) => new URL(res.url()).origin === AUTH_BASE && res.request().method() === "POST" && Boolean(res.request().headers()["next-action"])),
-      submit(),
-    ]);
-    expect(response.status(), `${label}: successful action response`).toBe(200);
-    expect(response.headers()["content-type"] ?? "", `${label}: actual RSC action response`).toContain("text/x-component");
-    expect(await response.finished(), `${label}: browser received the complete response`).toBeNull();
-    const captured = actionBodies.get(response.request());
-    expect(captured, `${label}: the original action body was captured and delivered`).toBeDefined();
-    expect(captured!.text.toLowerCase().includes(a.userId.toLowerCase()), `${label}: complete action body must not contain the account id`).toBe(false);
+  const completeAction = async (label: "keyboard create" | "account font", submit: () => Promise<void>): Promise<void> => {
+    type Terminal = { finished: boolean; failed: boolean; failureCode: "none" | "net::ERR_ABORTED" | "net::ERR_FAILED" | "other" };
+    const terminal = new Map<Request, Terminal>();
+    const failures = new Map<Request, { promise: Promise<never>; reject: (error: Error) => void }>();
+    let matched: Request | undefined;
+    let responseSeen = false, status200 = false, rscType = false;
+    let finishedSettled = false, finishedNull = false;
+    let phase = "waiting_response";
+    const isAction = (request: Request) => new URL(request.url()).origin === AUTH_BASE && request.method() === "POST" && Boolean(request.headers()["next-action"]);
+    const failureFor = (request: Request) => {
+      let failure = failures.get(request);
+      if (!failure) {
+        let reject!: (error: Error) => void;
+        const promise = new Promise<never>((_resolve, fail) => { reject = fail; });
+        void promise.catch(() => undefined); // terminal events can precede the response waiter.
+        failure = { promise, reject };
+        failures.set(request, failure);
+      }
+      return failure;
+    };
+    const onFinished = (request: Request) => {
+      if (!isAction(request)) return;
+      terminal.set(request, { finished: true, failed: false, failureCode: "none" });
+    };
+    const onFailed = (request: Request) => {
+      if (!isAction(request)) return;
+      const rawCode = request.failure()?.errorText;
+      const failureCode = rawCode === "net::ERR_ABORTED" || rawCode === "net::ERR_FAILED" ? rawCode : "other";
+      terminal.set(request, { finished: false, failed: true, failureCode });
+      failureFor(request).reject(new Error(`RSC action browser request failed: ${failureCode}`));
+    };
+    const diagnose = (reason: "verification_failed" | "case_deadline") => {
+      const stage = matched ? actionStages.get(matched) : undefined;
+      const end = matched ? terminal.get(matched) : undefined;
+      console.error("RSC action diagnostic", JSON.stringify({
+        action: label === "keyboard create" ? "keyboard_create" : "account_font", reason, phase, actionCount,
+        trackedRequests: actionStages.size, responseSeen, status200, rscType, finishedSettled, finishedNull, sameRequestMatched: Boolean(matched && stage),
+        fetchReturned: stage?.fetchReturned ?? false, bodyBuffered: stage?.bodyBuffered ?? false, bodyBytes: stage?.bodyBytes ?? 0,
+        mapPresent: Boolean(matched && actionBodies.has(matched)), fulfillStarted: stage?.fulfillStarted ?? false, fulfillReturned: stage?.fulfillReturned ?? false,
+        handlerFailed: stage?.handlerFailed ?? false, terminalMatched: Boolean(end), requestFinished: end?.finished ?? false,
+        requestFailed: end?.failed ?? false, failureCode: end?.failureCode ?? "none",
+      }));
+    };
+    page.on("requestfinished", onFinished);
+    page.on("requestfailed", onFailed);
+    // Diagnostic only: the existing case deadline remains the failing upper bound.
+    const deadline = setTimeout(() => diagnose("case_deadline"), Math.max(1, 180_000 - (Date.now() - caseStartedAt) - 250));
+    try {
+      const responseWaiter = page.waitForResponse((res) => new URL(res.url()).origin === AUTH_BASE && res.request().method() === "POST" && Boolean(res.request().headers()["next-action"]));
+      void responseWaiter.catch(() => undefined);
+      const submitted = submit();
+      void submitted.catch(() => undefined);
+      const [response] = await Promise.all([responseWaiter, submitted]);
+      matched = response.request();
+      responseSeen = true;
+      status200 = response.status() === 200;
+      rscType = (response.headers()["content-type"] ?? "").includes("text/x-component");
+      phase = "status_and_type";
+      expect(response.status(), `${label}: successful action response`).toBe(200);
+      expect(response.headers()["content-type"] ?? "", `${label}: actual RSC action response`).toContain("text/x-component");
+      phase = "browser_finished";
+      const finished = response.finished();
+      void finished.catch(() => undefined);
+      void finished.then((value) => { finishedSettled = true; finishedNull = value === null; }, () => { finishedSettled = true; });
+      expect(await Promise.race([finished, failureFor(matched).promise]), `${label}: browser received the complete response`).toBeNull();
+      phase = "captured_body";
+      const captured = actionBodies.get(response.request());
+      expect(captured, `${label}: the original action body was captured and delivered`).toBeDefined();
+      phase = "uuid_absent";
+      expect(captured!.text.toLowerCase().includes(a.userId.toLowerCase()), `${label}: complete action body must not contain the account id`).toBe(false);
+    } catch {
+      diagnose("verification_failed");
+      throw new Error(`RSC action verification failed at ${phase}; safe diagnostic recorded`);
+    } finally {
+      clearTimeout(deadline);
+      page.off("requestfinished", onFinished);
+      page.off("requestfailed", onFailed);
+    }
   };
 
   // 키보드만으로 작성
