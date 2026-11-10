@@ -115,7 +115,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (mocked) for (const module of MODULES) vi.doUnmock(module);
+  if (mocked) for (const modulePath of MODULES) vi.doUnmock(modulePath);
   mocked = false;
   vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.useRealTimers();
 });
