@@ -1,6 +1,6 @@
 # PLAN — 비공개 사진으로 하루 조각 남기기
 
-- 상태: 2026-11-10 구현 준비. 사진 기능의 구현/실제 저장 성공을 뜻하지 않는다.
+- 상태: 2026-11-10 앱 구현 후보 작성·독립 소스 검토 완료, 전체 GREEN CI 전. 사진 기능의 실제 서비스 보관/게시 성공을 뜻하지 않는다.
 - 선행: [회고 시간 설정](PLAN_reflection-time-settings.md) migration0003 이후 다음번호0004 사용. 기존1~3 변경0.
 - 목표: PC·휴대폰에서 사진1장+짧은 메모를 남기고, 같은 계정의 다른 기기·날짜별 화면에서 다시 읽는다. 예시 SVG나 브라우저 임시 저장으로 실제 사진을 대체하지 않는다.
 - 근거: [사용자 핵심 요구](PLAN_ai-daily-story-core.md), [기존 S3 호환 비공개 버킷 선택](../product/00_TECH_STACK_DECISION.md#3-데이터저장소권한-계약).
@@ -12,6 +12,7 @@
 - 파일 선택·파일명과 제한 안내·미리보기·선택 취소를 제공한다. 접근 가능한 이름은 파일 입력 ‘사진 1장’, 취소 버튼 ‘사진 선택 취소’, 저장 사진 img ‘조각 사진’이다. `accept`만으로 서버 검증을 대신하지 않는다. HEIC의 자동 변환을 가정하지 않고 미지원 형식 안내를 제공한다.
 - 저장 확인 실패는 ‘사진 저장을 확인하지 못했어요. 고른 사진과 메모는 그대로 두었어요. 다시 시도해 주세요.’로 안내한다. 미설정은 ‘사진 저장을 준비 중이에요. 지금은 메모로 남길 수 있어요.’로 알리고 사진 입력을 닫는다. 미설정 상태에서도 기존 텍스트 기록은 사용 가능하다.
 - 저장 중 중복/닫기 잠금, 실패 시 File·메모 초안 보존. 성공 후 서버 재조회가 끝나야 닫고 성공으로 표시한다. 단순 메모 수정은 기존 사진을 보존한다. 사진 교체·다중 사진·크롭은 이 단계 밖이다.
+- 확인된 저장 성공 뒤의 재조회만 실패하면 기존 NotConnected 경계가 보드를 교체한다. 사진·메모는 이미 PG/S3에 확정돼 있지만 당시 입력 UI는 유지되지 않는 한계가 있다. 저장 실패/응답 불명확 상태는 이 경로로 이동하지 않고 File·메모·requestId를 유지한다. 확정 저장 후의 재조회 오류는 성공 표시로 바꾸지 않는다.
 - 기존 D 디자인을 재사용한다. PC↔iPhone/Android 에뮬레이션, 키보드,375/768/1440 폭을 검증한다. 실기기와 에뮬레이션 결과를 구분한다.
 
 ## 2. 앱 API·저장 계약
@@ -90,7 +91,7 @@ client `photo`는 `photo?: {src:string;width:number;height:number}`이며 src는
 ### 격리 CI fixture·준비 결과
 
 - dependency proof [PR82](https://github.com/kindsr/devscent-pieceofdays-main/pull/82) source907b265, [run42857304451](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42857304451)에서 실제 설치/Sharp 합성 decode·방향/축소/metadata 제거·S3 send0·원본hash/정리/정확2artifact를 통과했다. 메인이 ZIP raw sha256 `431d8233d90601ab0abe64ea2be11d22341c9e1ded07108c9439712fa7177c5d`·2JSON·기존 dependency version/resolved/integrity 변경0/삭제0를 직접 대조했다. 이 artifact pair만19c1746에 반영했고 호스트 설치0.
-- 실제 HTTP S3 roundtrip의 CI fixture는 **SeaweedFS4.53**, linux/amd64 `chrislusf/seaweedfs:4.53@sha256:972ba30c529dfc72a6a12ed427e94d99c7b6a6e59d97bfa52be0a849f43e2cc9`다. 공식tag/source revision `4ab66fb76da83700739f5839e62fcaf15fb7d02a`·manifest rawhash/OCI label 일치를 읽기 확인했다. Apache2, `mini -dir=/data`·가짜 AWS key/secret/S3_BUCKET으로 사설 초기 bucket을 구성한다. 실제 실행/SDK roundtrip은 아직 미검증이며 provider 운영 선택이 아니다.
+- 실제 HTTP S3 roundtrip의 CI fixture는 **SeaweedFS4.53**, linux/amd64 `chrislusf/seaweedfs:4.53@sha256:972ba30c529dfc72a6a12ed427e94d99c7b6a6e59d97bfa52be0a849f43e2cc9`다. 공식tag/source revision `4ab66fb76da83700739f5839e62fcaf15fb7d02a`·manifest rawhash/OCI label 일치를 읽기 확인했다. Apache2, `mini -dir=/data`·가짜 AWS key/secret/S3_BUCKET으로 사설 초기 bucket을 구성한다. [최종 RED CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42868890115)의 auth job130014508883에서 실제 Put/Get/hash/Delete/Get404·익명/잘못된 자격 거부 preflight를 통과했다. 제품 저장 성공이나 provider 운영 선택과 구분한다.
 - 기존 auth globalSetup의 명시 child env allowlist에 가짜 사진 설정5키만 더하고, 소유한 loopback publish Docker fixture1개를 추적·finally 정리한다. 준비성은 HeadBucket→가짜 Put/Get/hash/Delete/Get404와 익명/잘못된 자격 거부로 확인한다. handler/UI는 실제 이 endpoint를 사용한다. mock backend만으로 이를 대체하지 않는다.
 - 기존 auth callee/workflow 본문을 바꾸지 않고 같은 SHA의 필수 auth 검사에 새 사진 사례·기존 두 device 여정 사진 readback을 포함한다. Playwright config의 WebKit 기존 device 제한도 보존한다. 소유 helper·globalSetup 변경은 RED 시험 범위로 명시한다. 호스트 Docker/npm/브라우저0, 실행은 Actions만.
 
