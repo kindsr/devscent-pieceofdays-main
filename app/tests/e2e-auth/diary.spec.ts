@@ -79,7 +79,9 @@ test("first real login lands on an empty account board for the Seoul today: memo
   await page.keyboard.press("Enter");
   await expect(memo(page)).toBeFocused();
   await expect(composer(page).getByRole("radio")).toHaveCount(0);
-  await expect(composer(page).locator('input[type="file"], img')).toHaveCount(0);
+  await expect(composer(page).getByLabel("사진 1장", { exact: true })).toHaveCount(1);
+  await expect(composer(page).getByLabel("사진 1장", { exact: true })).toBeEnabled();
+  await expect(composer(page).locator("img")).toHaveCount(0);
   await expect(composer(page).getByText(/예시 이미지/)).toHaveCount(0);
   await expect(composer(page), "no client-clock time in the add dialog").not.toContainText("09:13");
   await expect(memo(page), "no UTF-16 maxlength on the account memo").not.toHaveAttribute("maxlength", /.*/);
