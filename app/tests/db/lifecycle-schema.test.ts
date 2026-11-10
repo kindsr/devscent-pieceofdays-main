@@ -83,6 +83,7 @@ async function expectLifecycleApplied(db: DisposableDatabase): Promise<void> {
   ).toEqual([
     { version: 1, name: "init" },
     { version: 2, name: "account_lifecycle" },
+    { version: 3, name: "reflection_time" },
   ]);
 }
 

@@ -9,6 +9,7 @@ import { DIARY_TEXT, dateLabel, momentsOf, signIn, statusWith, topAdd } from "./
 const dialog = (page: Page) => page.getByRole("dialog");
 const memo = (page: Page) => dialog(page).getByRole("textbox", { name: "메모" });
 const piece = (page: Page, text: string) => page.getByRole("listitem").filter({ hasText: text });
+const reflectionTime = (page: Page) => page.getByLabel("매일 회고할 시간", { exact: true });
 
 test("PC and phone log in independently to one account without another grant; a PC creation and phone edit survive reload on the other device, calendar and account font agree, and each device logs out independently", async ({ browser, browserName }) => {
   test.setTimeout(180_000);
@@ -115,6 +116,24 @@ test("PC and phone log in independently to one account without another grant; a 
     await expect(pc.getByRole("radio", { name: /^명조/ })).toBeChecked();
     await expect(pc.locator("html")).toHaveAttribute("data-record-font", "serif");
     await expectLayoutOk(pc, `${desktop}: account font settings`);
+
+    // 같은 두 독립 계정 세션에서 회고 시간도 PC→휴대폰, 휴대폰→PC 양방향으로 다시 읽는다.
+    await expect(reflectionTime(pc)).toHaveValue("20:00");
+    await expect(reflectionTime(phone)).toHaveValue("20:00");
+    for (const [writer, reader, value, label] of [
+      [pc, phone, "21:15", `${desktop} to ${mobile}`],
+      [phone, pc, "07:45", `${mobile} to ${desktop}`],
+    ] as const) {
+      await reflectionTime(writer).fill(value);
+      await writer.getByRole("button", { name: "저장", exact: true }).click();
+      await expect(writer.getByText("회고 시간을 저장했어요.", { exact: true })).toBeVisible();
+      await expect(reflectionTime(writer), `${label}: pending has ended before reload`).toBeEnabled();
+      await writer.reload();
+      await expect(reflectionTime(writer)).toHaveValue(value);
+      await reader.reload();
+      await expect(reflectionTime(reader), `${label}: same account reads the stored time`).toHaveValue(value);
+      await expectLayoutOk(reader, `${label}: reflection settings`);
+    }
 
     await phone.getByRole("button", { name: "로그아웃", exact: true }).click();
     await expect(phone).toHaveURL(`${AUTH_BASE}/login?notice=signed_out`);

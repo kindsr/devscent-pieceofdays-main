@@ -77,7 +77,8 @@ vi.mock("@/server/db/pool", async (importOriginal) => {
 });
 
 const ACTIONS_MODULE = path.join(APP_DIR, "src", "app", "actions", "diary.ts");
-const ACTION_NAMES = ["createMomentAction", "updateMomentAction", "deleteMomentAction", "saveSummaryAction", "setFontAction"] as const;
+// PLAN_reflection-time-settings §2: 공개 action 계약이 5개에서 6개로 확장된다.
+const ACTION_NAMES = ["createMomentAction", "updateMomentAction", "deleteMomentAction", "saveSummaryAction", "setFontAction", "setReflectionTimeAction"] as const;
 
 type ActionError =
   | "forbidden"
@@ -87,6 +88,7 @@ type ActionError =
   | "invalid_version"
   | "invalid_date"
   | "invalid_font"
+  | "invalid_reflection_time"
   | "not_found"
   | "conflict";
 type ActionResult<T> = { ok: true; value: T } | { ok: false; error: ActionError };
@@ -96,6 +98,7 @@ type Actions = {
   deleteMomentAction: (id: unknown, expectedVersion: unknown) => Promise<ActionResult<null>>;
   saveSummaryAction: (date: unknown, expectedVersion: unknown, body: unknown) => Promise<ActionResult<{ version: number } | null>>;
   setFontAction: (key: unknown) => Promise<ActionResult<"gothic" | "serif" | "hand">>;
+  setReflectionTimeAction: (time: unknown) => Promise<ActionResult<string>>;
 };
 
 async function freshModule(): Promise<Record<string, unknown>> {
@@ -107,7 +110,7 @@ async function freshModule(): Promise<Record<string, unknown>> {
   }
 }
 
-/** 5개 액션 export를 단언한다. 모듈이나 export가 없으면 이 it만 실패한다(정상 RED). */
+/** 6개 액션 export를 단언한다. 모듈이나 export가 없으면 이 it만 실패한다(정상 RED). */
 async function loadActions(): Promise<Actions> {
   const mod = await freshModule();
   for (const name of ACTION_NAMES) expect(typeof mod[name], `src/app/actions/diary.ts must export function ${name}`).toBe("function");
@@ -169,7 +172,7 @@ function replyFor(mode: DbMode) {
     if (/UPDATE pod\.day_summaries/.test(s))
       return mode === "ok" ? { rows: [{ version: Number(params[2]) + 1 }], rowCount: 1 } : { rows: [], rowCount: 0 };
     if (/DELETE FROM pod\.day_summaries/.test(s)) return { rows: [], rowCount: mode === "ok" ? 1 : 0 };
-    if (/INSERT INTO pod\.preferences/.test(s)) return { rows: [], rowCount: 1 };
+    if (/INSERT INTO pod\.preferences/.test(s)) return { rows: [{ reflection_time: params[1] }], rowCount: 1 };
     if (/SELECT EXISTS/.test(s)) return { rows: [{ user_exists: true, summary_exists: mode === "conflict" }], rowCount: 1 };
     if (/^\s*SELECT 1 /.test(s)) return mode === "conflict" ? { rows: [{ "?column?": 1 }], rowCount: 1 } : { rows: [], rowCount: 0 };
     throw new Error(`unit fake Db: unexpected SQL ${s.slice(0, 60)}`);
@@ -220,6 +223,7 @@ const VALID_CALLS: [(typeof ACTION_NAMES)[number], unknown[]][] = [
   ["deleteMomentAction", [MOMENT_ID, 1]],
   ["saveSummaryAction", [seoulDate(new Date()), null, "맑은 하루"]],
   ["setFontAction", ["serif"]],
+  ["setReflectionTimeAction", ["21:30"]],
 ];
 const call = (a: Actions, name: (typeof ACTION_NAMES)[number], args: unknown[]) =>
   (a[name] as unknown as (...xs: unknown[]) => Promise<unknown>)(...args);
@@ -227,7 +231,7 @@ const call = (a: Actions, name: (typeof ACTION_NAMES)[number], args: unknown[]) 
 // ================================================================= 모듈 모양
 
 describe("module shape (§1)", () => {
-  it("exports exactly the five async actions at runtime", async () => {
+  it("exports exactly the six async actions at runtime", async () => {
     const mod = await freshModule();
     expect(Object.keys(mod).sort(), "runtime exports").toEqual([...ACTION_NAMES].sort());
     for (const name of ACTION_NAMES) expect((mod[name] as { constructor: { name: string } }).constructor.name, name).toBe("AsyncFunction");
@@ -370,6 +374,7 @@ describe("guard 4: only the verified viewer's userId reaches F3 (§1 step 4)", (
       ["deleteMomentAction", [MOMENT_ID, 1, UID_B]],
       ["saveSummaryAction", [seoulDate(new Date()), null, "맑은 하루", UID_B]],
       ["setFontAction", ["hand", UID_B]],
+      ["setReflectionTimeAction", ["21:30", UID_B, { userId: UID_B }]],
     ];
     for (const [name, args] of extra) {
       h.queries = [];
@@ -484,6 +489,20 @@ describe("input validation before any write", () => {
       newRequest();
       expect(await a.setFontAction(key)).toEqual({ ok: true, value: key });
       expect(mutations().at(-1)!.params).toEqual([UID_A, key]);
+    }
+  });
+
+  it("reflection time: invalid input returns invalid_reflection_time with SQL 0; valid minute boundaries are saved for the viewer", async () => {
+    const a = await loadActions();
+    for (const time of [undefined, null, 2000, {}, ["20:00"], { time: "20:00", userId: UID_B }, "", "24:00", "23:60", "0:00", "20:00:00", " 20:00", "20:00\n", "２０:００"]) {
+      newRequest();
+      expect(await a.setReflectionTimeAction(time)).toEqual({ ok: false, error: "invalid_reflection_time" });
+    }
+    expect(h.queries, "invalid reflection time never reaches SQL").toEqual([]);
+    for (const time of ["00:00", "20:00", "21:30", "23:59"]) {
+      newRequest();
+      expect(await a.setReflectionTimeAction(time)).toEqual({ ok: true, value: time });
+      expect(mutations().at(-1)!.params).toEqual([UID_A, time]);
     }
   });
 });

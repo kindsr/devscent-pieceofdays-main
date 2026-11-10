@@ -36,6 +36,7 @@ import {
 
 // F4 L1(PLAN_account-lifecycle §10·§12): 기본 app/migrations에는 0002_account_lifecycle이 함께 있다.
 const LIFECYCLE_UP = path.join(path.dirname(INIT_UP), "0002_account_lifecycle.up.sql");
+const REFLECTION_UP = path.join(path.dirname(INIT_UP), "0003_reflection_time.up.sql");
 
 let env: HarnessEnv;
 
@@ -81,7 +82,7 @@ describe("migrate CLI: product 0001 up", () => {
     });
   });
 
-  it("up on an empty DB applies 0001 and 0002 from the default app/migrations and records (1, 'init'), (2, 'account_lifecycle') with sha256", async () => {
+  it("up on an empty DB records the default init, account_lifecycle and reflection_time migrations with sha256", async () => {
     const db = await freshDb("mup");
     const r = await runMigrateCli(["up"], db.urls.migrator);
     expectCliOk(r, db.urls.migrator);
@@ -90,13 +91,16 @@ describe("migrate CLI: product 0001 up", () => {
       expect(rows?.map((x) => ({ version: x.version, name: x.name }))).toEqual([
         { version: 1, name: "init" },
         { version: 2, name: "account_lifecycle" },
+        { version: 3, name: "reflection_time" },
       ]);
       const checksum = await sha256File(INIT_UP);
       const lifecycleChecksum = await sha256File(LIFECYCLE_UP);
+      const reflectionChecksum = await sha256File(REFLECTION_UP);
       expect(checksum).toMatch(/^[0-9a-f]{64}$/);
       expect(rows).toEqual([
         { version: 1, name: "init", checksum },
         { version: 2, name: "account_lifecycle", checksum: lifecycleChecksum },
+        { version: 3, name: "reflection_time", checksum: reflectionChecksum },
       ]);
       for (const t of USER_DATA_TABLES) expect(await relationExists(c, `pod.${t}`), `pod.${t}`).toBe(true);
       const owners = await c.query<{ tablename: string; tableowner: string }>(
@@ -297,7 +301,7 @@ describe("migrate CLI: down protection (product 0001)", () => {
     expectCliFail(r, db.urls.migrator);
     await withOwner(env, db, async (c) => {
       expect(await schemaSnapshot(c)).toEqual(snap);
-      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2]);
+      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2, 3]);
     });
   });
 
@@ -310,7 +314,7 @@ describe("migrate CLI: down protection (product 0001)", () => {
     expectCliFail(r, db.urls.migrator);
     await withOwner(env, db, async (c) => {
       expect(await schemaSnapshot(c)).toEqual(snap);
-      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2]);
+      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2, 3]);
     });
   });
 
@@ -394,7 +398,7 @@ describe("migrate CLI: down protection (product 0001)", () => {
     expectCliOk(await runMigrateCli(["up"], db.urls.migrator), db.urls.migrator);
     await withOwner(env, db, async (c) => {
       expect(await schemaSnapshot(c)).toEqual(first);
-      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2]);
+      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2, 3]);
     });
   });
 });
