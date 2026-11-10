@@ -33,7 +33,8 @@ test("reflection settings default to 20:00, save explicitly, survive reload and 
   const account = await signIn(page);
   const tap = await tapActions(page);
   try {
-    await page.goto("/settings");
+    await page.getByRole("navigation", { name: "사용자 메뉴", exact: true }).getByRole("link", { name: "설정", exact: true }).click();
+    await expect(page).toHaveURL(`${AUTH_BASE}/settings`);
     await expect(time(page)).toHaveValue("20:00");
     await expect(time(page)).toHaveAttribute("type", "time");
     await expect(time(page)).toHaveAttribute("step", "60");
