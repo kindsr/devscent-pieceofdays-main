@@ -120,7 +120,8 @@ test("01 exact helper configuration and the complete outer fragment pass real ng
     assert.match(body, /\baccess_log\s+off\s*;/);
     assert.match(body, /\berror_log\s+\/dev\/null\s+crit\s*;/);
     assert.deepEqual([...body.matchAll(/proxy_pass\s+([^;]+);/g)].map((m) => m[1]), ["$pieceofdays_dev_web"]);
-    assert.doesNotMatch(body, /\b(add_header|auth_basic|auth_basic_user_file|allow|deny|satisfy|proxy_hide_header|return|rewrite)\s/, "photo proposal inherits server security and does not bypass Basic/IP");
+    assert.deepEqual([...body.matchAll(/\bproxy_hide_header\s+([^;]+);/g)].map((m) => m[1].trim()), ["X-Content-Type-Options"], "hide only the upstream nosniff once; retain the server's single security header");
+    assert.doesNotMatch(body, /\b(add_header|auth_basic|auth_basic_user_file|allow|deny|satisfy|return|rewrite)\s/, "photo proposal inherits server security and does not bypass Basic/IP");
   }
 });
 
