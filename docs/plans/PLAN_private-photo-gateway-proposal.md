@@ -8,6 +8,7 @@
 
 - 공개 가능한 신규 snippet `app/tests/fixtures/front/outer-photos.conf`에 정확 두 location만 둔다: `= /photos/upload`는9m, `^~ /photos/`는1m. 각 access_log off·error_log /dev/null crit. 기존 `$pieceofdays_dev_web`·generic proxy 헤더/timeout을 재사용한다.
 - Basic/IP·server headers·upstream 변수 정의·기존 callback exact2/단일 no-referrer·callback safe JSON·generic/static·다른 domain·TLS는 바꾸지 않는다. 사진 location에 add_header를 추가해 기존 server 보안 header 상속을 끊지 않는다.
+- 실제11341f7 CI의 사진401 응답에서 앱과 outer server의 `X-Content-Type-Options`가 겹쳐 `nosniff, nosniff`로 관측됐다. 사진 두 location은 정확 `proxy_hide_header X-Content-Type-Options;` 한 개씩만 사용해 upstream 중복을 제거하고 기존 server의 `nosniff always` 한 값을 상속한다. 다른 hide·보안값 변경은 허용하지 않으며 단일nosniff 검사는 유지한다. main이 실제 include의해당지시문과hash를읽기확인했고실제반영직전동일성을다시확인한다.
 - main은 실제 동결 config의 SHA256과 generic proxy block을 대조해 비공개 제안 사본/정확 diff를 준비한다. 공개 repo에 실제 경로·포트·자격을 싣지 않는다. 제안이 검토됐다는 이유로 실제 파일을 적용하거나 reload하지 않는다.
 
 ## 2. RED와 후보 검증
