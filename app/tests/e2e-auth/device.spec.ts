@@ -4,7 +4,7 @@
 // Chromium PC↔WebKit iPhone・WebKit PC↔Chromium Android emulation이며 실제 기기·Google 검증은 아니다.
 import { chromium, devices, expect, test, webkit, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { AUTH_BASE, TEXT, accountOf, expectLayoutOk } from "./support";
-import { DIARY_TEXT, dateLabel, serverSeoulToday, signIn, topAdd } from "./diary-support";
+import { DIARY_TEXT, dateLabel, momentsOf, signIn, topAdd } from "./diary-support";
 
 const dialog = (page: Page) => page.getByRole("dialog");
 const memo = (page: Page) => dialog(page).getByRole("textbox", { name: "메모" });
@@ -46,7 +46,6 @@ test("PC and phone log in independently to one account without another grant; a 
     await expect(phone.getByText(DIARY_TEXT.empty, { exact: true })).toBeVisible();
     await expectLayoutOk(phone, `${mobile}: empty board`);
 
-    const today = await serverSeoulToday();
     const initial = "PC에서 작성한 기기 호환 조각";
     const edited = "휴대폰에서 고친 같은 계정의 조각";
     await topAdd(pc).click();
@@ -55,10 +54,16 @@ test("PC and phone log in independently to one account without another grant; a 
     await memo(pc).fill(initial);
     await dialog(pc).getByRole("button", { name: "저장", exact: true }).click();
     await expect(dialog(pc)).toHaveCount(0);
+    const saved = await momentsOf(account.userId);
+    expect(saved, "one piece was committed through the PC UI").toHaveLength(1);
+    expect(saved[0]!.body).toBe(initial);
+    const recordDate = saved[0]!.localDate;
+    const recordPath = `/days/${recordDate}`;
+    await pc.goto(recordPath);
     await expect(piece(pc, initial)).toHaveCount(1);
-    expect(await serverSeoulToday(), "the server Seoul date did not roll over during creation").toBe(today);
     await expectLayoutOk(pc, `${desktop}: saved board`);
 
+    await phone.goto(recordPath);
     await phone.reload();
     await expect(piece(phone, initial)).toHaveCount(1);
     await expectLayoutOk(phone, `${mobile}: reloaded PC creation`);
@@ -79,11 +84,11 @@ test("PC and phone log in independently to one account without another grant; a 
     for (const [page, device] of [[pc, desktop], [phone, mobile]] as const) {
       await page.getByRole("link", { name: "모아보기", exact: true }).click();
       await expect(page.getByRole("heading", { level: 1, name: "모아보기", exact: true })).toBeVisible();
-      const day = page.getByRole("link", { name: `${dateLabel(today)}, 조각 1개`, exact: true });
+      const day = page.getByRole("link", { name: `${dateLabel(recordDate)}, 조각 1개`, exact: true });
       await expect(day).toBeVisible();
       await expectLayoutOk(page, `${device}: calendar`);
       await day.click();
-      await expect(page).toHaveURL(`${AUTH_BASE}/days/${today}`);
+      await expect(page).toHaveURL(`${AUTH_BASE}${recordPath}`);
       await expect(piece(page, edited)).toHaveCount(1);
       await expectLayoutOk(page, `${device}: day detail`);
     }
@@ -108,24 +113,24 @@ test("PC and phone log in independently to one account without another grant; a 
     await phone.getByRole("button", { name: "로그아웃", exact: true }).click();
     await expect(phone).toHaveURL(`${AUTH_BASE}/login?notice=signed_out`);
     await expect(phone.getByText(TEXT.signedOut, { exact: true })).toBeVisible();
-    await phone.goto("/");
+    await phone.goto(recordPath);
     const phoneLogin = new URL(phone.url());
-    expect([phoneLogin.pathname, phoneLogin.searchParams.get("returnTo")]).toEqual(["/login", "/"]);
+    expect([phoneLogin.pathname, phoneLogin.searchParams.get("returnTo")]).toEqual(["/login", recordPath]);
     await expect(phone.getByRole("heading", { level: 1, name: TEXT.loginTitle })).toBeVisible();
     await expectLayoutOk(phone, `${mobile}: signed out`);
 
     await pc.reload();
     await expect(pc.getByRole("button", { name: "로그아웃", exact: true }), "phone logout leaves the PC session active").toBeVisible();
-    await pc.goto("/");
+    await pc.goto(recordPath);
     await expect(piece(pc, edited)).toHaveCount(1);
     await expect(pc.locator("html")).toHaveAttribute("data-record-font", "serif");
     await pc.goto("/settings");
     await pc.getByRole("button", { name: "로그아웃", exact: true }).click();
     await expect(pc).toHaveURL(`${AUTH_BASE}/login?notice=signed_out`);
     await expect(pc.getByText(TEXT.signedOut, { exact: true })).toBeVisible();
-    await pc.goto("/");
+    await pc.goto(recordPath);
     const pcLogin = new URL(pc.url());
-    expect([pcLogin.pathname, pcLogin.searchParams.get("returnTo")]).toEqual(["/login", "/"]);
+    expect([pcLogin.pathname, pcLogin.searchParams.get("returnTo")]).toEqual(["/login", recordPath]);
     await expect(pc.getByRole("heading", { level: 1, name: TEXT.loginTitle })).toBeVisible();
     await expectLayoutOk(pc, `${desktop}: signed out`);
   } finally {
