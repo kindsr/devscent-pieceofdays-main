@@ -1,6 +1,6 @@
 # PLAN — 비공개 사진으로 하루 조각 남기기
 
-- 상태: 2026-11-10 앱 구현 후보 작성·독립 소스 검토 완료, 전체 GREEN CI 전. 사진 기능의 실제 서비스 보관/게시 성공을 뜻하지 않는다.
+- 상태: 2026-11-10 앱 후보b0e4039의 전체 CI·독립 소스/실행·합성 시각 검토 통과. helper/front·패키징/자원 검증 보완 진행 중. 사진 기능의 실제 서비스 보관/게시 성공을 뜻하지 않는다.
 - 선행: [회고 시간 설정](PLAN_reflection-time-settings.md) migration0003 이후 다음번호0004 사용. 기존1~3 변경0.
 - 목표: PC·휴대폰에서 사진1장+짧은 메모를 남기고, 같은 계정의 다른 기기·날짜별 화면에서 다시 읽는다. 예시 SVG나 브라우저 임시 저장으로 실제 사진을 대체하지 않는다.
 - 근거: [사용자 핵심 요구](PLAN_ai-daily-story-core.md), [기존 S3 호환 비공개 버킷 선택](../product/00_TECH_STACK_DECISION.md#3-데이터저장소권한-계약).
@@ -102,6 +102,14 @@ client `photo`는 `photo?: {src:string;width:number;height:number}`이며 src는
 - 실제 HTTP S3 roundtrip의 CI fixture는 **SeaweedFS4.53**, linux/amd64 `chrislusf/seaweedfs:4.53@sha256:972ba30c529dfc72a6a12ed427e94d99c7b6a6e59d97bfa52be0a849f43e2cc9`다. 공식tag/source revision `4ab66fb76da83700739f5839e62fcaf15fb7d02a`·manifest rawhash/OCI label 일치를 읽기 확인했다. Apache2, `mini -dir=/data`·가짜 AWS key/secret/S3_BUCKET으로 사설 초기 bucket을 구성한다. [최종 RED CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42868890115)의 auth job130014508883에서 실제 Put/Get/hash/Delete/Get404·익명/잘못된 자격 거부 preflight를 통과했다. 제품 저장 성공이나 provider 운영 선택과 구분한다.
 - 기존 auth globalSetup의 명시 child env allowlist에 가짜 사진 설정5키만 더하고, 소유한 loopback publish Docker fixture1개를 추적·finally 정리한다. 준비성은 HeadBucket→가짜 Put/Get/hash/Delete/Get404와 익명/잘못된 자격 거부로 확인한다. handler/UI는 실제 이 endpoint를 사용한다. mock backend만으로 이를 대체하지 않는다.
 - 기존 auth callee/workflow 본문을 바꾸지 않고 같은 SHA의 필수 auth 검사에 새 사진 사례·기존 두 device 여정 사진 readback을 포함한다. Playwright config의 WebKit 기존 device 제한도 보존한다. 소유 helper·globalSetup 변경은 RED 시험 범위로 명시한다. 호스트 Docker/npm/브라우저0, 실행은 Actions만.
+
+### 실행 근거와 남은 범위
+
+- 앱 후보 [b0e4039 앱CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42876488886): Node24/26 각 단위295·빌드 경계7·운영12·fixture12·lint/type/build, DB197·auth41 전부 통과했다. 실제 S3 준비/왕복·삭제CLI·사진3+두 교차엔진 기기 여정을 포함한다. [root](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42876488865)108/구조128과 [이미지](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42876488850)·[독립front](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42876488825)의 각 image6/front14/원문preview10도 통과했다.
+- [합성 PNG15](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42876488855/artifacts/13793050074)는 사진 읽기·파일 미리보기·회고20:00을5상태×3폭에서 표시했다. 정확15파일/hash·POST/외부/cookie0·소스/CSS 동일·정리를 확인하고 메인이 직접 대조했다. 임시 합성 GET의 시각 증거를 실제 저장/권한/물리기기 증거로 세지 않는다.
+- helper RED d4257be: root108의 failures4/errors4·parity29의26pass/3fail·front14의10pass/4fail은 사진 env·location 부재의 의도 실패로 독립 검토했다. front05는 첫 사진GET404에서 중단돼9MiB·chunked 검증은 GREEN 때 회수한다. 기존 image6/원문preview10은 해당 front job에서 통과했다.
+- 기존 image case2에 raw cleanup CLI eager import/가짜 설정 생성자와 합성40MP JPEG/PNG/WebP Sharp 의존성의512MiB/no-swap 검증을 추가한다. 이는 패키징/네이티브 자원 검증 보완이며 새 의도RED라고 주장하지 않는다. source `normalizePhoto`나 Next 앱 전체의 최대 입력/동시 요청512MiB 적합성은 별도 통합 검증이 남는다.
+- 실제 S3 인스턴스/HTTPS·전용 자격과 삭제 소비, 외곽 body/log 실효 설정·제안, DB0003/0004·승인 상한, 설치본·Google B5·물리기기·활성화는 미완료다. dev 정적/OFF·dev/main push 보류를 유지한다.
 
 ## 6. AI 단계와의 연결
 
