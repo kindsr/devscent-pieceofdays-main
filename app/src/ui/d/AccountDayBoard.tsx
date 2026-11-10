@@ -95,7 +95,6 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
     if (saved) {
       savedPhoto.current = null;
       if (day.moments.some((moment) => moment.id === saved.id && moment.photo)) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 서버 refresh가 끝난 뒤 실제 사진 조각을 확인해야 작성창을 닫는다.
         setLastNewId(saved.id);
         addDraft.current = "";
         photoRequestId.current = null;
@@ -114,7 +113,6 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
     // 사용자 재조회가 끝났을 때만 서버 버전을 채택한다. 자동 props 갱신은 열린 기대 버전을 바꾸지 않는다.
     if (compose && compose.mode !== "add") {
       const current = day.moments.find((m) => m.id === compose.id);
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 명시적인 재조회 완료와 열린 편집 문맥 동기화
       setLatest({ text: current?.text ?? "이 조각은 지워졌어요. 초안은 복사할 수 있어요.", missing: !current });
       if (current) setCompose({ ...compose, version: current.version });
     } else if (summaryDraft) {
