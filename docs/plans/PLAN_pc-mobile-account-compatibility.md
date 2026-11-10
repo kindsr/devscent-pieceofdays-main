@@ -47,3 +47,9 @@
 - 초기 GREEN `1647137`에서 신규 교차 기기 2개는 통과했으나 전체 인증35개 중 기존 UUID 비직렬화 사례가 RSC 본문 수집 부재로 실패했다([원문](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42762198765/job/129650281193)). 식별자 누출을 검출한 실패는 아니며, 뒤의 UUID 검사가 실행되지 않았으므로 보안 검사 통과로 세지 않는다.
 - 별도 시험 전용 커밋은 해당 사례의 실제 키보드 작성·글꼴 선택 직전에 same-origin Server Action POST 응답을 기다린다. 성공 status·RSC content type과 완전한 본문의 UUID 비포함을 확인한 뒤 다음 페이지로 이동한다. 원래 HTML/RSC 존재·UUID·레이아웃·키보드 단언과 기존33개 수량은 유지한다. 응답 취소/늦은 이벤트의 정확한 원인은 미확정이며 간헐 실패로 단정하지 않는다.
 - 신규 RED3파일은 계속 동결한다. 초기 GREEN의 시험 무변경 관문과 후속 시험 전용 교정 관문을 구분하며, 후속 tip 전체를 최초 RED 대비 시험 변경0이라고 보고하지 않는다. 교정 효과는 최종 같은 SHA의 실제 CI로 확인한다.
+
+## 개발 적용 중 확인한 WebKit 로그인 시험 순서
+
+- 사용자 "지금 적용해줘" 뒤 PR77을 통합한 dev `7313f6b`의 [인증 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42769721648/job/129674421713)는35개 중34개 통과, WebKit 기기 사례의 첫 로그인만 탐색 충돌로 실패했다. 자동배포는 차단됐고 정적 서버를 유지한 채 app enable을 다시 껐다. 실패를 재시도나 기기 검사 제외로 통과시키지 않는다.
+- `holdStart`의 mock 결과는 브라우저에 대기 문서를 보내기 전에 확정된다. `beginLogin`은 공급자 버튼과 실제 start 요청을 유지하고, 정확한 start 문서가 load될 때까지 기다린 뒤 callback을 반환한다. 그러면 시작 POST 탐색과 뒤의 callback 탐색을 겹치지 않는다. 제품·세션 주입·쿠키 복사·mock 발급 방식·기존 단언·수량35/구조128·retry0은 바꾸지 않는다.
+- 이 별도 시험 helper 교정과 신규 RED3파일의 동결은 구분한다. 실제 효과는 교정 HEAD의 전체 Actions와 이후 동일 SHA 자동배포 관문으로 확인한다. 실제 Google B5/실기기 완료와30분 복귀 기준은 그대로다.
