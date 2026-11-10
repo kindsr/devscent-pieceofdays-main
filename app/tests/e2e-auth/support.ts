@@ -196,7 +196,11 @@ export async function beginLogin(page: Page, p: Provider, opts: AuthorizeOptions
   try {
     if (loginPath) await page.goto(loginPath);
     await providerButton(page, p).click();
-    return (await held.result()).callback;
+    const result = await held.result();
+    // The mock result can arrive before WebKit commits the held POST document.
+    // Finish that navigation before a caller starts the callback navigation.
+    await page.waitForURL(`${AUTH_BASE}/auth/${p}/start`, { waitUntil: "load" });
+    return result.callback;
   } finally {
     await held.dispose();
   }
