@@ -6,7 +6,7 @@
 // Fourteen real contracts, no skip. #14 also runs the ORIGINAL ten preview cases, no retry/skip.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { expect } from "@playwright/test";
@@ -83,6 +83,10 @@ function receivedPhoto(r, input, body, method) {
   assert.equal(received.bodyLength, body.length, "actual bytes received through nginx");
   assert.equal(received.bodySha256, hash(body), "actual receiving-byte SHA256, not Content-Length alone");
 }
+function gatewayPhotoInput(kind = "get") {
+  const input = photoInput(kind);
+  return { ...input, sentinels: [...input.sentinels, input.headers.Cookie, input.headers.Cookie.slice(input.headers.Cookie.indexOf("=") + 1)] };
+}
 
 test("01 exact helper configuration and the complete outer fragment pass real nginx syntax checks; immutable image identity", OPTIONS, async (t) => {
   for (const name of [h.names.front, h.names.outer]) await docker(["exec", name, "nginx", "-t"]);
@@ -99,6 +103,25 @@ test("01 exact helper configuration and the complete outer fragment pass real ng
   assert.equal(image.Config.Labels["pod.tree"], (await command("git", ["rev-parse", "HEAD^{tree}"])).stdout.trim());
   t.diagnostic(`immutable app image ${h.image}; public fragment sha256 ${h.fragmentHash}`);
   for (const record of await h.logs()) t.diagnostic(`${record.sink}: stdout and stderr positive collection controls observed`);
+  assert.equal(typeof h.photoFragmentHash, "string", "the actual outer fixture must expose the public photo fragment hash (not implemented yet)");
+  assert.match(h.photoFragmentHash, /^[0-9a-f]{64}$/, "photo fragment hash is a raw SHA256");
+  const photoFragmentPath = path.join(APP_DIR, "tests/fixtures/front/outer-photos.conf");
+  assert.ok(existsSync(photoFragmentPath), "the reviewed public photo snippet must exist before reading it");
+  const photoFragment = readFileSync(photoFragmentPath, "utf8");
+  assert.ok(photoFragment.trim().length > 0, "photo proposal is not an empty placeholder");
+  assert.equal(hash(photoFragment), h.photoFragmentHash, "real outer fixture and public snippet use the same bytes");
+  assert.ok(outer.includes(photoFragment), "the complete public photo fragment is included verbatim in actual nginx config");
+  const photoLocations = [...photoFragment.matchAll(/location\s+(=|\^~)\s+(\S+)\s*\{([^{}]*)\}/g)];
+  assert.deepEqual(photoLocations.map((m) => [m[1], m[2]]).sort(), [["=", "/photos/upload"], ["^~", "/photos/"]].sort(), "exactly the two reviewed photo locations");
+  assert.equal([...photoFragment.matchAll(/\blocation\s/g)].length, 2, "no additional outer routes");
+  for (const location of photoLocations) {
+    const body = location[3];
+    assert.deepEqual([...body.matchAll(/client_max_body_size\s+([^;]+);/g)].map((m) => m[1]), [location[1] === "=" ? "9m" : "1m"]);
+    assert.match(body, /\baccess_log\s+off\s*;/);
+    assert.match(body, /\berror_log\s+\/dev\/null\s+crit\s*;/);
+    assert.deepEqual([...body.matchAll(/proxy_pass\s+([^;]+);/g)].map((m) => m[1]), ["$pieceofdays_dev_web"]);
+    assert.doesNotMatch(body, /\b(add_header|auth_basic|auth_basic_user_file|allow|deny|satisfy|proxy_hide_header|return|rewrite)\s/, "photo proposal inherits server security and does not bypass Basic/IP");
+  }
 });
 
 test("02 actual Next with no providers: login preparation and configuration-before-Origin 503", OPTIONS, async () => {
@@ -198,6 +221,35 @@ test("05 receiving-byte observer proves query, Origin, Cookie and fixed Host thr
         if (target.startsWith("/photos/")) await noPhotoSentinels([target, ...input.sentinels.slice(1)]);
       }
     }
+    const outerGet = gatewayPhotoInput();
+    const outerResponse = await h.edgeRequest(outerGet.target, { headers: { ...outerGet.headers, Host: "forged.invalid", "X-Forwarded-Host": "forwarded.invalid", "X-Forwarded-Proto": "http" } });
+    receivedPhoto(outerResponse, outerGet, Buffer.alloc(0), "GET");
+    security(outerResponse, "strict-origin-when-cross-origin");
+    await h.noSentinels(outerGet.sentinels);
+    for (const chunked of [false, true]) {
+      const input = gatewayPhotoInput("upload");
+      const body = boundary.subarray(0, max);
+      const headers = { ...input.headers, Host: "forged.invalid", Origin: chunked ? "https://origin.invalid" : BASE,
+        "X-Forwarded-Host": "forwarded.invalid", "X-Forwarded-Proto": "http", "Content-Type": "application/octet-stream",
+        ...(chunked ? {} : { "Content-Length": String(body.length) }) };
+      const r = await h.edgeRequest(input.target, { method: "POST", headers, body, chunked });
+      receivedPhoto(r, { ...input, headers }, body, "POST");
+      security(r, "strict-origin-when-cross-origin");
+      await h.noSentinels(input.sentinels);
+      const over = gatewayPhotoInput("upload");
+      const rejected = await h.edgeRequest(over.target, { method: "POST", headers: { ...over.headers, ...(chunked ? {} : { "Content-Length": String(boundary.length) }) }, body: boundary, chunked });
+      assert.equal(rejected.status, 413, "outer→front exact upload rejects 9MiB+1 including chunked input");
+      security(rejected, "strict-origin-when-cross-origin");
+      await h.noSentinels(over.sentinels);
+      for (const target of [`/photos/${randomUUID()}`, "/photos/upload/", "/login"]) {
+        const input = gatewayPhotoInput();
+        const body = boundary.subarray(0, 1024 * 1024 + 1);
+        const r = await h.edgeRequest(`${target}?probe=${input.marker}%2Bvalue`, { method: "POST", headers: { ...input.headers, ...(chunked ? {} : { "Content-Length": String(body.length) }) }, body, chunked });
+        assert.equal(r.status, 413, "outer photo prefix and ordinary paths retain the 1MiB limit");
+        security(r, "strict-origin-when-cross-origin");
+        if (target.startsWith("/photos/")) await h.noSentinels([target, ...input.sentinels.slice(1)]);
+      }
+    }
   } finally { await h.upstream("off"); }
 });
 
@@ -279,6 +331,29 @@ test("07 fake HTTPS provider configuration: real login/assets/links, no-store an
     assert.equal(r.headers["set-cookie"], undefined);
     await noPhotoSentinels(input.sentinels);
   }
+  const outerInput = gatewayPhotoInput();
+  const outerGet = await h.edgeRequest(outerInput.target, { headers: outerInput.headers });
+  assert.equal(outerGet.status, 401, "outer Basic permits the request but actual Next still requires a signed-in photo owner");
+  privatePhoto(outerGet);
+  security(outerGet, "strict-origin-when-cross-origin");
+  assert.equal(outerGet.headers.location, undefined);
+  assert.equal(outerGet.headers["set-cookie"], undefined);
+  assert.ok(!outerGet.body.toString().includes(outerInput.id), "whole-chain private error does not echo the photo id");
+  await h.noSentinels(outerInput.sentinels);
+  for (const origin of [undefined, "null", "https://wrong.invalid", BASE]) {
+    const input = gatewayPhotoInput("upload");
+    const headers = { ...input.headers, "Content-Type": "application/octet-stream", Host: "forged.invalid", "X-Forwarded-Host": "forwarded.invalid", "X-Forwarded-Proto": "http" };
+    if (origin === undefined) delete headers.Origin;
+    else headers.Origin = origin;
+    const r = await h.edgeRequest(input.target, { method: "POST", headers, body: Buffer.from("ci-only-not-multipart") });
+    assert.equal(r.status, origin === BASE ? 401 : 403, "both proxies preserve the actual Next Origin/viewer-before-body guard");
+    assert.deepEqual(JSON.parse(r.body), { ok: false, error: origin === BASE ? "not_signed_in" : "forbidden" });
+    privatePhoto(r);
+    security(r, "strict-origin-when-cross-origin");
+    assert.equal(r.headers.location, undefined);
+    assert.equal(r.headers["set-cookie"], undefined);
+    await h.noSentinels(input.sentinels);
+  }
 });
 
 test("08 actual logout POST preserves Origin decisions and never uses forged Host for Location", OPTIONS, async () => {
@@ -357,6 +432,20 @@ test("11 outer server Basic/IP restrictions and default security headers are inh
     const rows = await h.safeRows();
     safeRow(rows.filter((row) => row.uri === `/auth/${provider}/callback`).at(-1), provider, 401);
   }
+  for (const kind of ["get", "upload"]) {
+    for (const authorization of [undefined, "Basic d3Jvbmc6d3Jvbmc="]) {
+      const input = gatewayPhotoInput(kind);
+      const r = await request(h.outerPort, input.target, { method: kind === "upload" ? "POST" : "GET", headers: { ...input.headers, ...(authorization ? { Authorization: authorization } : {}) } });
+      assert.equal(r.status, 401, "photo locations inherit server Basic authentication");
+      security(r, "strict-origin-when-cross-origin");
+      await h.noSentinels(input.sentinels);
+    }
+    const input = gatewayPhotoInput(kind);
+    const denied = await command("docker", ["exec", h.names.outer, "wget", "-q", "-O", "-", "--header", `Authorization: ${BASIC}`, "--header", `Referer: ${input.headers.Referer}`, "--header", `Cookie: ${input.headers.Cookie}`, "--header", `Origin: ${BASE}`, `http://127.0.0.1${input.target}`]);
+    assert.notEqual(denied.code, 0, "correct Basic cannot bypass the photo location's inherited server IP restriction");
+    assert.ok(denied.stderr.includes("403"), "photo IP deny is an actual 403, not a connection error");
+    await h.noSentinels(input.sentinels);
+  }
 });
 
 test("12 BOTH proxies to actual Next retain one no-referrer/security/no-store and emit safe callback JSON only", OPTIONS, async () => {
@@ -391,6 +480,13 @@ test("13 BOTH proxies with app-down and front-down preserve safe 502 access reco
         security(r);
         const rows = await h.safeRows();
         safeRow(rows.filter((row) => row.uri === `/auth/${provider}/callback`).at(-1), provider, 502);
+        await h.noSentinels(input.sentinels);
+      }
+      for (const kind of ["get", "upload"]) {
+        const input = gatewayPhotoInput(kind);
+        const r = await h.edgeRequest(input.target, { method: kind === "upload" ? "POST" : "GET", headers: input.headers });
+        assert.equal(r.status, 502, "whole-chain photo request gets a real 502 for the selected app/front outage");
+        security(r, "strict-origin-when-cross-origin");
         await h.noSentinels(input.sentinels);
       }
     });
