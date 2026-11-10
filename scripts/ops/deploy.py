@@ -63,7 +63,8 @@ STATIC_SETTINGS = frozenset({"runtime_working_dir", "bootstrap_record", "health_
 APP_SETTINGS = frozenset({"app_mode_enabled", "app_env_file", "db_network", "app_health_url", "app_role", "db_host", "dev_db", "server_arch", "front_subnet", "egress_subnet"})
 APP_ENV_REQUIRED = ("POD_AUTH_SESSION_SECRETS", "POD_AUTH_BASE_URL", "POD_AUTH_PROVIDERS", "POD_DATABASE_URL")
 APP_ENV_PROVIDERS = ("google", "kakao")
-APP_ENV_KEYS = frozenset(APP_ENV_REQUIRED + ("POD_WITHDRAWAL_ENABLED",) + tuple("POD_AUTH_%s_CLIENT_%s" % (p.upper(), part) for p in APP_ENV_PROVIDERS for part in ("ID", "SECRET")))
+APP_ENV_PHOTOS = ("POD_PHOTOS_S3_ENDPOINT", "POD_PHOTOS_S3_REGION", "POD_PHOTOS_S3_BUCKET", "POD_PHOTOS_S3_ACCESS_KEY_ID", "POD_PHOTOS_S3_SECRET_ACCESS_KEY")
+APP_ENV_KEYS = frozenset(APP_ENV_REQUIRED + APP_ENV_PHOTOS + ("POD_WITHDRAWAL_ENABLED",) + tuple("POD_AUTH_%s_CLIENT_%s" % (p.upper(), part) for p in APP_ENV_PROVIDERS for part in ("ID", "SECRET")))
 APP_ENV_MAX_BYTES = 64 * 1024
 IMAGE_ENV_FIXED = {"NODE_ENV": "production", "NEXT_TELEMETRY_DISABLED": "1", "PORT": "3000", "HOSTNAME": "0.0.0.0"}
 IMAGE_ENV_FREE = frozenset({"PATH", "NODE_VERSION", "YARN_VERSION"})
@@ -95,6 +96,8 @@ DEV_FRONT_NGINX_CONF = (
     # OIDC callbacks: exact matches win over `^~ /auth/`; same upstream, no logs for code/state/referrer,
     # and no other directive so the server-level fixed headers and as-sent Origin/Cookie are inherited.
     + "".join("    location = /auth/%s/callback { access_log off; error_log /dev/null crit; proxy_pass http://pieceofdays-app-dev:3000; }\n" % provider for provider in ("google", "kakao"))
+    + "    location = /photos/upload { client_max_body_size 9m; access_log off; error_log /dev/null crit; proxy_pass http://pieceofdays-app-dev:3000; }\n"
+    + "    location ^~ /photos/ { access_log off; error_log /dev/null crit; proxy_pass http://pieceofdays-app-dev:3000; }\n"
     + "\n"
     + "".join("    location = /%s { }\n    location ^~ /%s/ { }\n" % (name, name) for name in STATIC_DIRECTORIES)
     + "\n"
@@ -616,6 +619,26 @@ def validate_app_env(text, settings):
                 raise ValueError("app env: " + key + " must be set exactly when its provider is listed")
     if "POD_WITHDRAWAL_ENABLED" in values and values["POD_WITHDRAWAL_ENABLED"] != "1":
         raise ValueError("app env: POD_WITHDRAWAL_ENABLED must be 1 when present")
+    if any(key in values for key in APP_ENV_PHOTOS):
+        if not all(key in values for key in APP_ENV_PHOTOS):
+            raise ValueError("app env: photo settings must contain all five keys when present")
+        for key in APP_ENV_PHOTOS:
+            if " " in values[key]:
+                raise ValueError("app env: value of " + key + " must not contain spaces")
+        endpoint = values["POD_PHOTOS_S3_ENDPOINT"]
+        try:
+            parsed = urllib.parse.urlsplit(endpoint)
+            if (re.fullmatch(r"https://(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?/?", endpoint) is None
+                    or not parsed.hostname or (parsed.port is not None and not 1 <= parsed.port <= 65535)):
+                raise ValueError("invalid photo endpoint")
+        except ValueError:
+            raise ValueError("app env: POD_PHOTOS_S3_ENDPOINT must be an HTTPS root URL without userinfo, query or fragment and with a valid port") from None
+        if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", values["POD_PHOTOS_S3_REGION"]) is None:
+            raise ValueError("app env: POD_PHOTOS_S3_REGION has invalid format")
+        bucket = values["POD_PHOTOS_S3_BUCKET"]
+        if (re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket) is None or ".." in bucket
+                or ".-" in bucket or "-." in bucket or re.fullmatch(r"\d+\.\d+\.\d+\.\d+", bucket) is not None):
+            raise ValueError("app env: POD_PHOTOS_S3_BUCKET has invalid format")
     try:
         secrets = json.loads(values["POD_AUTH_SESSION_SECRETS"], object_pairs_hook=unique_json_object)
     except ValueError:
