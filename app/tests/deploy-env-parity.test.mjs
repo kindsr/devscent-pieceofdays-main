@@ -42,6 +42,13 @@ const BASE_ENTRIES = [
   ["POD_AUTH_GOOGLE_CLIENT_SECRET", "ci-only-parity-google-secret"],
   ["POD_DATABASE_URL", "postgres://pod_app_dev:ci-only-parity-pass@ci-only-pg18/pod_dev"],
 ];
+const PHOTO_ENTRIES = [
+  ["POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/"],
+  ["POD_PHOTOS_S3_REGION", "ci-only-region-1"],
+  ["POD_PHOTOS_S3_BUCKET", "ci-only-private-photos"],
+  ["POD_PHOTOS_S3_ACCESS_KEY_ID", "ci-only-photo-access+/=key"],
+  ["POD_PHOTOS_S3_SECRET_ACCESS_KEY", "ci-only-photo-secret+/==value"],
+];
 const lines = (entries) => entries.map(([k, v]) => `${k}=${v}\n`).join("");
 const replace = (entries, key, value) => entries.map(([k, v]) => [k, k === key ? value : v]);
 
@@ -115,10 +122,11 @@ const VALID = {
     ["POD_AUTH_KAKAO_CLIENT_SECRET", "ci-only-parity-kakao-secret"],
     ["POD_WITHDRAWAL_ENABLED", "1"],
     ["POD_DATABASE_URL", "postgresql://pod_app_dev:ci-only-parity-pass@ci-only-pg18/pod_dev"],
+    ...PHOTO_ENTRIES,
   ]),
-  "comments and blank lines": `# ci-only comment\n\n${lines(BASE_ENTRIES)}\n# trailing comment\n`,
+  "comments and blank lines": `# ci-only comment\n\n${lines([...BASE_ENTRIES, ...replace(PHOTO_ENTRIES, "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid:9000/")])}\n# trailing comment\n`,
   "= and inner spaces kept in values": lines(
-    replace(replace(BASE_ENTRIES, "POD_AUTH_GOOGLE_CLIENT_SECRET", "ci-only=parity==secret"), "POD_AUTH_GOOGLE_CLIENT_ID", "ci-only parity client"),
+    [...replace(replace(BASE_ENTRIES, "POD_AUTH_GOOGLE_CLIENT_SECRET", "ci-only=parity==secret"), "POD_AUTH_GOOGLE_CLIENT_ID", "ci-only parity client"), ...PHOTO_ENTRIES],
   ),
   "percent-encoded password": lines(replace(BASE_ENTRIES, "POD_DATABASE_URL", "postgres://pod_app_dev:ci%2Donly%40pass@ci-only-pg18/pod_dev")),
   "no trailing newline": lines(BASE_ENTRIES).slice(0, -1),
@@ -161,12 +169,65 @@ const REJECTED = {
   "forbidden fixture": `${base}POD_LOCAL_FIXTURE=1\n`,
 };
 
+// Keep all 29 original top-level cases. These are additional vectors inside the
+// existing forbidden-fixture case, not child tests/count-changing placeholders.
+const PHOTO_REJECTED = [];
+for (let mask = 1; mask < (1 << PHOTO_ENTRIES.length) - 1; mask++) {
+  PHOTO_REJECTED.push([`partial photos ${mask}`, lines([...BASE_ENTRIES, ...PHOTO_ENTRIES.filter((_entry, bit) => mask & (1 << bit))])]);
+}
+for (const [label, key, value] of [
+  ["HTTP", "POD_PHOTOS_S3_ENDPOINT", "http://ci-only-photos.invalid/"],
+  ["isolated HTTP is not deploy config", "POD_PHOTOS_S3_ENDPOINT", "http://127.0.0.1:8333/"],
+  ["userinfo", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-user:ci-only-pass@ci-only-photos.invalid/"],
+  ["empty userinfo", "POD_PHOTOS_S3_ENDPOINT", "https://@ci-only-photos.invalid/"],
+  ["empty password userinfo", "POD_PHOTOS_S3_ENDPOINT", "https://:@ci-only-photos.invalid/"],
+  ["empty query", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/?"],
+  ["query", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/?ci-only=1"],
+  ["empty fragment", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/#"],
+  ["fragment", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/#ci-only"],
+  ["path", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/bucket"],
+  ["normalized path", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/a/../"],
+  ["double slash", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid//"],
+  ["invalid port", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid:word/"],
+  ["port overflow", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid:65536/"],
+  ["endpoint whitespace", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only photos.invalid/"],
+  ["region case", "POD_PHOTOS_S3_REGION", "CI-region"],
+  ["region punctuation", "POD_PHOTOS_S3_REGION", "ci_region"],
+  ["region length", "POD_PHOTOS_S3_REGION", "r".repeat(64)],
+  ["region start", "POD_PHOTOS_S3_REGION", "-ci-region"],
+  ["short bucket", "POD_PHOTOS_S3_BUCKET", "ab"],
+  ["long bucket", "POD_PHOTOS_S3_BUCKET", "b".repeat(64)],
+  ["bucket case", "POD_PHOTOS_S3_BUCKET", "CI-bucket"],
+  ["bucket punctuation", "POD_PHOTOS_S3_BUCKET", "ci_bucket"],
+  ["bucket start", "POD_PHOTOS_S3_BUCKET", "-ci-bucket"],
+  ["bucket end", "POD_PHOTOS_S3_BUCKET", "ci-bucket."],
+  ["bucket dots", "POD_PHOTOS_S3_BUCKET", "ci..bucket"],
+  ["bucket dot dash", "POD_PHOTOS_S3_BUCKET", "ci.-bucket"],
+  ["bucket dash dot", "POD_PHOTOS_S3_BUCKET", "ci-.bucket"],
+  ["bucket IP", "POD_PHOTOS_S3_BUCKET", "127.0.0.1"],
+  ...PHOTO_ENTRIES.flatMap(([key, value]) => [
+    [`${key} empty`, key, ""], [`${key} leading space`, key, ` ${value}`],
+    [`${key} trailing space`, key, `${value} `], [`${key} inner space`, key, "ci-only photo-value"],
+  ]),
+]) PHOTO_REJECTED.push([label, lines([...BASE_ENTRIES, ...replace(PHOTO_ENTRIES, key, value)])]);
+for (const [key, value] of [
+  ["POD_PHOTO_CLEANUP_DATABASE_URL", "postgres://ci-only-purge.invalid/pod_dev"],
+  ["POD_FULL_CHECK_ISOLATED", "1"], ["POD_TEST_DB_DISPOSABLE", "1"], ["POD_TEST_ADMIN_URL", "postgres://ci-only-owner.invalid/pod_dev"],
+  ["AWS_ACCESS_KEY_ID", "ci-only-ambient-access"], ["AWS_SECRET_ACCESS_KEY", "ci-only-ambient-secret"],
+  ["AWS_SESSION_TOKEN", "ci-only-ambient-token"], ["AWS_ENDPOINT_URL", "https://ci-only-photos.invalid/"],
+  ["AWS_REGION", "ci-only-region-1"], ["AWS_DEFAULT_REGION", "ci-only-region-1"],
+  ["AWS_PROFILE", "ci-only-profile"], ["AWS_SHARED_CREDENTIALS_FILE", "/nonexistent/ci-only-credentials"],
+  ["POD_PHOTOS_S3_EXTRA", "ci-only-not-allowlisted"],
+]) PHOTO_REJECTED.push([key, lines([...BASE_ENTRIES, ...PHOTO_ENTRIES, [key, value]])]);
+
 for (const [label, text] of Object.entries(REJECTED)) {
   test(`Python rejects text outside the Node-identical subset without echoing values: ${label}`, () => {
-    const py = python(text);
-    assert.equal(py.error, "ValueError", `expected ValueError, got ${JSON.stringify(py).slice(0, 120)}`);
-    for (const secret of [SECRET, "ci-only-parity-pass", "ci-only-parity-session-key-1-"]) {
-      assert.ok(!py.message.includes(secret), "error message must not contain values");
+    for (const [vector, input] of [[label, text], ...(label === "forbidden fixture" ? PHOTO_REJECTED : [])]) {
+      const py = python(input);
+      assert.equal(py.error, "ValueError", `${vector}: expected ValueError, got ${JSON.stringify(py).slice(0, 120)}`);
+      for (const secret of [SECRET, "ci-only-parity-pass", "ci-only-parity-session-key-1-", ...PHOTO_ENTRIES.map((entry) => entry[1])]) {
+        assert.ok(!py.message.includes(secret), `${vector}: error message must not contain values`);
+      }
     }
   });
 }

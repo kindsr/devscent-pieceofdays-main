@@ -49,17 +49,29 @@ export async function docker(args, timeout) {
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Raw HTTP, without redirect-following or duplicate-header folding. Never print request values. */
-export function request(port, target, { method = "GET", headers = {}, body } = {}) {
+export function request(port, target, { method = "GET", headers = {}, body, chunked = false } = {}) {
+  if (chunked) {
+    assert.ok(Buffer.isBuffer(body) && body.length > 64 * 1024, "chunked boundary probes use a real multi-chunk Buffer");
+    assert.ok(!Object.keys(headers).some((key) => key.toLowerCase() === "content-length"), "chunked probes must not send Content-Length");
+  }
   return new Promise((resolve, reject) => {
-    const req = http.request({ hostname: "127.0.0.1", port, path: target, method, headers: { Host: "dev.pieceofdays.com", ...headers } }, (res) => {
+    let responseStarted = false;
+    const req = http.request({ hostname: "127.0.0.1", port, path: target, method, headers: { Host: "dev.pieceofdays.com", ...headers, ...(chunked ? { "Transfer-Encoding": "chunked" } : {}) } }, (res) => {
+      responseStarted = true;
       const chunks = [];
       res.on("data", (chunk) => chunks.push(chunk));
       res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, rawHeaders: res.rawHeaders, body: Buffer.concat(chunks) }));
       res.on("error", () => reject(new Error("HTTP response failed")));
+      res.on("aborted", () => reject(new Error("HTTP response aborted")));
     });
     req.setTimeout(12_000, () => req.destroy());
-    req.on("error", (err) => reject(new Error(`HTTP request failed (${err.code ?? "timeout"})`)));
-    req.end(body);
+    // An early nginx 413 can stop the writer. Only a completely received HTTP
+    // response resolves above; EPIPE/reset by itself is never a passing status.
+    req.on("error", (err) => { if (!responseStarted) reject(new Error(`HTTP request failed (${err.code ?? "timeout"})`)); });
+    if (chunked) {
+      req.write(body.subarray(0, 64 * 1024));
+      req.end(body.subarray(64 * 1024));
+    } else req.end(body);
   });
 }
 export function values(raw, name) {

@@ -5,11 +5,12 @@
 // POD_IMAGE_TEST_NETWORK (Actions service network ID), POD_IMAGE_TEST_DB_HOST (PG18 alias).
 // Fourteen real contracts, no skip. #14 also runs the ORIGINAL ten preview cases, no retry/skip.
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { expect } from "@playwright/test";
-import { APP_DIR, BASE, BASIC, PROVIDERS, FrontHarness, callbackInput, command, docker, hash, request, values } from "./support/front-harness.mjs";
+import { APP_DIR, BASE, BASIC, PROVIDERS, FrontHarness, callbackInput, command, docker, hash, protect, request, values } from "./support/front-harness.mjs";
 
 const h = new FrontHarness();
 const OPTIONS = { timeout: 300_000 };
@@ -47,6 +48,41 @@ function safeRow(row, provider, status) {
   assert.equal(row.status, status);
   for (const key of ["time", "remote_addr", "x_forwarded_for", "host", "server_name", "request_method", "body_bytes_sent", "http_user_agent", "request_time", "upstream_response_time", "scheme"]) assert.ok(Object.hasOwn(row, key), `safe JSON retains ${key}`);
 }
+function photoInput(kind = "get") {
+  const id = protect(randomUUID());
+  const marker = protect(`ci_photo_${randomUUID()}`);
+  const referer = protect(`https://photo-referrer.invalid/${randomUUID()}`);
+  const targetPath = kind === "upload" ? "/photos/upload" : `/photos/${id}`;
+  return { id, marker, target: `${targetPath}?probe=${marker}%2Bvalue&probe=duplicate%20value`,
+    sentinels: [targetPath, ...(kind === "upload" ? [] : [id]), marker, referer],
+    headers: { Origin: BASE, Referer: referer, Cookie: protect(`ci_photo_cookie=${randomUUID()}`) } };
+}
+async function noPhotoSentinels(sentinels) {
+  // Only the inner front has photo locations in this slice. The unmodified
+  // outer fixture still has its ordinary logging/1m policy for these paths.
+  const records = (await h.logs()).filter((record) => record.role === "front");
+  assert.ok(records.length > 0, "identified inner-front sinks with both positive controls are required");
+  for (const record of records) for (const stream of ["stdout", "stderr"]) for (const sentinel of sentinels) {
+    assert.ok(!record[stream].includes(sentinel) && !record[stream].includes(encodeURIComponent(sentinel)), `${record.sink}/${stream}: photo sentinel absent`);
+  }
+}
+function privatePhoto(r) {
+  noStore(r);
+  assert.match(r.headers["cache-control"] ?? "", /\bprivate\b/);
+  assert.equal(r.headers["x-content-type-options"], "nosniff");
+  noClear(r);
+}
+function receivedPhoto(r, input, body, method) {
+  assert.equal(r.status, 200, "CI receiving-byte observer, not a storage success");
+  const received = JSON.parse(r.body);
+  assert.equal(received.method, method);
+  assert.ok(received.target === input.target, "photo query encoding, order and duplicates are preserved");
+  for (const [name, value] of [["Host", "dev.pieceofdays.com"], ["X-Forwarded-Host", "dev.pieceofdays.com"], ["X-Forwarded-Proto", "https"], ["Origin", input.headers.Origin], ["Cookie", input.headers.Cookie], ["Referer", input.headers.Referer]]) {
+    assert.ok(values(received.rawHeaders, name).length === 1 && values(received.rawHeaders, name)[0] === value, `${name} reaches the photo observer unchanged/fixed as contracted`);
+  }
+  assert.equal(received.bodyLength, body.length, "actual bytes received through nginx");
+  assert.equal(received.bodySha256, hash(body), "actual receiving-byte SHA256, not Content-Length alone");
+}
 
 test("01 exact helper configuration and the complete outer fragment pass real nginx syntax checks; immutable image identity", OPTIONS, async (t) => {
   for (const name of [h.names.front, h.names.outer]) await docker(["exec", name, "nginx", "-t"]);
@@ -78,6 +114,12 @@ test("02 actual Next with no providers: login preparation and configuration-befo
     assert.equal(post.headers.location, undefined);
     assert.equal(post.headers["set-cookie"], undefined);
   }
+  const input = photoInput("upload");
+  const photo = await h.frontRequest(input.target, { method: "POST", headers: { ...input.headers, Origin: "https://wrong.invalid" } });
+  assert.equal(photo.status, 503, "actual photo route also checks auth configuration before Origin/body");
+  assert.deepEqual(JSON.parse(photo.body), { ok: false, error: "unavailable" });
+  privatePhoto(photo);
+  await noPhotoSentinels(input.sentinels);
 });
 
 test("03 every static file and directory redirect in try/design/promo/status matches the existing static nginx", OPTIONS, async (t) => {
@@ -102,7 +144,7 @@ test("03 every static file and directory redirect in try/design/promo/status mat
 test("04 health and dev/private paths remain outside the public proxy allowlist", OPTIONS, async () => {
   assert.equal((await h.appRequest("/healthz")).status, 200);
   assert.equal((await h.appRequest("/healthz/ready")).status, 200, "same actual app on disposable PG18");
-  for (const target of ["/healthz", "/healthz/ready", "/healthz/anything", "/dev/konva-smoke", "/index.html", "/favicon.ico", "/sample/", "/settings/extra", "/private"]) {
+  for (const target of ["/healthz", "/healthz/ready", "/healthz/anything", "/dev/konva-smoke", "/index.html", "/favicon.ico", "/sample/", "/settings/extra", "/private", "/photos-extra/upload"]) {
     assert.equal((await h.frontRequest(target)).status, 404, `front ${target}`);
     assert.equal((await h.edgeRequest(target)).status, 404, `outer ${target}`);
   }
@@ -128,6 +170,32 @@ test("05 receiving-byte observer proves query, Origin, Cookie and fixed Host thr
           assert.ok(values(received.rawHeaders, "Referer").join() === input.headers.Referer, "Referer reaches upstream but is excluded from callback logs");
           await h.noSentinels(input.sentinels);
         }
+      }
+    }
+    const get = photoInput();
+    receivedPhoto(await h.frontRequest(get.target, { headers: { ...get.headers, Host: "forged.invalid", "X-Forwarded-Host": "forwarded.invalid", "X-Forwarded-Proto": "http" } }), get, Buffer.alloc(0), "GET");
+    await noPhotoSentinels(get.sentinels);
+    const max = 9 * 1024 * 1024;
+    const boundary = Buffer.alloc(max + 1, 0x70); // printable synthetic bytes; never an actual user photo
+    for (const chunked of [false, true]) {
+      const body = boundary.subarray(0, max);
+      const input = photoInput("upload");
+      const headers = { ...input.headers, Host: "forged.invalid", Origin: chunked ? "https://origin.invalid" : BASE,
+        "X-Forwarded-Host": "forwarded.invalid", "X-Forwarded-Proto": "http", "Content-Type": "application/octet-stream",
+        ...(chunked ? {} : { "Content-Length": String(body.length) }) };
+      receivedPhoto(await h.frontRequest(input.target, { method: "POST", headers, body, chunked }), { ...input, headers }, body, "POST");
+      await noPhotoSentinels(input.sentinels);
+      const over = photoInput("upload");
+      const denied = await h.frontRequest(over.target, { method: "POST", headers: { ...over.headers, ...(chunked ? {} : { "Content-Length": String(boundary.length) }) }, body: boundary, chunked });
+      assert.equal(denied.status, 413, "exact upload is limited to 9MiB including actual chunked bytes");
+      await noPhotoSentinels(over.sentinels);
+      for (const target of [`/photos/${randomUUID()}`, "/photos/upload/", "/photos/upload/extra", "/login"]) {
+        const input = photoInput();
+        const limitedTarget = `${target}?probe=${input.marker}%2Bvalue`;
+        const body = boundary.subarray(0, 1024 * 1024 + 1);
+        const denied = await h.frontRequest(limitedTarget, { method: "POST", headers: { ...input.headers, ...(chunked ? {} : { "Content-Length": String(body.length) }) }, body, chunked });
+        assert.equal(denied.status, 413, "all other paths retain the 1MiB body limit");
+        if (target.startsWith("/photos/")) await noPhotoSentinels([target, ...input.sentinels.slice(1)]);
       }
     }
   } finally { await h.upstream("off"); }
@@ -190,6 +258,27 @@ test("07 fake HTTPS provider configuration: real login/assets/links, no-store an
     assert.equal(r.headers.location, location, `server-chosen return path for ${target}`);
     if (r.headers.location) assert.equal(new URL(r.headers.location, BASE).origin, BASE);
   }
+  const input = photoInput();
+  const get = await h.frontRequest(input.target, { headers: input.headers });
+  assert.equal(get.status, 401, "actual photo GET requires the signed-in owner before any storage lookup");
+  privatePhoto(get);
+  assert.equal(get.headers.location, undefined);
+  assert.equal(get.headers["set-cookie"], undefined);
+  assert.ok(!get.body.toString().includes(input.id), "fixed private error does not echo the photo id");
+  await noPhotoSentinels(input.sentinels);
+  for (const origin of [undefined, "https://wrong.invalid", BASE]) {
+    const input = photoInput("upload");
+    const headers = { ...input.headers, "Content-Type": "application/octet-stream" };
+    if (origin === undefined) delete headers.Origin;
+    else headers.Origin = origin;
+    const r = await h.frontRequest(input.target, { method: "POST", headers, body: Buffer.from("ci-only-not-multipart") });
+    assert.equal(r.status, origin === BASE ? 401 : 403, "real auth/Origin guards precede multipart parsing and unset storage");
+    assert.deepEqual(JSON.parse(r.body), { ok: false, error: origin === BASE ? "not_signed_in" : "forbidden" });
+    privatePhoto(r);
+    assert.equal(r.headers.location, undefined);
+    assert.equal(r.headers["set-cookie"], undefined);
+    await noPhotoSentinels(input.sentinels);
+  }
 });
 
 test("08 actual logout POST preserves Origin decisions and never uses forged Host for Location", OPTIONS, async () => {
@@ -230,6 +319,12 @@ test("10 app-down callbacks leave no query/referrer in front access/error logs, 
       const input = callbackInput(provider);
       assert.equal((await h.frontRequest(input.target, { headers: input.headers })).status, 502);
       await h.noSentinels(input.sentinels);
+    }
+    for (const kind of ["get", "upload"]) {
+      const input = photoInput(kind);
+      const r = await h.frontRequest(input.target, { method: kind === "upload" ? "POST" : "GET", headers: input.headers });
+      assert.equal(r.status, 502, "both exact upload and photo prefix reach the unavailable upstream");
+      await noPhotoSentinels(input.sentinels);
     }
   });
   await h.waitPort(h.frontPort, 200, "/login");

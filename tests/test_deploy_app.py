@@ -79,7 +79,14 @@ SESSION_KEY = "ci-only-f6b-session-key-1-".ljust(40, "x")
 GOOGLE_SECRET = "ci-only-f6b-google-secret"
 KAKAO_SECRET = "ci-only-f6b-kakao-secret"
 DB_PASSWORD = "ci-only-f6b-db-pass"
-SECRET_VALUES = (SESSION_KEY, GOOGLE_SECRET, KAKAO_SECRET, DB_PASSWORD)
+PHOTO_ENV = {
+    "POD_PHOTOS_S3_ENDPOINT": "https://ci-only-photos.invalid/",
+    "POD_PHOTOS_S3_REGION": "ci-only-region-1",
+    "POD_PHOTOS_S3_BUCKET": "ci-only-private-photos",
+    "POD_PHOTOS_S3_ACCESS_KEY_ID": "ci-only-photo-access+/=key",
+    "POD_PHOTOS_S3_SECRET_ACCESS_KEY": "ci-only-photo-secret+/==value",
+}
+SECRET_VALUES = (SESSION_KEY, GOOGLE_SECRET, KAKAO_SECRET, DB_PASSWORD, *PHOTO_ENV.values())
 
 APP_SETTINGS_KEYS = {
     "app_mode_enabled": True,
@@ -309,6 +316,7 @@ class DevFrontNginxConfTests(unittest.TestCase):
     STATIC = {"/try/", "/design/", "/promo/", "/status/"}
     # main 추가 계약(GREEN60 독립 검토 5779565104 P1): OIDC callback은 exact 위치에서 로그 없이 같은 upstream으로 보낸다.
     CALLBACKS = {("=", "/auth/google/callback"), ("=", "/auth/kakao/callback")}
+    PHOTOS = {("=", "/photos/upload"), ("^~", "/photos/")}
 
     def conf(self):
         require(self, "DEV_FRONT_NGINX_CONF")
@@ -320,13 +328,13 @@ class DevFrontNginxConfTests(unittest.TestCase):
         conf = self.conf()
         locations = nginx_locations(conf)
         proxied = {(mod, path) for mod, path, body in locations if "proxy_pass" in body}
-        self.assertEqual(proxied, self.PROXY | self.CALLBACKS)
+        self.assertEqual(proxied, self.PROXY | self.CALLBACKS | self.PHOTOS)
         for mod, path, body in locations:
             for target in re.findall(r"proxy_pass\s+([^;]+);", body):
                 with self.subTest(location=(mod, path)):
                     self.assertEqual(target.strip(), "http://pieceofdays-app-dev:3000")
         self.assertEqual(
-            len(re.findall(r"proxy_pass\s", conf)), len(self.PROXY) + len(self.CALLBACKS), "proxy_pass only inside the allowlisted locations"
+            len(re.findall(r"proxy_pass\s", conf)), len(self.PROXY) + len(self.CALLBACKS) + len(self.PHOTOS), "proxy_pass only inside the allowlisted locations"
         )
 
     def test_oidc_callback_locations_proxy_to_the_same_app_without_access_or_error_logs(self):
@@ -354,6 +362,19 @@ class DevFrontNginxConfTests(unittest.TestCase):
         self.assertNotRegex(conf, r"error_log\s+off\s*;", "`error_log off` writes to a file named off")
         for match in re.finditer(r"log_format\s[^;]*;", conf):
             self.assertNotRegex(match.group(0), r"\$(request|request_uri|args|query_string|arg_\w+|http_referer)\b", "no raw request/query/referrer log format")
+        for mod, path in sorted(self.PHOTOS):
+            with self.subTest(photo=path):
+                same_path = [(m, body) for m, p, body in locations if p == path]
+                self.assertEqual([m for m, _ in same_path], [mod], "one exact upload and one dedicated photo prefix")
+                body = same_path[0][1]
+                self.assertEqual(re.findall(r"proxy_pass\s+([^;]+);", body), ["http://pieceofdays-app-dev:3000"])
+                self.assertRegex(body, r"(^|[\s;{])access_log\s+off\s*;")
+                self.assertRegex(body, r"(^|[\s;{])error_log\s+/dev/null\s+crit\s*;")
+                self.assertEqual(len(re.findall(r"access_log\s", body)), 1)
+                self.assertEqual(len(re.findall(r"error_log\s", body)), 1)
+                self.assertEqual(re.findall(r"client_max_body_size\s+([^;]+);", body), ["9m"] if mod == "=" else [], "only exact upload changes the inherited 1m limit")
+                for directive in ("proxy_set_header", "add_header", "proxy_hide_header", "proxy_pass_request_headers", "proxy_cache", "more_set_headers", "proxy_set_body", "return", "rewrite"):
+                    self.assertNotRegex(body, r"(^|[\s;{])" + directive + r"\s", f"{directive} would change the inherited photo handling")
 
     def test_static_paths_stay_static_and_everything_else_is_404(self):
         conf = self.conf()
@@ -384,6 +405,7 @@ class DevFrontNginxConfTests(unittest.TestCase):
         self.assertNotIn("proxy_cache", conf)
         self.assertNotIn("Clear-Site-Data", conf)
         self.assertNotRegex(conf, r"proxy_set_header\s+(Origin|Cookie)\s", "Origin/Cookie are forwarded as sent")
+        self.assertCountEqual(re.findall(r"client_max_body_size\s+([^;]+);", conf), ["1m", "9m"], "the server 1m default stays; only one upload override")
 
 
 # ================================================================= env 검사 §6.3
@@ -420,6 +442,16 @@ class ValidateAppEnvTests(unittest.TestCase):
             POD_AUTH_KAKAO_CLIENT_SECRET=KAKAO_SECRET,
         )
         self.assertEqual(deploy.validate_app_env("".join(f"{k}={v}\n" for k, v in kakao_only.items()), self.settings), kakao_only)
+        for endpoint, region, bucket in (
+            (PHOTO_ENV["POD_PHOTOS_S3_ENDPOINT"], "ci-only-region-1", "ci-only-private-photos"),
+            ("https://ci-only-photos.invalid", "a", "a-b"),
+            ("https://ci-only-photos.invalid:9000/", "r" * 63, "b" * 63),
+            ("https://127.0.0.1:9000/", "a-", "ci-only.private-photos"),
+        ):
+            photos = {**PHOTO_ENV, "POD_PHOTOS_S3_ENDPOINT": endpoint, "POD_PHOTOS_S3_REGION": region, "POD_PHOTOS_S3_BUCKET": bucket}
+            expected = env_lines(**photos)
+            with self.subTest(photo_endpoint=endpoint):
+                self.assertEqual(deploy.validate_app_env(env_text(**photos), self.settings), expected, "exact photo settings and +/= credential bytes are preserved")
 
     def test_file_syntax_outside_the_node_compatible_subset_is_rejected(self):
         base = env_text()
@@ -457,6 +489,19 @@ class ValidateAppEnvTests(unittest.TestCase):
             ("NODE_OPTIONS", "--require=/tmp/x.js"),
             ("PATH", "/tmp"),
             ("POD_SOMETHING_NEW", "1"),
+            ("POD_PHOTO_CLEANUP_DATABASE_URL", f"postgres://pod_purge_dev:{DB_PASSWORD}@ci-only-pg18/pod_dev"),
+            ("POD_FULL_CHECK_ISOLATED", "1"),
+            ("POD_TEST_DB_DISPOSABLE", "1"),
+            ("POD_TEST_ADMIN_URL", f"postgres://pod_owner_dev:{DB_PASSWORD}@ci-only-pg18/pod_dev"),
+            ("AWS_ACCESS_KEY_ID", PHOTO_ENV["POD_PHOTOS_S3_ACCESS_KEY_ID"]),
+            ("AWS_SECRET_ACCESS_KEY", PHOTO_ENV["POD_PHOTOS_S3_SECRET_ACCESS_KEY"]),
+            ("AWS_SESSION_TOKEN", "ci-only-photo-ambient-token"),
+            ("AWS_ENDPOINT_URL", PHOTO_ENV["POD_PHOTOS_S3_ENDPOINT"]),
+            ("AWS_REGION", "ci-only-region-1"),
+            ("AWS_DEFAULT_REGION", "ci-only-region-1"),
+            ("AWS_PROFILE", "ci-only-profile"),
+            ("AWS_SHARED_CREDENTIALS_FILE", "/nonexistent/ci-only-credentials"),
+            ("POD_PHOTOS_S3_EXTRA", "ci-only-not-allowlisted"),
         ):
             self.check_rejected(env_text() + f"{key}={value}\n", key)
 
@@ -465,6 +510,10 @@ class ValidateAppEnvTests(unittest.TestCase):
             self.check_rejected(env_text(**{key: None}), f"missing {key}")
         self.check_rejected("", "empty file")
         self.check_rejected("# only a comment\n", "comments only")
+        photo_keys = tuple(PHOTO_ENV)
+        for mask in range(1, (1 << len(photo_keys)) - 1):
+            partial = {key: PHOTO_ENV[key] for bit, key in enumerate(photo_keys) if mask & (1 << bit)}
+            self.check_rejected(env_text(**partial), f"partial photo settings mask {mask}")
 
     def test_base_url_providers_and_provider_credentials_follow_the_contract(self):
         for value in ("http://dev.pieceofdays.com", "https://dev.pieceofdays.com/", "https://pieceofdays.com", "https://dev.pieceofdays.com:443", "https://DEV.pieceofdays.com"):
@@ -478,6 +527,44 @@ class ValidateAppEnvTests(unittest.TestCase):
         self.check_rejected(env_text(POD_AUTH_PROVIDERS="google,kakao"), "kakao listed without credentials")
         for value in ("true", "0", "yes", "11"):
             self.check_rejected(env_text(POD_WITHDRAWAL_ENABLED=value), f"withdrawal {value}")
+        photo_cases = {
+            "http": ("POD_PHOTOS_S3_ENDPOINT", "http://ci-only-photos.invalid/"),
+            "http loopback": ("POD_PHOTOS_S3_ENDPOINT", "http://127.0.0.1:8333/"),
+            "userinfo": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-user:ci-only-pass@ci-only-photos.invalid/"),
+            "empty userinfo": ("POD_PHOTOS_S3_ENDPOINT", "https://@ci-only-photos.invalid/"),
+            "empty password userinfo": ("POD_PHOTOS_S3_ENDPOINT", "https://:@ci-only-photos.invalid/"),
+            "query": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/?ci-only=1"),
+            "empty query": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/?"),
+            "fragment": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/#ci-only"),
+            "empty fragment": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/#"),
+            "path": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/bucket"),
+            "normalized dot path": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/a/../"),
+            "double slash": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid//"),
+            "port word": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid:word/"),
+            "port overflow": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid:65536/"),
+            "endpoint space": ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only photos.invalid/"),
+            "region uppercase": ("POD_PHOTOS_S3_REGION", "CI-region"),
+            "region punctuation": ("POD_PHOTOS_S3_REGION", "ci_region"),
+            "region leading dash": ("POD_PHOTOS_S3_REGION", "-ci-region"),
+            "region overlong": ("POD_PHOTOS_S3_REGION", "r" * 64),
+            "bucket short": ("POD_PHOTOS_S3_BUCKET", "ab"),
+            "bucket overlong": ("POD_PHOTOS_S3_BUCKET", "b" * 64),
+            "bucket uppercase": ("POD_PHOTOS_S3_BUCKET", "CI-bucket"),
+            "bucket underscore": ("POD_PHOTOS_S3_BUCKET", "ci_bucket"),
+            "bucket leading dash": ("POD_PHOTOS_S3_BUCKET", "-ci-bucket"),
+            "bucket trailing dot": ("POD_PHOTOS_S3_BUCKET", "ci-bucket."),
+            "bucket adjacent dots": ("POD_PHOTOS_S3_BUCKET", "ci..bucket"),
+            "bucket dot dash": ("POD_PHOTOS_S3_BUCKET", "ci.-bucket"),
+            "bucket dash dot": ("POD_PHOTOS_S3_BUCKET", "ci-.bucket"),
+            "bucket IP literal": ("POD_PHOTOS_S3_BUCKET", "127.0.0.1"),
+        }
+        for key in PHOTO_ENV:
+            photo_cases[f"{key} empty"] = (key, "")
+            photo_cases[f"{key} leading space"] = (key, " " + PHOTO_ENV[key])
+            photo_cases[f"{key} trailing space"] = (key, PHOTO_ENV[key] + " ")
+            photo_cases[f"{key} inner space"] = (key, "ci-only photo-value")
+        for label, (key, value) in photo_cases.items():
+            self.check_rejected(env_text(**{**PHOTO_ENV, key: value}), f"photo {label}")
 
     def test_database_url_must_be_the_dev_app_role_on_the_expected_host_and_database(self):
         cases = {
@@ -523,6 +610,18 @@ class ValidateAppEnvTests(unittest.TestCase):
         self.assertIn("POD_DATABASE_URL", message)
         self.assertNotIn("intruder", message)
         assert_no_secret(self, message)
+        for key, value in (
+            ("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photo-private-marker.invalid/private"),
+            ("POD_PHOTOS_S3_REGION", "ci-only-private-region_"),
+            ("POD_PHOTOS_S3_BUCKET", "ci-only-private-bucket_"),
+            ("POD_PHOTOS_S3_ACCESS_KEY_ID", "ci-only private access"),
+            ("POD_PHOTOS_S3_SECRET_ACCESS_KEY", "ci-only private secret"),
+        ):
+            with self.subTest(photo_key=key):
+                with self.assertRaises(ValueError) as caught:
+                    deploy.validate_app_env(env_text(**{**PHOTO_ENV, key: value}), self.settings)
+                self.assertNotIn(value, str(caught.exception), "invalid storage values are never echoed")
+                assert_no_secret(self, str(caught.exception), key)
 
 
 # ================================================================= manifest·이미지 §6.3
@@ -665,6 +764,8 @@ class ValidateAppImageTests(unittest.TestCase):
             "telemetry on": mutate(lambda i: i["Config"].__setitem__("Env", ["NEXT_TELEMETRY_DISABLED=0"])),
             "arm64": mutate(lambda i: i.__setitem__("Architecture", "arm64")),
         }
+        for key, value in {**PHOTO_ENV, "POD_PHOTO_CLEANUP_DATABASE_URL": "postgres://ci-only-purge.invalid/pod_dev"}.items():
+            cases[f"{key} must not be baked into image ENV"] = mutate(lambda i, key=key, value=value: i["Config"]["Env"].append(f"{key}={value}"))
         for label, inspect in cases.items():
             with self.subTest(label=label):
                 with self.assertRaises(ValueError):
