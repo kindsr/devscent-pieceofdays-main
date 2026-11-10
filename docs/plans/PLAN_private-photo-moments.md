@@ -43,7 +43,7 @@
 ### 2.2 DB·조회·삭제 공개 경계
 
 - 신규 `0004_private_photos`는 `pod.photo_uploads`(예약·key journal), `pod.moment_photos`(확정 사진), `pod.photo_deletions`(재시도 가능한 삭제 tombstone)를 만든다. 기존 사용자8테이블은 변경 없이 보존하며, `diary_moments(id,user_id)`의 소유자 복합FK를 위한 UNIQUE만 추가한다.
-- uploads 필드: `id` UUID, `user_id` nullable(계정 purge 때 SET NULL), `request_id` UUID, `fingerprint`64hex, `object_key`, `status`(staged/ready/abandoned), `lease_token`, `lease_until`, 생성/갱신 시각. `(user_id,request_id)`와 object_key는 각각 유일하다. 원본 메모·사진 bytes·파일명0. 계정 purge 후 journal/key 자체가 cascade로 없어지지 않게 한다.
+- uploads 필드: `id` UUID, `user_id` nullable(계정 purge 때 SET NULL), `request_id` UUID, `fingerprint`64hex, `object_key`, `status`(staged/ready/abandoned), `lease_token`, `lease_until`, 생성/갱신 시각. object_key는 유일하고 `(user_id,request_id)`는 staged/ready에 한정한 부분 유일 제약이다. 만료 후 재시도는 이전 행을abandoned로 남기고 **새id·새key**를 예약한다. 이전 key를 재사용해 늦은 PUT/DELETE가 새 사진을 지우거나 덮게 하지 않는다. 원본 메모·사진 bytes·파일명0. 계정 purge 후 journal/key 자체가 cascade로 없어지지 않게 한다.
 - moment_photos 필드: `id`(uploads FK), `user_id`, 유일한 `moment_id`, `sha256`, `mime_type`(image/jpeg), `byte_length`(1..4MiB), `width/height`(1..2560), 생성시각. `(moment_id,user_id)`는 같은 소유자의 diary_moments를 참조한다. 사용자·조각 cascade는 확정 metadata를 지우고 DELETE trigger가 journal의 key를 같은 tx의 photo_deletions에 남긴다.
 - deletions는 사진 id/key·재시도시각·최근부재검증시각·시도횟수만 남기며 user FK/원문을 두지 않는다. 성공 DELETE만으로 key를 즉시 버리지 않고 늦은 PUT도 재확인할 수 있게 한다. staging TTL·업로드 lease token을 통해 사용 중인 PUT 회수와 늦은 확정 덮어쓰기를 차단한다.
 - 앱은 새 세 테이블의 필요한 DML과 기존 user/조각 권한만 쓴다. uploads/삭제 tombstone의 무조건 DELETE 권한을 주지 않는다. trigger 함수는 PUBLIC EXECUTE를 회수하며, 원장·기존 role·PUBLIC 권한을 넓히지 않는다.
@@ -55,7 +55,7 @@
 
 - 사진 metadata는 user/moment 동일 소유자를 DB 제약으로 묶는다. 업로드 예약/객체 hash·치수·상태는 서버 전용이다. 원본 파일명·GPS는 저장하지 않는다.
 - PUT 이전의 예약과 실패 상태를 영속 기록한다. PUT 실패/응답 손실/최종 DB 실패에도 미참조 객체를 추적하고 재시도·회수할 수 있어야 한다. 실제 저장 실패를 메모만 성공으로 바꾸지 않는다.
-- idempotency fingerprint는 정규화 사진 hash+trim한 메모+계약버전1의 canonical JSON SHA256이다. 동일 계정/requestId에 같은 fingerprint가 ready이면 동일 MomentRef, 아직 유효한 예약이면busy, 다르면conflict다. 만료 예약의 재시도는 새 lease token을 채택하며 이전 token의 늦은 확정이 새 결과를 덮지 못한다.
+- idempotency fingerprint는 정규화 사진 hash+trim한 메모+계약버전1의 canonical JSON SHA256이다. 동일 계정/requestId의 과거 시도들 중 fingerprint가 다르면conflict, 같은 입력이 ready이면 동일 MomentRef, 아직 유효한 예약이면busy다. 만료 예약의 재시도는 새id·key·lease token을 채택하며 이전 시도는abandoned+삭제 추적을 유지한다. 이전 token의 늦은 확정이 새 결과를 덮지 못한다.
 - 정리는 유효한 업로드 lease를 회수하지 않는다. 요청 취소/timeout 이후 늦은 PUT 가능성을 처리하려고 key journal/삭제 tombstone을 물리적 DELETE 응답만으로 즉시 제거하지 않는다. 재확인 가능한 key를 보존하고 예약 소멸·늦은 응답·계정 cascade 후에도 다시 삭제/부재 확인할 수 있어야 한다. 사용자 연결·메모 원문은 purge 후 남기지 않는다. 실제 저장소 동작과 이 경합은 별도 CI로 확인한다.
 - 조각 삭제/30일 후 계정 purge의 같은 DB tx에서 객체 key를 영속 삭제 목록에 남긴다. 삭제 목록은 사용자 cascade로 사라지지 않는다. 조각 삭제 즉시 HTTP 사진 조회는 거부한다.
 - pending_deletion 동안 원본을 유지하고 일반 사진 읽기는 거부한다.720h 내 복구하면 사진도 다시 읽는다. 기존 purge 함수/migration0002는 고치지 않는다.
