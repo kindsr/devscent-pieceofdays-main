@@ -151,6 +151,6 @@ jobs:
       - name: Install (lockfile only)
         run: npm ci
       - name: Playwright browser
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
       - name: Auth E2E (mock OIDC issuer, disposable PostgreSQL 18, all cases)
         run: npx playwright test -c playwright.auth.config.ts
