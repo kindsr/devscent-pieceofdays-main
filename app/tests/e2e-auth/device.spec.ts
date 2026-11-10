@@ -4,7 +4,7 @@
 // Chromium PC↔WebKit iPhone・WebKit PC↔Chromium Android emulation이며 실제 기기·Google 검증은 아니다.
 import { chromium, devices, expect, test, webkit, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { AUTH_BASE, TEXT, accountOf, expectLayoutOk } from "./support";
-import { DIARY_TEXT, dateLabel, momentsOf, signIn, topAdd } from "./diary-support";
+import { DIARY_TEXT, dateLabel, momentsOf, signIn, statusWith, topAdd } from "./diary-support";
 
 const dialog = (page: Page) => page.getByRole("dialog");
 const memo = (page: Page) => dialog(page).getByRole("textbox", { name: "메모" });
@@ -54,6 +54,8 @@ test("PC and phone log in independently to one account without another grant; a 
     await memo(pc).fill(initial);
     await dialog(pc).getByRole("button", { name: "저장", exact: true }).click();
     await expect(dialog(pc)).toHaveCount(0);
+    await expect(statusWith(pc, DIARY_TEXT.created)).toBeVisible();
+    await expect(piece(pc, initial)).toHaveCount(1);
     const saved = await momentsOf(account.userId);
     expect(saved, "one piece was committed through the PC UI").toHaveLength(1);
     expect(saved[0]!.body).toBe(initial);
@@ -73,6 +75,7 @@ test("PC and phone log in independently to one account without another grant; a 
     await memo(phone).fill(edited);
     await dialog(phone).getByRole("button", { name: "고치기", exact: true }).click();
     await expect(dialog(phone)).toHaveCount(0);
+    await expect(statusWith(phone, DIARY_TEXT.edited)).toBeVisible();
     await expect(piece(phone, edited)).toHaveCount(1);
     await expect(piece(phone, initial)).toHaveCount(0);
 
