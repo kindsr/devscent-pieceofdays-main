@@ -19,7 +19,7 @@
 - 신규 `app/src/server/stories/view-data.ts`는 페이지용 일반 서버 helper다. getViewer의 요청 사용자와 getAppDb를 사용하고 readStoryDay/getReflectionTime 결과를 화면 자료로 복사한다. getDiaryContext/Pool/subject 자체를 JSX props로 넘기지 않는다. 읽기 중 세션이 무효화되면 body를 표시하지 않고 기존 안전한 login returnTo 흐름을 따른다. 날짜와 고정 오류 상태 외 원문 오류0이다.
 - `app/src/app/page.tsx`, `days/page.tsx`, `days/[date]/page.tsx`는 account 모드에서만 이야기/달력 날짜를 읽는다. 두 달의 범위는 기존 thisMonth/lastMonth와 같다. fixture는 story SQL0이다. 페이지 사용자 조회는 기존 cache된 getViewer를 재사용한다.
 - `DayBoardProps`에 ReactNode story 슬롯을 두어 client AccountDayBoard의 날짜 header 다음에 렌더한다. server DailyStory를 슬롯으로 전달하고 client가 server 모듈을 import하지 않는다. FixtureDayBoard는 슬롯을 표시하지 않는다. DaysView는 선택 날짜에 같은 슬롯을 전달한다.
-- `DaysView`/`MonthCalendar`에 storyDates(날짜 문자열만)를 전달한다. 조각/한 줄 없이 이야기만 있는 날짜도 링크·‘AI 하루 이야기’ 접근성 이름으로 선택할 수 있다. 선택한 날짜의 원본이0이어도 이야기 슬롯을 렌더한다. 원본이 있는 기존 링크 이름·덮개 이미지는 보존한다.
+- `DaysView`/`MonthCalendar`에 storyDates(날짜 문자열만)를 전달한다. 조각/한 줄 없이 이야기만 있는 날짜도 링크·‘AI 하루 이야기’접근성 이름으로 선택할 수 있다. 선택한 날짜의 원본이0이어도 이야기 슬롯을 렌더한다. 이야기가 남은 날은 같은 날짜 key의 빈 DiaryDay 보드를 유지해 마지막 조각 삭제 뒤에도 날짜 맥락·기존 삭제 완료 알림을 보존한다. 원본이 있는 기존 링크 이름·덮개 이미지는 보존한다.
 - 이야기 목록 조회 실패는 경고로 구분한다. 기존 달력/원본을 숨기거나 ‘기록 없음’으로 성공 처리하지 않는다. 선택한 이야기 조회 실패도 별도 고정 안내다.
 - 신규 `app/src/ui/d/DailyStory.tsx`, `app/src/app/globals.css`의 story 규칙만 추가. 기존 D 토큰/줄바꿈·focus·터치44px을 따른다. 아트보드의 도구줄/합성본문/가짜 pending 전환은 제품 코드로 옮기지 않는다. 실제 source는 none/current/outdated/unavailable/읽기 실패만 표시한다. pending/error/생성 버튼은 S3 계약 뒤 추가한다.
 - DailyStory의 고정 props는 `{date:string;data:StoryDay|null;reflectionTime:string|null;hasMoments:boolean;headingLevel?:2|3}`다. data=null은 읽기 실패, hasMoments=false와 story 존재는 삭제 후 보존 안내에 쓴다. server 모듈/사용자 문맥을 import하지 않고 이 화면 자료만 받는다. 이 인터페이스로 실제 컴포넌트의 합성 캡처를 검증한다.
