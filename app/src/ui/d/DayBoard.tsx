@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { DiaryDay, SampleImageKey } from "@/shared/diary";
 import { dateLabel } from "@/shared/local-date";
 import { SAMPLE_IMAGES } from "./sample-images";
@@ -54,6 +54,8 @@ export type DayBoardProps = {
   showSettingsLink?: boolean;
   headingLevel?: 1 | 2;
   photosEnabled?: boolean;
+  /** 계정 보드의 날짜 머리 다음에 놓는 AI 하루 이야기 영역(서버에서 만든 화면). 예시 보드는 표시하지 않는다. */
+  story?: ReactNode;
 };
 
 export function DayBoard({ mode = "fixture", ...props }: DayBoardProps & { mode?: "fixture" | "account" }) {

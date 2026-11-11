@@ -263,3 +263,9 @@ html[data-record-font="hand"] { --font-record: var(--font-hand); }
 .photo-filename { overflow-wrap: anywhere; word-break: break-word; font-size: 14px; }
 .photo-preview { display: block; width: auto; max-width: 100%; height: auto; max-height: 180px; object-fit: contain; justify-self: start; }
 .photo-input .text-btn { justify-self: start; }
+
+/* AI 하루 이야기(docs/design/story). 날짜 머리 다음, 조각 위의 전체 폭 종이 블록. 본문은 기록 글꼴·64ch·줄바꿈 보존. */
+.story { display: grid; gap: var(--s-1); background: var(--surface); border: var(--border); border-radius: 4px; padding: var(--s-3); margin: 0 0 var(--s-4); }
+.story h2, .story h3 { font-size: 20px; font-weight: 800; }
+.story-body { max-width: 64ch; font-family: var(--font-record); font-size: 17px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.story-time { gap: 4px var(--s-2); }
