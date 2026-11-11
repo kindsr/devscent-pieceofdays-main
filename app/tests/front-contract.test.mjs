@@ -183,6 +183,15 @@ test("04 health and dev/private paths remain outside the public proxy allowlist"
     assert.equal((await h.frontRequest(target)).status, 404, `front ${target}`);
     assert.equal((await h.edgeRequest(target)).status, 404, `outer ${target}`);
   }
+  // PLAN_ai-story-live-generation §4.8·§8: the internal story worker route is never reachable through the front or outer proxy,
+  // even with a well-formed bearer token (regression guard: the fixed allowlist already returns 404).
+  const bearer = { Authorization: `Bearer ${"0123456789abcdef".repeat(4)}` };
+  for (const method of ["POST", "GET"]) {
+    for (const target of ["/internal/story-worker", "/internal/story-worker/", "/internal/"]) {
+      assert.equal((await h.frontRequest(target, { method, headers: bearer })).status, 404, `front ${method} ${target}`);
+      assert.equal((await h.edgeRequest(target, { method, headers: { "X-Story-Probe": "1" } })).status, 404, `outer ${method} ${target}`);
+    }
+  }
 });
 
 test("05 receiving-byte observer proves query, Origin, Cookie and fixed Host through direct front and BOTH proxies", OPTIONS, async () => {

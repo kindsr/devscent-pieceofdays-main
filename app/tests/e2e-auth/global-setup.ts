@@ -172,7 +172,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     if (await portInUse(AUTH_PORT)) {
       throw new Error(`[e2e-auth] 127.0.0.1:${AUTH_PORT} is already in use; an existing server is never reused`);
     }
-    const redact = redactor([...mock.secrets(), db.urls.app, decodeURIComponent(new URL(db.urls.app).password), CI_SESSION_KEY, ...Object.values(photos.appEnv)]);
+    // PLAN_ai-story-live-generation §6.1: 시험 전용 가짜 Claude 키·worker token(키 준비 상태만 만든다. worker·cron은 E2E에서 실행 0).
+    const storyApiKey = `sk-ant-api03-ci-only-e2e-fake-${"e".repeat(40)}`;
+    const storyWorkerToken = "c1".repeat(32);
+    const redact = redactor([...mock.secrets(), db.urls.app, decodeURIComponent(new URL(db.urls.app).password), CI_SESSION_KEY, ...Object.values(photos.appEnv), storyApiKey, storyWorkerToken]);
     const lines: string[] = [];
     const next = spawn(process.execPath, [NEXT_BIN, "dev", "-p", String(AUTH_PORT), "-H", "127.0.0.1"], {
       cwd: APP_DIR,
@@ -200,6 +203,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         POD_PHOTOS_S3_BUCKET: photos.appEnv.POD_PHOTOS_S3_BUCKET,
         POD_PHOTOS_S3_ACCESS_KEY_ID: photos.appEnv.POD_PHOTOS_S3_ACCESS_KEY_ID,
         POD_PHOTOS_S3_SECRET_ACCESS_KEY: photos.appEnv.POD_PHOTOS_S3_SECRET_ACCESS_KEY,
+        ANTHROPIC_API_KEY: storyApiKey,
+        POD_STORY_WORKER_TOKEN: storyWorkerToken,
       },
     });
     child = next;

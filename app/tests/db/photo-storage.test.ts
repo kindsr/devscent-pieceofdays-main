@@ -45,7 +45,7 @@ async function loadApi(): Promise<Api> {
 
 async function expectPhotosApplied(db: DisposableDatabase) {
   expect((await withOwner(env, db, (c) => readMigrationRows(c)))?.map((row) => [row.version, row.name]), "default schema must include the new private photo migration").toEqual([
-    [1, "init"], [2, "account_lifecycle"], [3, "reflection_time"], [4, "private_photos"], [5, "daily_stories"],
+    [1, "init"], [2, "account_lifecycle"], [3, "reflection_time"], [4, "private_photos"], [5, "daily_stories"], [6, "story_generation"],
   ]);
 }
 

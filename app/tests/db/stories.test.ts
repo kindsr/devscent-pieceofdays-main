@@ -62,8 +62,15 @@ const STORY_UP = path.join(PRODUCT_MIGRATIONS_DIR, "0005_daily_stories.up.sql");
 const STORY_DOWN = path.join(PRODUCT_MIGRATIONS_DIR, "0005_daily_stories.down.sql");
 const BASE_MIGRATIONS = [[1, "init"], [2, "account_lifecycle"], [3, "reflection_time"], [4, "private_photos"]];
 const BASE_FILES = ["0001_init", "0002_account_lifecycle", "0003_reflection_time", "0004_private_photos"];
-// 공통 helper 목록(story_versions 포함 12)과 같게, 중복 없이 12표로 둔다.
-const TWELVE = [...new Set<string>([...USER_DATA_TABLES, "story_versions"])].sort();
+// 0005 down guard가 지키는 12표(0005 시점 목록, 0005 파일은 동결). 0006 뒤 기본 up의 전체 표는 공통 helper 15표다.
+const TWELVE = [
+  "users", "auth_identities", "preferences", "diary_moments", "day_summaries", "design_versions", "credit_accounts",
+  "emotion_ledger", "photo_uploads", "moment_photos", "photo_deletions", "story_versions",
+].sort();
+const FIFTEEN = [...USER_DATA_TABLES].sort();
+// PLAN_ai-story-live-generation §2: 0006이 더하는 표. 0005 범위 비교에서는 이 표의 snapshot 줄을 뺀다.
+const GENERATION_TABLES = ["story_ai_settings", "story_jobs", "story_usage"];
+const outside0006 = (line: string) => !GENERATION_TABLES.some((t) => line.includes(t));
 
 const DAY = "2026-11-09";
 const NOW = () => new Date("2026-11-09T12:00:00.000Z"); // 서울 2026-11-09 21:00(주입 시계)
@@ -113,7 +120,7 @@ async function expectStoriesApplied(db: DisposableDatabase): Promise<void> {
   for (const file of [STORY_UP, STORY_DOWN]) {
     expect(existsSync(file), `${path.relative(APP_DIR, file)} must exist (PLAN §1)`).toBe(true);
   }
-  expect(pairs, "the default up must apply 0005_daily_stories").toEqual([...BASE_MIGRATIONS, [5, "daily_stories"]]);
+  expect(pairs, "the default up must apply 0005_daily_stories (then 0006_story_generation)").toEqual([...BASE_MIGRATIONS, [5, "daily_stories"], [6, "story_generation"]]);
   expect(await withOwner(env, db, (c) => relationExists(c, "pod.story_versions")), "to_regclass('pod.story_versions') IS NOT NULL").toBe(true);
 }
 
@@ -283,11 +290,11 @@ describe("0005_daily_stories schema, privileges and down guard", () => {
     await expectStoriesApplied(db);
     await withOwner(env, db, async (c) => {
       const snap = await schemaSnapshot(c);
-      expect(snap.filter((line) => !line.includes("story_versions")), "0005 changes nothing outside story_versions").toEqual(before.snap);
+      expect(snap.filter((line) => !line.includes("story_versions") && outside0006(line)), "0005 changes nothing outside story_versions").toEqual(before.snap);
       expect(snap.some((line) => line.startsWith("table|pod.story_versions owner=")), "story_versions table is in the snapshot").toBe(true);
       expect(await data(c)).toEqual(before.data);
       const tables = await c.query<{ t: string; o: string }>("SELECT tablename AS t, tableowner AS o FROM pg_tables WHERE schemaname = 'pod' ORDER BY 1");
-      expect(tables.rows.map((r) => r.t), "exactly the twelve user-data tables").toEqual(TWELVE);
+      expect(tables.rows.map((r) => r.t), "exactly the fifteen user-data tables").toEqual(FIFTEEN);
       expect(tables.rows.find((r) => r.t === "story_versions")?.o).toBe(CI_ROLES.owner);
     });
     expect(await momentDump(db)).toEqual(momentsBefore);
@@ -444,7 +451,7 @@ describe("0005_daily_stories schema, privileges and down guard", () => {
     await withOwner(env, db, async (c) => {
       expect((await readMigrationRows(c))?.map((r) => [r.version, r.name])).toEqual(BASE_MIGRATIONS);
       expect(await relationExists(c, "pod.story_versions")).toBe(false);
-      expect(await schemaSnapshot(c)).toEqual(full.filter((line) => !line.includes("story_versions")));
+      expect(await schemaSnapshot(c)).toEqual(full.filter((line) => !line.includes("story_versions") && outside0006(line)));
     });
     expectCliOk(await runMigrateCli(["up"], db.urls.migrator), db.urls.migrator);
     await expectStoriesApplied(db);

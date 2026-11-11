@@ -36,6 +36,9 @@ export const USER_DATA_TABLES = [
   "moment_photos",
   "photo_deletions",
   "story_versions",
+  "story_ai_settings",
+  "story_jobs",
+  "story_usage",
 ] as const;
 
 export const APPEND_ONLY_MESSAGE = "emotion_ledger is append-only";

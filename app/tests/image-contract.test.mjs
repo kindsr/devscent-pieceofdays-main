@@ -265,6 +265,7 @@ out.staticFiles = fs.existsSync("/app/.next/static") ? fs.readdirSync("/app/.nex
 out.public = fs.existsSync("/app/public") ? fs.readdirSync("/app/public").sort() : null;
 out.migrate = ["migrate-cli.ts", "migrate.ts", "sql-policy.ts"].map((f) => fs.existsSync("/app/src/server/db/" + f));
 out.photoCleanup = ["cleanup-cli.mjs", "cleanup-core.mjs", "config-core.mjs", "blob-store.s3-core.mjs"].map((f) => fs.existsSync("/app/src/server/photos/" + f));
+out.storyWorkerCli = fs.existsSync("/app/src/server/stories/worker-cli.mjs");
 out.migrations = fs.existsSync("/app/migrations") ? fs.readdirSync("/app/migrations").sort() : null;
 try { require.resolve("pg", { paths: ["/app/src/server/db"] }); out.pg = true; } catch { out.pg = false; }
 console.log(JSON.stringify(out));`;
@@ -306,6 +307,7 @@ test("image files: standalone assets and migrate/cleanup CLI runtime; Sharp depe
   assert.deepEqual(fsInfo.public, readdirSync(path.join(APP_DIR, "public")).sort(), "public copied as in the repository");
   assert.deepEqual(fsInfo.migrate, [true, true, true], "migrate-cli.ts, migrate.ts, sql-policy.ts at /app/src/server/db");
   assert.deepEqual(fsInfo.photoCleanup, [true, true, true, true], "raw cleanup CLI and its three pure cores are packaged");
+  assert.equal(fsInfo.storyWorkerCli, true, "the native story worker CLI is packaged at /app/src/server/stories/worker-cli.mjs (PLAN_ai-story-live-generation §4.8, §7)");
   assert.deepEqual(fsInfo.migrations, readdirSync(path.join(APP_DIR, "migrations")).sort(), "migrations identical to the repository list");
   assert.equal(fsInfo.pg, true, "pg resolvable for the migrate CLI");
   const owner = randomBytes(16).toString("hex");
