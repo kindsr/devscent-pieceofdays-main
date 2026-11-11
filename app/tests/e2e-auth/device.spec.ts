@@ -156,7 +156,7 @@ test("PC and phone log in independently to one account without another grant; a 
       [phone, pc, "07:45", `${mobile} to ${desktop}`],
     ] as const) {
       await reflectionTime(writer).fill(value);
-      await writer.getByRole("button", { name: "저장", exact: true }).click();
+      await writer.getByRole("region", { name: "회고 시간", exact: true }).getByRole("button", { name: "저장", exact: true }).click();
       await expect(writer.getByText("회고 시간을 저장했어요.", { exact: true })).toBeVisible();
       await expect(reflectionTime(writer), `${label}: pending has ended before reload`).toBeEnabled();
       await writer.reload();

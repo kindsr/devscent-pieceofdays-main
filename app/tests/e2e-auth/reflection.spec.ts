@@ -90,7 +90,7 @@ test("pending locks the time and submit against duplicates; a failed save keeps 
     await save(page).click();
     await held.reached;
     await expect(time(page)).toBeDisabled();
-    await expect(page.getByRole("button", { name: /^저장(?: 중…)?$/ })).toBeDisabled();
+    await expect(page.getByRole("region", { name: "회고 시간", exact: true }).getByRole("button", { name: /^저장(?: 중…)?$/ })).toBeDisabled();
     await expect(page.getByText("저장 중…", { exact: true })).toBeVisible();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
