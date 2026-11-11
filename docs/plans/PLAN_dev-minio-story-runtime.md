@@ -18,6 +18,7 @@
 - GREEN 작성자: `app/src/server/photos/config-core.mjs`, `scripts/ops/deploy.py`와 `infra/minio/pieceofdays-photos-dev-policy.json`, `infra/minio/README.md`. 테스트/공통 auth/adapter/DB/기존 public80·외곽 snippet/서비스 배포 설정/권한은 직접 변경하지 않는다. main은 계획/CHANGELOG 기록과 합쳐 feature만 commit/push한다.
 - 정책: bucket 전용 `s3:ListBucket`, `photos/*`의 GetObject/PutObject/DeleteObject만. anonymous none, 다른 bucket·prefix 권한0. List 권한은 없는 객체의 GET을 NoSuchKey로 구별하여 삭제 소비가 완료되도록 필요하다. multipart/관리자 권한은 없다.
 - 모든 앱/DB/Docker 시험은 기존 격리 Actions에서만 실행한다. 서버의 source로 npm/브라우저/DB 시험을 실행하지 않는다. main 운영 smoke는 전용 dev namespace와 공개된 합성 데이터로만 수행한다. 각 실패의 실제 이유·미도달 범위를 보고한 뒤 수정한다.
+- helper와 실제 front의 RED/GREEN을 누락하지 않도록 PR base는 dev로 둔다(두 workflow의 기존 branch filter 조건). source/test를 바꾸지 않고 feature base에서 실행되지 않은 root/front 검사를 PASS로 세지 않는다. PR은 draft이며 dev 병합·활성화는 최종 이야기/운영 준비 뒤 main이 수행한다.
 
 ## 3. 반영과 복귀
 
