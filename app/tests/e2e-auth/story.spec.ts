@@ -22,6 +22,8 @@ const memo = (page: Page) => dialog(page).getByRole("textbox", { name: "메모" 
 const piece = (page: Page, text: string) => page.getByRole("listitem").filter({ hasText: text });
 const story = (page: Page) => page.getByRole("region", { name: STORY, exact: true });
 const reflectionTime = (page: Page) => page.getByLabel("매일 회고할 시간", { exact: true });
+/** The story region's reflection-time label only (not the story's creation time). */
+const reflectionShown = (page: Page) => story(page).getByText(/^회고 시간 \d{2}:\d{2}/);
 
 // ---------------------------------------------------------------- 이 파일 전용 DB fixture(관리자, 일회용 DB)
 
@@ -174,7 +176,8 @@ test("PC Chromium and phone WebKit read one stored story on the memo's real date
     await pc.goto(path);
     await expectStoryBody(pc, body, 3, "PC selected day");
     await expect(story(pc)).not.toContainText(OUTDATED);
-    await expect(story(pc), "default reflection time is shown").toContainText("20:00");
+    await expect(reflectionShown(pc), "one reflection-time label").toHaveCount(1);
+    await expect(reflectionShown(pc), "default reflection time is shown").toHaveText(/^회고 시간 20:00(?!\d)/);
     await expect(story(pc).locator('a[href="/settings"]'), "settings link").toHaveCount(1);
     await expect(piece(pc, first), "original memo stays below the story").toHaveCount(1);
     for (const width of WIDTHS) {
@@ -204,8 +207,9 @@ test("PC Chromium and phone WebKit read one stored story on the memo's real date
 
     await saveReflection(pc, "21:15");
     await phone.page.goto(path);
-    await expect(story(phone.page), "phone rereads the account's reflection time").toContainText("21:15");
-    await expect(story(phone.page)).not.toContainText("20:00");
+    await expect(reflectionShown(phone.page), "one reflection-time label").toHaveCount(1);
+    await expect(reflectionShown(phone.page), "phone rereads the account's reflection time").toHaveText(/^회고 시간 21:15(?!\d)/);
+    await expect(reflectionShown(phone.page), "the old reflection time is gone from the label").not.toContainText("20:00");
     await expectStoryBody(phone.page, body, 3, "phone after settings change");
   } finally {
     try { await Promise.all(contexts.map((c) => c.close())); } finally { await phoneBrowser?.close(); }
