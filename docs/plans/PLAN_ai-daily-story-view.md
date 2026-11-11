@@ -22,6 +22,7 @@
 - `DaysView`/`MonthCalendar`에 storyDates(날짜 문자열만)를 전달한다. 조각/한 줄 없이 이야기만 있는 날짜도 링크·‘AI 하루 이야기’ 접근성 이름으로 선택할 수 있다. 선택한 날짜의 원본이0이어도 이야기 슬롯을 렌더한다. 원본이 있는 기존 링크 이름·덮개 이미지는 보존한다.
 - 이야기 목록 조회 실패는 경고로 구분한다. 기존 달력/원본을 숨기거나 ‘기록 없음’으로 성공 처리하지 않는다. 선택한 이야기 조회 실패도 별도 고정 안내다.
 - 신규 `app/src/ui/d/DailyStory.tsx`, `app/src/app/globals.css`의 story 규칙만 추가. 기존 D 토큰/줄바꿈·focus·터치44px을 따른다. 아트보드의 도구줄/합성본문/가짜 pending 전환은 제품 코드로 옮기지 않는다. 실제 source는 none/current/outdated/unavailable/읽기 실패만 표시한다. pending/error/생성 버튼은 S3 계약 뒤 추가한다.
+- DailyStory의 고정 props는 `{date:string;data:StoryDay|null;reflectionTime:string|null;hasMoments:boolean;headingLevel?:2|3}`다. data=null은 읽기 실패, hasMoments=false와 story 존재는 삭제 후 보존 안내에 쓴다. server 모듈/사용자 문맥을 import하지 않고 이 화면 자료만 받는다. 이 인터페이스로 실제 컴포넌트의 합성 캡처를 검증한다.
 
 ## 3. 소유와 RED
 
@@ -32,6 +33,7 @@
 - E2E는 mock OIDC/일회용PG18/합성 이야기만: (a) 실제 생성한 메모의 DB localDate를 고정하고 SQL fixture 이야기와 두 기기(Chromium PC·WebKit phone) 읽기·폰 메모 수정 뒤 outdated/동일본문 보존·회고설정 재조회, (b) 원본 전부 삭제 뒤 /days 달력의 이야기-only 링크·폰 재로그인/재조회, (c) 다른 계정/로그아웃 보호와 HTML처럼 생긴 합성본문의 text escape·읽기 실패/닫힌 생성 버튼 경계. 날짜를 서버 현재일 추측으로 덮어쓰지 않는다.
 - E2E fixture는 선언된 revision 공식으로 owner가 합성 행을 준비한다. 성공 mock generator/실 API 호출/사진·실제 사용자 자료0이다. 재현 가능한 fixture를 만들기 위해 제품 권한을 완화하지 않는다.
 - S1 GREEN 뒤 실제 UI RED를 확인하고 별도 작성자가 제품 파일만 GREEN 구현한다. 새 testcase 수는 실측 전 예상으로만 기록한다. 기존 app 323+S1·DB197+S1·auth41·image6/front14/preview10 회귀와 server-only 빌드 경계를 같은 SHA의 격리 CI에서 확인한다. host 앱 시험·브라우저/설치0이다.
+- 시각 증거는 기존 account visual 파일을 바꾸지 않고 신규 `app/tests/support/story-visual-capture.mjs`와 main 소유 `.github/workflows/story-visual-validation.yml`로 만든다. 기존 캡처처럼 CI 임시 Next 사본·실제 컴포넌트/CSS·합성 DTO·원본 hash 불변·POST/외부/cookie0·자신의 임시 자료만 정리를 검증한다. 5상태(current/outdated의2000자/deleted/unavailable/read-failed)×3폭=15 PNG의 정확 파일/서명/폭을 검사하고 그15개만 artifact에 올린다. DB/auth 실동작은 앞 E2E와 구분하며 가짜 RootLayout은 제품에 넣지 않는다. RED writer가 신규 캡처 script를 작성하고 컴포넌트 부재의 명시 assert를 확인한 뒤 UI author가 제품을 구현한다. 실제 PNG 직접 확인 전 visual PASS는 아니다.
 
 ## 4. 복귀·후속
 
