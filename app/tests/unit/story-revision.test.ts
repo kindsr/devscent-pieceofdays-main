@@ -138,13 +138,13 @@ describe("daily story S1 files and boundaries", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("the migration runner protects story_versions as the twelfth user-data table", () => {
+  it("the migration runner protects story_versions and the three 0006 story generation tables as user data (fifteen tables)", () => {
     const existing = [
       "users", "auth_identities", "preferences", "diary_moments", "day_summaries", "design_versions",
       "credit_accounts", "emotion_ledger", "photo_uploads", "moment_photos", "photo_deletions",
     ];
-    expect([...USER_DATA_TABLES].sort()).toEqual([...existing, "story_versions"].sort());
-    expect(USER_DATA_TABLES).toHaveLength(12);
+    expect([...USER_DATA_TABLES].sort()).toEqual([...existing, "story_versions", "story_ai_settings", "story_jobs", "story_usage"].sort());
+    expect(USER_DATA_TABLES).toHaveLength(15);
   });
 });
 

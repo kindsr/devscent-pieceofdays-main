@@ -2,6 +2,8 @@
 
 > 2026-11-11 통합 시 좁은 시험 갱신: 설정에 AI 동의 저장 form이 추가되어 기존 `story.spec.ts`의 `saveReflection`·`reflection.spec.ts`의 `save`가 가정하던 페이지 전체 `저장` 버튼 1개는 성립하지 않는다. 두 selector만 기존 접근 이름 `회고 시간` region 안으로 한정하고 기대값·case·보안 단언을 보존한다. AI 저장 버튼을 숨겨 시험에 맞추지 않으며, 같은 값 재저장도 동의 epoch를 증가시킨다. 그 외 기존 auth44 및 신규 S3 RED15는 동결한다.
 
+> aa9b8b3 최초 GREEN CI의 단위374통과/2실패 후 좁은 보완: `story-revision.test.ts`의 최신 사용자 표 목록12→15 기대를 0006에 맞추며 0005 down guard의 고정12표는 유지한다. `story-vision.test.ts`의 변조 사례는 `[good,other,good]`의 두 번째 사진에 `other`/`sha(other)`를 다시 넣는 no-op이었다. 초기 묶음을 모두 good으로 바꾸고 good/other hash가 다름을 먼저 단언해 실제 변조를 검증한다. 제품 vision의 SHA 대조는 유지하며 이 두 시험 외 기대·skip은 바꾸지 않는다.
+
 - 2026-11-11 사용자 실제 AI 생성/dev 배포 요청에 따른 실행 계획. 기준 4ea611e, planner t1xh 초안을 main t93이 선택·보완했다. 월 한도는 사용자 확보 후 정하는 원문 의미로 적용하고, 비용 추적/중복 방지는 유지한다. dev 전용 MinIO/NAS 백업 연계는 별도 PLAN_dev-minio-story-runtime으로 검증한다.
 - **수락된 방향(t93):** 내부 인증 route + native CLI, 기존 Pool·S1 재사용. 일반 사용자의 사진+메모, 회고 설정, 수동 생성까지 연결한다.
 - 비용 상한: 최신 사용자 원문은 ‘사용자 확보 후 설정’이며 main이 이를 적용한다. 고정 월 cap은 0이고, 호출 usage·unknown 기록은 필수다. **닫는 조건은 키 null뿐**이다. cap 미설정 때문에 멈추는 기존 관문 문구는 최신 지시에 맞춰 바꾼다(§9).

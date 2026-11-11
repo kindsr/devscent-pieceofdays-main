@@ -147,6 +147,7 @@ describe("prepareStoryPhotos", () => {
     const prepare = await load();
     const good = await original(640, 480, 5);
     const other = await original(640, 480, 6);
+    expect(sha(good), "the altered photo really differs from the stored one").not.toBe(sha(other));
     type Case = [string, (store: Map<string, Buffer | null | "throw">, refs: PhotoRef[]) => PhotoRef[]];
     const cases: Case[] = [
       ["object missing (null)", (store, refs) => { store.set(refs[1]!.objectKey, null); return refs; }],
@@ -161,7 +162,7 @@ describe("prepareStoryPhotos", () => {
       }],
     ];
     for (const [label, mutate] of cases) {
-      const { store, refs } = await refsFor([good, other, good]);
+      const { store, refs } = await refsFor([good, good, good]);
       const changed = mutate(store, refs);
       const result = await prepare(memoryBlobs(store).blobs, changed, new AbortController().signal);
       expect(result, label).toEqual({ ok: false, error: "photo_unavailable" });
