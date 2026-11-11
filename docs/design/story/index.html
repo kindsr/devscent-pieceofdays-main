@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>AI 하루 이야기 읽기 아트보드 — pieceofdays (시안 D)</title>
+  <!-- D 정본 토큰·상단 셸·버튼·조각·하루 한 줄을 그대로 쓴다. 외부 글꼴·외부 요청 없음. -->
+  <link rel="stylesheet" href="../concepts/d-warm-pieces/style.css">
+  <style>
+    /* 이야기 영역에만 더하는 최소 규칙. D 토큰만 쓴다. 새 색·그라데이션·그림자·애니메이션 없음. */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+    /* 아트보드 도구(제품 화면이 아님): auth.css의 도구 줄과 같은 값 */
+    .art-tool {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2);
+      max-width: 1200px; margin: 0 auto; padding: var(--s-1) var(--s-3);
+      font-size: 13px; color: var(--muted); border-bottom: 1px dashed var(--muted);
+    }
+    .art-tool-note { font-weight: 700; flex-basis: 100%; }
+    .art-tool label { display: inline-flex; align-items: center; gap: 6px; }
+    .art-tool select { font: inherit; min-height: 44px; max-width: 100%; color: var(--ink); background: var(--surface); border: 1px solid var(--muted); border-radius: 6px; }
+
+    /* 이야기: 메인 열 전체 폭, 본문은 64ch 읽기 폭. 조각 목록 위에 둔다. */
+    .story {
+      background: var(--surface); border: var(--border); border-radius: 4px;
+      padding: var(--s-3); margin: 0 0 var(--s-4); display: grid; gap: var(--s-2);
+    }
+    .story h2 { font-size: 20px; font-weight: 800; line-height: 1.4; }
+    .story-src { font-size: 14px; color: var(--muted); max-width: 64ch; }
+    .story-body { max-width: 64ch; font-family: var(--font-record); font-size: 17px; line-height: 1.8; white-space: pre-wrap; }
+    .story-state { max-width: 64ch; font-weight: 700; }
+    .story-state.is-muted { color: var(--muted); font-weight: 400; }
+    .story-err { max-width: 64ch; color: #8E2A12; font-weight: 800; border-left: 3px solid #8E2A12; padding-left: var(--s-2); }
+    .story .row { gap: var(--s-2); }
+    .story .btn-main[aria-disabled="true"], .story .btn-ghost[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+    .story .btn-main[aria-disabled="true"]:active { transform: none; }
+    .story-set { font-size: 15px; }
+
+    /* 원본 영역 머리: 원본임을 문장으로만 밝힌다 */
+    .src-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--s-2); margin: 0 0 var(--s-2); }
+    .src-head h2 { font-size: 18px; font-weight: 800; }
+    .src-head p { font-size: 14px; color: var(--muted); }
+    .no-pieces { color: var(--muted); padding: var(--s-2) 0 var(--s-3); }
+
+    @media (min-width: 1100px) {
+      /* 기존 D 규칙(.with-side .oneline)은 그대로. 이야기는 with-side 바깥이라 300px 열에 들어가지 않는다. */
+      .story { padding: var(--s-3) var(--s-4); }
+    }
+  </style>
+</head>
+<body>
+  <aside class="art-tool" aria-label="아트보드 도구">
+    <p class="art-tool-note">정적 아트보드 · 합성 예시 · 미배포 — 실제 생성·저장·로그인·네트워크 요청 없음. 이 줄은 제품 화면이 아니다.</p>
+    <label>이야기 상태
+      <select id="tool-state">
+        <option value="unavailable">준비 전 (현재 S1·S2 실제 상태)</option>
+        <option value="none">없음 · 생성 가능 (후속 계약)</option>
+        <option value="pending">만드는 중 (후속 계약)</option>
+        <option value="current">최신 이야기</option>
+        <option value="outdated">조각이 바뀐 뒤</option>
+        <option value="deleted">조각을 모두 지운 뒤</option>
+        <option value="error">실패 (후속 계약)</option>
+      </select>
+    </label>
+    <label>본문 길이
+      <select id="tool-len">
+        <option value="normal">보통 (합성 4문장)</option>
+        <option value="max">최대 2000자 (합성 반복)</option>
+      </select>
+    </label>
+    <label>기록 글꼴
+      <select id="tool-font">
+        <option value="gothic">고딕 (기본)</option>
+        <option value="serif">명조</option>
+        <option value="hand">손글씨</option>
+      </select>
+    </label>
+  </aside>
+
+  <header class="top">
+    <div class="top-in">
+      <a class="brand" href="#view">pieceofdays
+        <svg class="squiggle" viewBox="0 0 120 10" aria-hidden="true" focusable="false"><path d="M2 6 C 14 1, 22 9, 34 5 S 56 1, 68 6 S 92 9, 118 3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+      </a>
+      <nav class="seg" aria-label="주 메뉴">
+        <a href="../concepts/d-warm-pieces/index.html#today">오늘</a>
+        <a href="../concepts/d-warm-pieces/index.html#days" aria-current="page">모아보기</a>
+      </nav>
+      <a class="btn-add" href="../concepts/d-warm-pieces/index.html#write"><span aria-hidden="true">+</span> 조각 추가</a>
+    </div>
+  </header>
+
+  <main id="view" tabindex="-1">
+    <a class="back" href="../concepts/d-warm-pieces/index.html#days">← 모아보기</a>
+    <div class="board-head">
+      <h1>11월 2일 월요일 <span class="count" id="piece-count" aria-label="조각 4개">4</span></h1>
+      <a class="set-link text-btn" href="../concepts/d-warm-pieces/index.html#settings">설정(회고 시간·글꼴)</a>
+    </div>
+
+    <section class="story" id="story" aria-labelledby="story-h">
+      <h2 id="story-h">AI 하루 이야기</h2>
+      <div id="story-content"></div>
+    </section>
+    <p id="story-live" class="sr-only" aria-live="polite"></p>
+
+    <div class="with-side">
+      <section class="oneline" aria-labelledby="oneline-h">
+        <h2 id="oneline-h">하루 한 줄 · 내가 쓴 글</h2>
+        <p>비 온 뒤라 괜히 오래 걸었다.</p>
+      </section>
+      <section aria-labelledby="src-h">
+        <div class="src-head">
+          <h2 id="src-h">이날의 조각</h2>
+          <p>내가 남긴 원본 메모예요. 이야기는 이 메모로 만들어요.</p>
+        </div>
+        <ul class="pieces" id="pieces"></ul>
+        <p class="no-pieces" id="no-pieces" hidden>이 날의 조각이 없어요.</p>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    // 아트보드 전용 상태 전환. 합성 예시만 쓰고 외부 요청·저장·타이머가 없다. 모든 글은 textContent로 넣는다.
+    (function () {
+      var PIECES = [
+        { t: "08:40", c: "y", text: "출근길 버스에서 귤 하나." },
+        { t: "12:30", c: "m", text: "점심은 동료들과 칼국수." },
+        { t: "16:10", c: "p", text: "비 그친 뒤 하늘이 맑았다." },
+        { t: "19:20", c: "y", text: "산책하며 노래 한 곡 들었다." }
+      ];
+      var ADDED = { t: "21:40", c: "m", text: "집에 와서 따뜻한 차를 마셨다." };
+      var BODY = "아침 출근길 버스에서 귤 하나를 먹으며 하루를 시작했다.\n\n" +
+        "점심에는 동료들과 칼국수를 먹었다. 오후 네 시쯤 비가 그친 뒤 하늘이 맑아졌다.\n\n" +
+        "저녁에는 산책하며 노래 한 곡을 들었다.";
+      var REFLECT = "20:00"; // 계정 설정값 자리(기본 20:00, 서울)
+      var MADE = "11월 2일 20:03";
+
+      function maxBody() {
+        var unit = BODY + "\n\n";
+        var out = "";
+        while (Array.from(out + unit).length <= 2000) out += unit;
+        var rest = 2000 - Array.from(out).length;
+        return out + Array.from(unit).slice(0, rest).join("").replace(/\s+$/, "") ;
+      }
+
+      var view = {
+        state: document.getElementById("tool-state"),
+        len: document.getElementById("tool-len"),
+        font: document.getElementById("tool-font"),
+        content: document.getElementById("story-content"),
+        live: document.getElementById("story-live"),
+        pieces: document.getElementById("pieces"),
+        none: document.getElementById("no-pieces"),
+        count: document.getElementById("piece-count")
+      };
+
+      function el(tag, cls, text) {
+        var n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text != null) n.textContent = text;
+        return n;
+      }
+      function body() {
+        var p = el("p", "story-body", view.len.value === "max" ? maxBody() : BODY);
+        return p;
+      }
+      function src(when) {
+        return el("p", "story-src", "AI가 이날 조각의 메모로 쓴 글이에요. 원본 조각과 하루 한 줄은 아래에 그대로 있어요." + (when ? " · " + when + "에 만든 이야기" : ""));
+      }
+      function setLink() {
+        var a = el("a", "text-btn story-set", "회고 시간 바꾸기");
+        a.href = "../concepts/d-warm-pieces/index.html#settings";
+        return a;
+      }
+      function button(label, cls, disabled, onClick) {
+        var b = el("button", cls, label);
+        b.type = "button";
+        if (disabled) b.setAttribute("aria-disabled", "true");
+        b.addEventListener("click", function () { if (!disabled) onClick(); });
+        return b;
+      }
+      function goPending() {
+        // 후속 계약: 요청은 예약만 하고 바로 "만드는 중"을 돌려준다. 아트보드는 성공으로 넘어가지 않는다.
+        view.state.value = "pending";
+        render(true);
+      }
+
+      function renderPieces(list) {
+        view.pieces.textContent = "";
+        list.forEach(function (p) {
+          var li = el("li", "piece");
+          var note = el("div", "note " + p.c);
+          var meta = el("div", "piece-meta");
+          meta.appendChild(el("time", "hand", p.t));
+          note.appendChild(meta);
+          note.appendChild(el("p", null, p.text));
+          li.appendChild(note);
+          view.pieces.appendChild(li);
+        });
+        view.none.hidden = list.length !== 0;
+        view.count.textContent = String(list.length);
+        view.count.setAttribute("aria-label", "조각 " + list.length + "개");
+      }
+
+      var STATES = {
+        unavailable: function (c) {
+          c.appendChild(el("p", "story-state is-muted", "AI 하루 이야기는 아직 준비 중이에요. 남긴 조각과 하루 한 줄은 그대로 저장돼요."));
+          return { pieces: PIECES, live: "AI 하루 이야기는 아직 준비 중이에요." };
+        },
+        none: function (c) {
+          c.appendChild(el("p", "story-state", "회고 시간(" + REFLECT + ")이 되면 이날 조각으로 이야기를 만들어요. 지금 만들 수도 있어요."));
+          var row = el("div", "row");
+          row.appendChild(button("지금 이야기 만들기", "btn-main", false, goPending));
+          row.appendChild(setLink());
+          c.appendChild(row);
+          return { pieces: PIECES, live: "아직 이야기가 없어요." };
+        },
+        pending: function (c) {
+          c.appendChild(el("p", "story-state", "이야기를 만드는 중이에요. 이 화면을 떠나도 괜찮아요. 다 만들면 여기에 보여요."));
+          var row = el("div", "row");
+          row.appendChild(button("이야기 만드는 중", "btn-main", true));
+          c.appendChild(row);
+          return { pieces: PIECES, live: "이야기를 만드는 중이에요." };
+        },
+        current: function (c) {
+          c.appendChild(src(MADE));
+          c.appendChild(body());
+          return { pieces: PIECES, live: "이야기를 불러왔어요." };
+        },
+        outdated: function (c) {
+          c.appendChild(el("p", "story-state", "이 이야기를 만든 뒤 조각이 바뀌었어요. 지금 조각과 다를 수 있어요."));
+          c.appendChild(src(MADE));
+          c.appendChild(body());
+          var row = el("div", "row");
+          row.appendChild(button("지금 조각으로 새로 만들기", "btn-ghost", false, goPending));
+          c.appendChild(row);
+          return { pieces: PIECES.concat([ADDED]), live: "조각이 바뀐 뒤의 이야기예요." };
+        },
+        deleted: function (c) {
+          c.appendChild(el("p", "story-state", "이 날의 조각을 모두 지웠지만, 이전에 만든 이야기는 남아 있어요."));
+          c.appendChild(src(MADE));
+          c.appendChild(body());
+          return { pieces: [], live: "조각은 없고 이전 이야기만 남아 있어요." };
+        },
+        error: function (c) {
+          var err = el("p", "story-err", "이야기를 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요.");
+          err.setAttribute("role", "alert");
+          c.appendChild(err);
+          var row = el("div", "row");
+          row.appendChild(button("다시 시도", "btn-ghost", false, goPending));
+          c.appendChild(row);
+          return { pieces: PIECES, live: null };
+        }
+      };
+
+      function render(announce) {
+        document.documentElement.setAttribute("data-record-font", view.font.value);
+        view.content.textContent = "";
+        var r = STATES[view.state.value](view.content);
+        renderPieces(r.pieces);
+        // 포커스는 옮기지 않는다. 상태 변화는 polite 알림, 오류는 role=alert.
+        view.live.textContent = announce && r.live ? r.live : "";
+      }
+
+      view.state.addEventListener("change", function () { render(true); });
+      view.len.addEventListener("change", function () { render(false); });
+      view.font.addEventListener("change", function () { render(false); });
+      render(false);
+    })();
+  </script>
+</body>
+</html>

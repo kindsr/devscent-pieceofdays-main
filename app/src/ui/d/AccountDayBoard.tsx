@@ -28,7 +28,7 @@ const ERRORS: Record<ActionError, string> = {
 };
 
 /** 목록·한 줄은 최신 서버 props만 사용한다. 로컬에는 열린 초안과 편집 시작 시 기대 버전만 둔다. */
-export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, headingLevel = 1, photosEnabled = false }: DayBoardProps) {
+export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, headingLevel = 1, photosEnabled = false, story = null }: DayBoardProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const busy = useRef(false);
@@ -321,6 +321,7 @@ export function AccountDayBoard({ day, isToday, sub, showSettingsLink = false, h
         {sub ? <p className="sub">{sub}</p> : null}
         {showSettingsLink ? <Link className="text-btn set-link" href="/settings">기록 글꼴 설정</Link> : null}
       </header>
+      {story}
       {day.moments.length === 0 ? (
         <>
           <section className="first" aria-labelledby="f-h">
