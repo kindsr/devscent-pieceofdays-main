@@ -422,7 +422,7 @@ RED 시나리오 핵심(동의 epoch·snapshot 추가분 우선 명시):
 
 - provider의 전체 응답30초·128KiB 제한은 기존과 같다. 전체 worker는 사진 준비를 포함80초, native CLI100초다. 실제 기본 모델은 claude-sonnet-5-5이고 2026-11-11 공식 pricing에서 input2/output10 USD/MTok를 확인했다. 월 한도 미설정은 무과금이 아니며 unknown 호출을0원으로 보고하지 않는다.
 - 공식 Vision 문서의 base64 JPEG source를 사용한다(https://platform.claude.com/docs/en/build-with-claude/vision). 30장/장당256KiB/총4MiB binary·최대6MiB JSON은 이 서비스의 더 좁은 입력 한도다. JPEG의 실제 진위/크기/metadata 제거는 Sharp 준비 단계가 검증하고, 어댑터도 canonical base64/decoded byte 한도/알 수 없는 키를 검증한다. 외부 URL·Files 업로드·추가 beta/API헤더·새 provider/key fallback은0이다.
-- CLI 시험은 고정3000포트 선점 없이 가능하도록 export된 실행 함수에 시험용 transport 함수를 주입할 수 있다. 실제 entry는 고정 URL/100초/실env token만 사용하며 임의 URL CLI/env옵션은 없다. 모듈 import만으로 실행하지 않고 직접 entry인 경우에만 호출한다.
+- CLI는 `export async function runStoryWorkerCli({env,request,stdout,stderr}):Promise<0|1>`를 제공한다. request는 fetch 시그니처이며 고정 URL/POST/Bearer/redirect:error/100초 signal을 받는다. 시험은 이를 검사한 뒤 자기 loopback 임의 포트로 fetch하는 transport를 주입해 실HTTP를 확인할 수 있다. child process는 잘못된 token의 HTTP0·고정 stderr/exit1을 검증하면 충분하다. 실제 entry는 process.env/global fetch를 넣고 고정 URL만 사용하며 임의 URL CLI/env옵션은 없다. 모듈 import만으로 실행하지 않고 직접 entry인 경우에만 호출한다. 서비스3000포트 부재/선점을 추측하는 환경 의존 시험은 만들지 않는다.
 - main은 디자인 핸드오프와 승인 D 아트보드를 갱신한다. 제품에 가짜성공이나 예시본 원문을 넣지 않는다. 기존15PNG·기존44 E2E는 회귀로 유지하고 새 UI 상태는 추가 E2E에서 검증한다. 설정 링크는 기존 href=/settings 단일 링크 기대를 보존한다.
 - 소유에 명시되지 않은 공통 auth/issuer/실행 모드/패키지/lock/workflow/권한은 변경하지 않는다. worker API용 runtime test backdoor는 만들지 않는다. host 앱/DB/브라우저 시험·설치0, 모든 기능 검증은 기존 격리 CI다. main 실서버 검증과 사용자별 명시 동의, 실제 B5를 mock CI로 대신하지 않는다.
 - 개인정보 고지는 사진·메모가 Anthropic API로 전송되는 목적/자료와 철회 후 새 호출 중단, 이미 전송된 자료 회수 불가를 사실대로 표시한다. 공급자 보존기간/법률 적합성은 검증 없이 단정하지 않는다. 실제 안내가 필요한 공개 정책 경로는 dev front에서 제공/대조한 뒤 활성화한다.
