@@ -72,6 +72,8 @@ DTO에 userId/gen/momentId/photoId/object key·내부 sourceRevision은 넣지 �
 - schema 권한/CHECK/FK/CASCADE/unique·원장 보존·USER_DATA_TABLES12·CI 빈 DB up/down·이야기가 있는 down 거부·SQL 자체 non-ci down 거부를 검증한다. 실제 서비스 DB/외부 API/키0.
 - host 앱/DB 시험·설치0. GitHub 격리 Actions의 기존 app unit/db/auth·build/boundary·image/front 회귀만 사용한다. RED 실측 실패 이유를 회수한 뒤 별도 작성자가 GREEN 9파일만 구현하고 시험 byte0을 지킨다. 메인이 feature commit/push/PR·로그 회수와 독립 검토를 조율한다.
 
+- 2026-11-11 검증 결과: GREEN `007c443`에서 새 stories19는 통과했지만 기존 migrate 시험3개의 버전 배열 기대가 `[1,2,3,4]`로 남아 DB213pass/3fail이었다. 재발 방지: 별도 test-only `c3c3023`은 해당3줄만0005까지 갱신했고 제품9파일은 byte변경0이다. [최종 앱 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42946102668)의 unit335·DB216·auth41·Node24/26 빌드/경계7/prod12/fixture12와 [이미지 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42946102674)의 구조128·image6/front14/원문preview10을 통과했다. 초기 실패를 제품/환경 결함으로 바꾸어 설명하거나 down 검사를 완화하지 않았다. 실제 서비스 DB/일기 전송·배포는 미실행이다.
+
 ## 4. 다음 연결과 복귀
 
 - S2는 D 날짜 화면 이야기 영역과 동의/생성 상태·PC/폰 읽기를 연결하고 실제 아트보드/핸드오프를 갱신한다. S3는 선택된 전송 범위, persisted consent, PG 원자 예약과 사용자 삭제로 지워지지 않는 공유 월 비용 원장, provider·실행기를 함께 검증한다.

@@ -38,3 +38,10 @@
 ## 4. 복귀·후속
 
 S2는 DB 쓰기·외부 전송·migration0이다. 이야기 UI/읽기 helper를 회수하면 기존 조각 화면으로 돌아가며 저장된 이야기와 원본을 삭제하지 않는다. 공용 nginx·timer·운영 전환0이다. 데이터 범위·월 상한·사진 저장소 결정, S3의 실제 생성·공유 예약/비용/동의 및 정시 worker, 같은SHA 게시 이미지/서비스 DB/Google B5·30분 복귀를 거친 뒤 dev를 연다.
+
+## 5. 검증 결과와 시험 보완 (2026-11-11)
+
+- SOURCE GREEN `b2b071a`는 제품11파일을 구현했고 원 RED 시험3파일은 byte변경0이다. 이후 test-only `a6f4331`은 생성 시각과 혼동하던 회고시간 단언을 실제 설정 label로 한정(+7/-3)했고, `48a95d7`은 로그아웃 버튼이 있는 `/settings`로 먼저 이동하도록 두 줄을 추가했다. 기존 기대·다른 계정/로그아웃 보호·본문/레이아웃 검사는 유지했다. 재발 방지: RED에서 더 앞의 미구현 지점에 막혀 발견되지 않았던 두 도구 결함을 제품 UI 변경이나 기대 완화로 처리하지 않았다. `a6f4331`의 auth42pass/2fail과 뒤 미도달 단언은 [원 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42948842363)에 보존한다.
+- 최종 기능 검증 SHA `48a95d72c2e71452b9bbaf36896a36adc2909cc7`의 [앱 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42949809675)는 Node24/26 각 unit335·경계7·prod12·fixture12와 lint/typecheck/build, DB218/218, auth44/44(기존41+story3)를 통과했다. [이미지 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42949809630)는 unit335·구조128·image6/front14/원문preview10을 통과했다. 필수 검사를 건너뛰거나 재실행한 결과가 아니다.
+- [최종 시각 CI](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42949809624)의 artifact `13824701292`, merge checkout `4b3c0b2b84bf9fe4b9e2caf2250ddcf6d2b755a5`, ZIP SHA256 `297ab09e775dcd1db73ef8cb6517fc8752d7bdeeabfdd670e14a3ea612ec143e`를 확인했다. 정확15 PNG의 각 바이트가 직접 확인한 `a6f4331` artifact `13823389680`과 모두 같아 5상태×3폭의 시각 PASS를 수락했다. 실제 컴포넌트/CSS를 임시 RootLayout으로 렌더한 합성 증거이며, 물리 기기·실제 공급자 로그인·서비스 DB·배포 검증을 대신하지 않는다.
+- S1 저장 기반과 S2 읽기 화면을 개발 작업 브랜치에 통합했다. 실제 생성/정시 실행·외부 일기 전송·live env·서비스 DB migration·dev/main 배포는 이 검증 범위에 포함하지 않았다.
