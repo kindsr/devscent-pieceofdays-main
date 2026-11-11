@@ -1,0 +1,156 @@
+name: Capture story generation visuals
+
+# PNG-only evidence for the S3 synthetic generation states (PLAN_ai-story-live-generation §5·§6.1).
+# Runs only the two chromium cases of tests/e2e-auth/story-generate.spec.ts through the existing auth E2E harness
+# (mock OIDC issuer, this job's disposable PostgreSQL 18, global setup's fake Claude key/worker token). No real provider or API.
+# The existing auth-e2e job (app-validation.yml) keeps uploading nothing; this independent workflow uploads only the 12 PNGs.
+on:
+  pull_request:
+    branches: [dev]
+    paths: ["app/**", ".github/workflows/story-generation-visuals.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: story-generation-visuals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  story-generation-visuals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    services:
+      postgres:
+        # postgres:18.6 official image, OCI image index digest (same pin as app-validation db/auth-e2e)
+        image: postgres:18.6@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      POD_FULL_CHECK_ISOLATED: "1"
+      POD_TEST_DB_DISPOSABLE: "1"
+      POD_TEST_ADMIN_URL: postgres://postgres:ci-only-not-a-secret@127.0.0.1:5432/postgres
+    steps:
+      # actions/checkout v6.1.0 (same official commit as app-validation)
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      # actions/setup-node v6.5.0 (same official commit as app-validation)
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install (lockfile only)
+        run: npm ci
+      - name: Install the existing Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run only the two synthetic story generation cases (chromium)
+        run: npx playwright test -c playwright.auth.config.ts --project=chromium tests/e2e-auth/story-generate.spec.ts
+      - name: Validate and stage exactly twelve PNGs
+        run: |
+          python3 -I - <<'PY'
+          import hashlib, os, stat, struct, sys
+          from pathlib import Path
+
+          STATES = ("settings", "ready", "queued", "failed")
+          WIDTHS = (375, 768, 1440)
+          NAMES = {f"story-generate-{s}-{w}.png" for s in STATES for w in WIDTHS}
+          SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+          def fail(message):
+              print("story-generation-visuals: " + message, file=sys.stderr)
+              sys.exit(1)
+
+          root = Path("test-results")
+          if root.is_symlink() or not root.is_dir():
+              fail("test-results is missing or not a plain directory")
+          found = {}
+          for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+              for name in dirnames:
+                  if os.path.islink(os.path.join(dirpath, name)):
+                      fail("symlinked directory under test-results")
+              for name in filenames:
+                  if name in NAMES:
+                      if name in found:
+                          fail("duplicate " + name)
+                      found[name] = Path(dirpath) / name
+          missing = sorted(NAMES - found.keys())
+          if missing:
+              fail("missing " + ", ".join(missing))
+
+          out = Path(os.environ["RUNNER_TEMP"]) / "pod-story-generation-png"
+          if out.exists() or out.is_symlink():
+              fail("staging directory already exists")
+          out.mkdir(mode=0o700)
+          lines = []
+          for name in sorted(found):
+              source = found[name]
+              info = os.lstat(source)
+              if not stat.S_ISREG(info.st_mode):
+                  fail("not a regular file: " + name)
+              data = source.read_bytes()
+              if len(data) < 33 or data[:8] != SIGNATURE or data[12:16] != b"IHDR":
+                  fail("not a PNG: " + name)
+              width, height = struct.unpack(">II", data[16:24])
+              expected_width = int(name.removesuffix(".png").rsplit("-", 1)[1])
+              if width != expected_width or height <= 0:
+                  fail("wrong PNG dimensions: " + name)
+              target = out / name
+              with open(target, "xb") as handle:
+                  handle.write(data)
+              os.chmod(target, 0o600)
+              lines.append(f"{name} {width}x{height} sha256 {hashlib.sha256(data).hexdigest()}")
+          if sorted(p.name for p in out.iterdir()) != sorted(NAMES):
+              fail("staging directory holds other files")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("Story generation PNG12 (synthetic, chromium):\n\n")
+              for line in lines:
+                  summary.write(f"- {line}\n")
+          PY
+      # Reuse the official v7 pin already used by the story/account visual workflows.
+      - name: Upload only the twelve validated PNG files
+        id: png
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: story-generation-png-${{ github.sha }}
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 1
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-settings-375.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-settings-768.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-settings-1440.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-ready-375.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-ready-768.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-ready-1440.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-queued-375.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-queued-768.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-queued-1440.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-failed-375.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-failed-768.png
+            ${{ runner.temp }}/pod-story-generation-png/story-generate-failed-1440.png
+      - name: Record the artifact identity and evidence limits
+        env:
+          ARTIFACT_ID: ${{ steps.png.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.png.outputs.artifact-digest }}
+        run: |
+          test -n "$ARTIFACT_ID"
+          test -n "$ARTIFACT_DIGEST"
+          echo "Story generation PNG12; checkout $GITHUB_SHA; artifact $ARTIFACT_ID; sha256 $ARTIFACT_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          echo "Synthetic accounts/memos via mock OIDC and disposable PG18; fake key/token only; no worker, cron or real API. Visual acceptance awaits image review." >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the owned PNG output
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/pod-story-generation-png" test-results
