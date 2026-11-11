@@ -3,7 +3,7 @@
 // - request(url, init)는 고정 URL·POST·Bearer·redirect:"error"·100초 signal을 받는다. 시험은 그 값을 단언한 뒤 자기 loopback 임의 port로 실제 HTTP를 보낸다.
 // - 직접 실행(entry)일 때만 process.env·global fetch로 호출한다. child process는 잘못된 token guard(HTTP 0)만 확인한다.
 // - stdout·stderr는 write(text)를 가진 객체(process.stdout과 같은 모양)로 받는다고 가정한다.
-import { spawn } from "node:child_process";
+import { spawn, type SpawnOptionsWithStdioTuple, type StdioNull, type StdioPipe } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -179,9 +179,12 @@ describe("story worker CLI entry (child process)", () => {
   it("as a direct entry refuses an invalid token with the fixed stderr line and exit 1", async () => {
     expect(existsSync(CLI), "src/server/stories/worker-cli.mjs must exist (PLAN §4.8)").toBe(true);
     for (const token of [undefined, "not-a-token"]) {
-      const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin" };
+      // Next augments NodeJS.ProcessEnv with a required NODE_ENV; the child keeps exactly this minimal env (type-only cast, no NODE_ENV added).
+      const env = { PATH: process.env.PATH ?? "/usr/bin:/bin" } as unknown as NodeJS.ProcessEnv;
       if (token !== undefined) env.POD_STORY_WORKER_TOKEN = token;
-      const child = spawn(process.execPath, [CLI], { cwd: APP_DIR, env, stdio: ["ignore", "pipe", "pipe"] });
+      // stdin ignore, stdout/stderr pipe: the typed tuple selects the spawn overload whose stdout/stderr are non-null Readables.
+      const options: SpawnOptionsWithStdioTuple<StdioNull, StdioPipe, StdioPipe> = { cwd: APP_DIR, env, stdio: ["ignore", "pipe", "pipe"] };
+      const child = spawn(process.execPath, [CLI], options);
       let out = "";
       let err = "";
       child.stdout.on("data", (c: Buffer) => { out += c.toString("utf8"); });
