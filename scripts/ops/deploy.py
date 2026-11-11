@@ -64,7 +64,11 @@ APP_SETTINGS = frozenset({"app_mode_enabled", "app_env_file", "db_network", "app
 APP_ENV_REQUIRED = ("POD_AUTH_SESSION_SECRETS", "POD_AUTH_BASE_URL", "POD_AUTH_PROVIDERS", "POD_DATABASE_URL")
 APP_ENV_PROVIDERS = ("google", "kakao")
 APP_ENV_PHOTOS = ("POD_PHOTOS_S3_ENDPOINT", "POD_PHOTOS_S3_REGION", "POD_PHOTOS_S3_BUCKET", "POD_PHOTOS_S3_ACCESS_KEY_ID", "POD_PHOTOS_S3_SECRET_ACCESS_KEY")
-APP_ENV_KEYS = frozenset(APP_ENV_REQUIRED + APP_ENV_PHOTOS + ("POD_WITHDRAWAL_ENABLED",) + tuple("POD_AUTH_%s_CLIENT_%s" % (p.upper(), part) for p in APP_ENV_PROVIDERS for part in ("ID", "SECRET")))
+# PLAN_dev-minio-story-runtime §1.4·§1.5: dev front relay flag and the AI story runtime credentials.
+APP_ENV_RELAY_FLAG = "POD_PHOTOS_INTERNAL_DEV_HTTP"
+APP_ENV_RELAY_BUCKET = "pieceofdays-photos-dev"
+APP_ENV_STORY = ("ANTHROPIC_API_KEY", "POD_STORY_WORKER_TOKEN")
+APP_ENV_KEYS = frozenset(APP_ENV_REQUIRED + APP_ENV_PHOTOS + ("POD_WITHDRAWAL_ENABLED", APP_ENV_RELAY_FLAG) + APP_ENV_STORY + tuple("POD_AUTH_%s_CLIENT_%s" % (p.upper(), part) for p in APP_ENV_PROVIDERS for part in ("ID", "SECRET")))
 APP_ENV_MAX_BYTES = 64 * 1024
 IMAGE_ENV_FIXED = {"NODE_ENV": "production", "NEXT_TELEMETRY_DISABLED": "1", "PORT": "3000", "HOSTNAME": "0.0.0.0"}
 IMAGE_ENV_FREE = frozenset({"PATH", "NODE_VERSION", "YARN_VERSION"})
@@ -102,6 +106,39 @@ DEV_FRONT_NGINX_CONF = (
     + "".join("    location = /%s { }\n    location ^~ /%s/ { }\n" % (name, name) for name in STATIC_DIRECTORIES)
     + "\n"
     "    location / { return 404; }\n"
+    "}\n"
+)
+
+# Internal-only dev photo relay (PLAN_dev-minio-story-runtime §1.1~1.3), appended to the unchanged public80
+# constant in the same default.conf. Only the dev bucket's photos/<lowercase UUID>.jpg object with the S3 object
+# operation that matches the method (or no query) is forwarded, judged on the raw $request_uri so encoded or
+# dot-segment forms cannot pass; everything else is 403. The upstream is a runtime-resolved variable without a
+# URI part, so the signed request URI, Host, headers and body reach storage unchanged and an absent storage
+# never blocks nginx start. No logs; no header is added, hidden or rewritten besides the original Host.
+DEV_FRONT_RELAY_NGINX_CONF = (
+    "\n"
+    "server {\n"
+    "    listen 8081;\n"
+    "    server_name _;\n"
+    "    access_log off;\n"
+    "    error_log /dev/null crit;\n"
+    "    client_max_body_size 5m;\n"
+    "    resolver 127.0.0.11 ipv6=off valid=30s;\n"
+    "    set $pod_photo_relay_upstream \"http://minio:9000\";\n"
+    "    set $pod_photo_relay_request \"$request_method $request_uri\";\n"
+    "    if ($pod_photo_relay_request !~ \"^(?:(?:GET|HEAD) /pieceofdays-photos-dev/photos/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.jpg(?:\\?x-id=GetObject)?"
+    "|PUT /pieceofdays-photos-dev/photos/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.jpg(?:\\?x-id=PutObject)?"
+    "|DELETE /pieceofdays-photos-dev/photos/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.jpg(?:\\?x-id=DeleteObject)?)$\") {\n"
+    "        return 403;\n"
+    "    }\n"
+    "\n"
+    "    location / {\n"
+    "        proxy_http_version 1.1;\n"
+    "        proxy_buffering off;\n"
+    "        proxy_request_buffering off;\n"
+    "        proxy_set_header Host $http_host;\n"
+    "        proxy_pass $pod_photo_relay_upstream;\n"
+    "    }\n"
     "}\n"
 )
 
@@ -619,6 +656,11 @@ def validate_app_env(text, settings):
                 raise ValueError("app env: " + key + " must be set exactly when its provider is listed")
     if "POD_WITHDRAWAL_ENABLED" in values and values["POD_WITHDRAWAL_ENABLED"] != "1":
         raise ValueError("app env: POD_WITHDRAWAL_ENABLED must be 1 when present")
+    relay = APP_ENV_RELAY_FLAG in values
+    if relay and values[APP_ENV_RELAY_FLAG] != "1":
+        raise ValueError("app env: " + APP_ENV_RELAY_FLAG + " must be 1 when present")
+    if relay and not any(key in values for key in APP_ENV_PHOTOS):
+        raise ValueError("app env: " + APP_ENV_RELAY_FLAG + " requires the photo settings")
     if any(key in values for key in APP_ENV_PHOTOS):
         if not all(key in values for key in APP_ENV_PHOTOS):
             raise ValueError("app env: photo settings must contain all five keys when present")
@@ -626,19 +668,35 @@ def validate_app_env(text, settings):
             if " " in values[key]:
                 raise ValueError("app env: value of " + key + " must not contain spaces")
         endpoint = values["POD_PHOTOS_S3_ENDPOINT"]
-        try:
-            parsed = urllib.parse.urlsplit(endpoint)
-            if (re.fullmatch(r"https://(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?/?", endpoint) is None
-                    or not parsed.hostname or (parsed.port is not None and not 1 <= parsed.port <= 65535)):
-                raise ValueError("invalid photo endpoint")
-        except ValueError:
-            raise ValueError("app env: POD_PHOTOS_S3_ENDPOINT must be an HTTPS root URL without userinfo, query or fragment and with a valid port") from None
+        if relay:
+            # The only HTTP endpoint: the dev front relay at front_subnet + 11, port 8081, root path, dev bucket.
+            front_subnet = dedicated_subnets(settings)[0]
+            if endpoint != "http://%s:8081/" % (front_subnet.network_address + 11):
+                raise ValueError("app env: POD_PHOTOS_S3_ENDPOINT must be the exact dev front relay endpoint when " + APP_ENV_RELAY_FLAG + " is set")
+            if values["POD_PHOTOS_S3_BUCKET"] != APP_ENV_RELAY_BUCKET:
+                raise ValueError("app env: POD_PHOTOS_S3_BUCKET must be the dev relay bucket when " + APP_ENV_RELAY_FLAG + " is set")
+        else:
+            try:
+                parsed = urllib.parse.urlsplit(endpoint)
+                if (re.fullmatch(r"https://(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?/?", endpoint) is None
+                        or not parsed.hostname or (parsed.port is not None and not 1 <= parsed.port <= 65535)):
+                    raise ValueError("invalid photo endpoint")
+            except ValueError:
+                raise ValueError("app env: POD_PHOTOS_S3_ENDPOINT must be an HTTPS root URL without userinfo, query or fragment and with a valid port") from None
         if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", values["POD_PHOTOS_S3_REGION"]) is None:
             raise ValueError("app env: POD_PHOTOS_S3_REGION has invalid format")
         bucket = values["POD_PHOTOS_S3_BUCKET"]
         if (re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket) is None or ".." in bucket
                 or ".-" in bucket or "-." in bucket or re.fullmatch(r"\d+\.\d+\.\d+\.\d+", bucket) is not None):
             raise ValueError("app env: POD_PHOTOS_S3_BUCKET has invalid format")
+    story = [key in values for key in APP_ENV_STORY]
+    if any(story) and not all(story):
+        raise ValueError("app env: ANTHROPIC_API_KEY and POD_STORY_WORKER_TOKEN must be set together")
+    if all(story):
+        if re.fullmatch(r"[!-~]{1,4096}", values["ANTHROPIC_API_KEY"]) is None:
+            raise ValueError("app env: ANTHROPIC_API_KEY must be 1..4096 visible ASCII characters")
+        if re.fullmatch(r"[0-9a-f]{64}", values["POD_STORY_WORKER_TOKEN"]) is None:
+            raise ValueError("app env: POD_STORY_WORKER_TOKEN must be 64 lowercase hex characters")
     try:
         secrets = json.loads(values["POD_AUTH_SESSION_SECRETS"], object_pairs_hook=unique_json_object)
     except ValueError:
@@ -1013,7 +1071,7 @@ def deploy_app(sha, tree, manifest_digest, config_digest, settings):
         context = Path(temporary) / "front"
         context.mkdir(mode=0o700)
         shutil.copytree(public, context / "public", symlinks=True)
-        (context / "default.conf").write_text(DEV_FRONT_NGINX_CONF)
+        (context / "default.conf").write_text(DEV_FRONT_NGINX_CONF + DEV_FRONT_RELAY_NGINX_CONF)
         os.chmod(context / "default.conf", 0o644)
         dockerfile = Path(temporary) / "Dockerfile.front"
         dockerfile.write_text("FROM " + FRONT_NGINX_BASE + "\nCOPY public/ /usr/share/nginx/html/\nCOPY default.conf /etc/nginx/conf.d/default.conf\n")
