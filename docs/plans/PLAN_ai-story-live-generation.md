@@ -4,6 +4,8 @@
 
 > aa9b8b3 최초 GREEN CI의 단위374통과/2실패 후 좁은 보완: `story-revision.test.ts`의 최신 사용자 표 목록12→15 기대를 0006에 맞추며 0005 down guard의 고정12표는 유지한다. `story-vision.test.ts`의 변조 사례는 `[good,other,good]`의 두 번째 사진에 `other`/`sha(other)`를 다시 넣는 no-op이었다. 초기 묶음을 모두 good으로 바꾸고 good/other hash가 다름을 먼저 단언해 실제 변조를 검증한다. 제품 vision의 SHA 대조는 유지하며 이 두 시험 외 기대·skip은 바꾸지 않는다.
 
+> 같은 CI의 DB241통과/2실패는 신규 purge 모사가 기존 credit RESTRICT를 무시한 raw users DELETE를 사용한 문제다. `story-jobs.test.ts`의 두 지점만 기존 `setPending`으로 기한 지난 상태를 만들고 purge 역할의 `pod.purge_user_if_due`를 호출하도록 바꾼다. 익명 usage 잔존·job/story 제거·늦은 성공 저장 금지는 그대로 검증한다. auth43통과/3실패는 `device.spec.ts`의 회고 시간 저장과 `reflection.spec.ts`의 pending 저장 selector 두 줄도 같은 region 한정이 필요함을 확인한 결과다(신규 생성2는 통과). 제품 UI·0002·credit 제약·기존 case/기대는 유지한다.
+
 - 2026-11-11 사용자 실제 AI 생성/dev 배포 요청에 따른 실행 계획. 기준 4ea611e, planner t1xh 초안을 main t93이 선택·보완했다. 월 한도는 사용자 확보 후 정하는 원문 의미로 적용하고, 비용 추적/중복 방지는 유지한다. dev 전용 MinIO/NAS 백업 연계는 별도 PLAN_dev-minio-story-runtime으로 검증한다.
 - **수락된 방향(t93):** 내부 인증 route + native CLI, 기존 Pool·S1 재사용. 일반 사용자의 사진+메모, 회고 설정, 수동 생성까지 연결한다.
 - 비용 상한: 최신 사용자 원문은 ‘사용자 확보 후 설정’이며 main이 이를 적용한다. 고정 월 cap은 0이고, 호출 usage·unknown 기록은 필수다. **닫는 조건은 키 null뿐**이다. cap 미설정 때문에 멈추는 기존 관문 문구는 최신 지시에 맞춰 바꾼다(§9).

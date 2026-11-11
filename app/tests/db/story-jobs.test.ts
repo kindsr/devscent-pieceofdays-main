@@ -18,7 +18,7 @@ import {
   relationExists, runMigrateCli, schemaSnapshot, withApp, withOwner,
 } from "./f2-support";
 import { UUID_RE, appBackend, endAllPools, expectLedgerInvariants, freshMigratedDb, openAppPool, type Result } from "./f3-support";
-import { seedUser, setPending } from "./f4-lifecycle-support";
+import { openPurge, seedUser, setPending } from "./f4-lifecycle-support";
 
 // ---------------------------------------------------------------- 공개 계약(최소 로컬 타입, PLAN §3·§4)
 
@@ -202,6 +202,21 @@ const settingsRow = (db: DisposableDatabase, userId: string) => q<{ consent_vers
   "SELECT consent_version, consent_revision::text, manual_enabled, auto_enabled, auto_enabled_at IS NOT NULL AS auto_at FROM pod.story_ai_settings WHERE user_id = $1::uuid", [userId]);
 const dbMonth = async (db: DisposableDatabase) => (await q<{ m: string }>(db, "SELECT date_trunc('month', clock_timestamp() AT TIME ZONE 'Asia/Seoul')::date::text AS m"))[0]!.m;
 
+/**
+ * 실제 purge 경로(0002): 기한이 지난 탈퇴 대기로 둔 뒤 purge role로 pod.purge_user_if_due를 호출한다.
+ * owner의 raw DELETE users는 credit_accounts(RESTRICT)·원장 append-only 때문에 거부되는 것이 맞다(시험이 우회하지 않는다).
+ */
+async function purgeNow(db: DisposableDatabase, userId: string): Promise<void> {
+  await setPending(env, db, userId, "clock_timestamp() - interval '721 hours'");
+  const purge = await openPurge(env, db);
+  try {
+    const r = await purge.client.query<{ r: string }>("SELECT pod.purge_user_if_due($1::uuid) AS r", [userId]);
+    expect(r.rows[0]?.r, "the real purge function removed the due account").toBe("purged");
+  } finally {
+    await purge.close();
+  }
+}
+
 function ok<T, E extends string>(r: Result<T, E>, label: string): T {
   expect(r.ok, `${label}: ${r.ok ? "" : r.error}`).toBe(true);
   if (!r.ok) throw new Error(label);
@@ -343,7 +358,7 @@ describe("0006_story_generation schema, privileges and down guard", () => {
     await withJobs("jobspurge", async (api, pool, db) => {
       const { s, jobId } = await manualDay(api, pool, db);
       await owner(db, (c) => c.query("INSERT INTO pod.story_usage (job_id, usage_month, model, state, input_tokens, output_tokens, settled_at) VALUES ($1, '2026-11-01', $2, 'settled', 10, 5, now())", [jobId, MODEL]));
-      await owner(db, (c) => c.query("DELETE FROM pod.users WHERE id = $1", [s.userId]));
+      await purgeNow(db, s.userId);
       expect(await jobs(db, s.userId)).toEqual([]);
       expect(await settingsRow(db, s.userId)).toEqual([]);
       expect(await usage(db)).toEqual([{ job_id: jobId, usage_month: "2026-11-01", model: MODEL, state: "settled", input_tokens: 10, output_tokens: 5, settled: true }]);
@@ -794,7 +809,7 @@ describe("runOneStoryJob", () => {
       expect((await usage(db)).find((u) => u.job_id === expired.jobId), "unknown corrected to settled").toMatchObject({ state: "settled", input_tokens: 2100 });
 
       const purged = await manualDay(api, pool, db);
-      const f2 = mockFetch(() => json200(claudeMessage()), async () => { await owner(db, (c) => c.query("DELETE FROM pod.users WHERE id = $1", [purged.s.userId])); });
+      const f2 = mockFetch(() => json200(claudeMessage()), async () => { await purgeNow(db, purged.s.userId); });
       await api.runOneStoryJob({ db: pool, blobs: memoryBlobs(purged.store).blobs, claude: CLAUDE, fetch: f2.fn });
       expect(await jobs(db, purged.s.userId)).toEqual([]);
       expect(await stories(db, purged.s.userId)).toEqual([]);
