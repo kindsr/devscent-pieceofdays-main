@@ -66,7 +66,7 @@ DTO에 userId/gen/momentId/photoId/object key·내부 sourceRevision은 넣지 �
 
 ## 3. RED → GREEN·검증
 
-- RED 소유: 새 `app/tests/unit/story-revision.test.ts`, `app/tests/db/stories.test.ts`. 기존 migrate/lifecycle-schema/privileges/migration-boundaries/client-boundary 시험은 실제 하드코딩 기대 갱신이 필요한 assert만 허용하며 사전 보고한다. 기존 common helper/global setup/fixture/package/workflow/claude-story.test.ts 변경0. 새 helper는 stories.test.ts 안에 둔다.
+- RED 소유: 새 `app/tests/unit/story-revision.test.ts`, `app/tests/db/stories.test.ts`. 기존 migrate/lifecycle-schema/photo-storage/reflection-time 시험의 정확한 기본 migration 목록·checksum 기대에0005를 추가한다. 예외는 `app/tests/db/f2-support.ts`의 USER_DATA_TABLES 목록에 story_versions 한 항목만 추가하는 것이다(기존11항목/동작/SQL/역할/정리 불변). 그 외 common helper/global setup/fixture/package/workflow/claude-story.test.ts 변경0. 새 helper는 stories.test.ts 안에 둔다. 새 모듈 검사는 실제 env/키/fetch/provider/blob 경계에 한정하며 무해한 인증 타입 import까지 금지하지 않는다.
 - 제품 부재는 existsSync와 파일/to_regclass 명시 assert로 검출한 뒤 변수 동적 import/SQL을 호출한다. missing literal import·문법·타입 오류·환경 실패는 유효 RED가 아니다.
 - revision 정렬/변경·정확 payload·설정/순수 import network0·닫힌 생성기·DTO의 식별자 미포함, single snapshot·시간순/서울 자정·31개/빈 입력/제어 문자/보안 경계, append replay/version 보존/동시 저장, 생성 중 CRUD·계정 gen 변경·탈퇴·purge 후 늦은 결과 거부, read none/current/outdated·잘못된 입력에도 기존 글 보존·읽기 쓰기0을 실제 PG18의 app role로 검증한다.
 - schema 권한/CHECK/FK/CASCADE/unique·원장 보존·USER_DATA_TABLES12·CI 빈 DB up/down·이야기가 있는 down 거부·SQL 자체 non-ci down 거부를 검증한다. 실제 서비스 DB/외부 API/키0.
