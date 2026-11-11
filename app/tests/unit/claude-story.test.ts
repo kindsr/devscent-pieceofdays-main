@@ -577,7 +577,9 @@ describe("generateClaudeStory deadline and cancellation", () => {
     const f = hangingFetch();
     const pending = generateClaudeStory(CONFIG, input(), { fetch: f.fn });
     const state = track(pending);
-    await vi.waitFor(() => expect(f.fn).toHaveBeenCalledTimes(1));
+    // vi.waitFor는 가짜 시계를 자동으로 진행시키므로 쓰지 않는다. 0ms만 흘려 microtask를 비운 뒤 동기 확인한다.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fn).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(29_999);
     expect(state.settled, "still waiting just before the deadline").toBe(false);
     await vi.advanceTimersByTimeAsync(1);
@@ -595,9 +597,11 @@ describe("generateClaudeStory deadline and cancellation", () => {
     const f = fakeFetch(() => new Promise<Response>((resolve) => setTimeout(() => resolve(response), 20_000)));
     const pending = generateClaudeStory(CONFIG, input(), { fetch: f.fn });
     const state = track(pending);
-    await vi.waitFor(() => expect(f.fn).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fn).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(20_000);
-    await vi.waitFor(() => expect(seen.pulls).toBeGreaterThan(0));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(seen.pulls, "body read started once headers arrived at 20s").toBeGreaterThan(0);
     await vi.advanceTimersByTimeAsync(9_999);
     expect(state.settled, "headers at 20s leave 10s for the body, not a fresh 30s").toBe(false);
     await vi.advanceTimersByTimeAsync(1);
