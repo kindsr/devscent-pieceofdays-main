@@ -180,7 +180,7 @@ export function generateClaudePhotoStory(config: ClaudeConfig | null,
   - image block = `{type:"image", source:{type:"base64", media_type:"image/jpeg", data}}`.
   - user content 순서 = [자료 JSON text(사진 자리는 순번), 사진마다 `사진 N (HH:MM)` text + image block]. RED가 정확한 순서와 바이트를 단언한다.
   - system prompt에 ‘사진에 보이는 것만, 추측한 사람·관계·감정은 사실로 쓰지 않음’을 추가한다. model·version·thinking/effort·max_tokens·redirect·no-retry·응답 128KiB cap은 기존 상수를 공유한다.
-- deadline: 내부 `PHOTO_DEADLINE_MS = 80_000`과 외부 signal 중 먼저 오는 쪽을 따른다.
+- deadline: 기존과 같은 내부30_000ms와 외부 signal 중 먼저 오는 쪽을 따른다. 80_000ms는 사진 준비를 포함하는 worker 전체 시한이며 어댑터의 별도80초 시한을 만들지 않는다.
 - `claude.ts`는 export 목록에 `generateClaudePhotoStory`와 새 타입만 추가한다.
 
 ### 4.5 `stories/settings.pg.ts` (신규)
@@ -224,7 +224,7 @@ export async function finishStoryJob(db: Db, job: ClaimedStoryJob, outcome:
   3. `count(*) FROM story_jobs WHERE user_id=$1 AND kind='manual' AND created_at >= 서울오늘0시 AT TIME ZONE 'Asia/Seoul'`가 3 이상이면 `limited`.
   4. `captureStoryInputV2`가 실패하면 그 오류를 반환한다. `findStoryByRevision(revisionV1)`이 있으면 `already_current`.
   5. INSERT queued(revision v2, auth_generation=users 값, consent_version·consent_revision=settings 값). 고유 위반은 one_inflight면 `busy`, manual_once면 `already_current`.
-- **readStoryGeneration**: 키가 null이면 unavailable을 반환한다. 아니면 settings와 그날 최신 job 1개, 오늘 수동 횟수를 조회해 판정한다. 쓰기는 0이다.
+- **readStoryGeneration**: 키가 null이면 unavailable을 반환한다. 아니면 settings와 그날 최신 job 1개, 오늘 수동 횟수를 조회해 판정한다. skipped(no_input/already_current)는 현재 설정에 따른 ready/off로 취급하고 skipped 사유를 실패 DTO로 노출하지 않는다. 쓰기는 0이다.
 - **expireStoryLeases**: `UPDATE story_jobs SET state='failed', error='lease_expired', lease_token=NULL, lease_until=NULL WHERE state='running' AND lease_until <= clock_timestamp()`. 같은 tx에서 job → usage 순서로 해당 job_id의 usage `sent`를 `unknown, settled_at=now()`로 바꾼다(users 잠금 0). 재큐잉은 0이다.
 - **enqueueDueStories** (문 1개):
 ```sql
@@ -389,7 +389,7 @@ RED 시나리오 핵심(동의 epoch·snapshot 추가분 우선 명시):
 - **worker 본체 증명은 DB 통합 시험**(`tests/db/story-jobs.test.ts`)에서 한다. 실제 PG18 app role, 실제 sharp, 실제 v2 capture/모든 SQL(enqueue·claim·markSent·finish·expire), in-memory BlobStore, **mock fetch**를 주입한 `runOneStoryJob`을 쓴다. §6 RED 사례 전체를 다룬다.
 - **route 시험**(`tests/unit/story-worker-route.test.ts`): `vi.mock`으로 worker·db 의존을 대체하고 인증 경계만 검사한다(token·헤더·method·body·Host → 404, 성공 stats만, 503 고정).
 - **CLI 시험**(`tests/unit/story-worker-cli.test.ts`): 실제 child process로 CLI를 실행하고, 가짜 loopback HTTP 서버(127.0.0.1, 시험이 연 port)에 **실제 HTTP**로 붙는다. 검사 항목은 Authorization 형식, stdout 1줄, token 미출력, 비200·timeout exit 1이다.
-  - CLI 주소는 고정 `127.0.0.1:3000`이다. 시험이 그 port를 직접 열 수 없으면 env로 바꾸는 옵션을 제품에 넣지 않는다. 대신 CLI를 `main({ url })`처럼 export된 순수 함수로 두고 entry에서 상수를 전달하는 구조로 한다(제품 동작 경로 불변). 이 구조 결정은 RED 전에 main이 확인한다.
+  - CLI 주소는 고정 `127.0.0.1:3000`이다. §11의 `runStoryWorkerCli({env,request,stdout,stderr})`만 export하며 entry는 상수 URL을 사용한다. 시험용 임의 URL env/CLI 옵션은 없고 고정3000포트 부재/선점을 가정하지 않는다.
 - **실제 API 완전 경로는 main 전용**이다. 최종 불변 이미지, 실제 MinIO, dev 전용 합성 계정, 합성 사진·메모로 수동 1회·자동 1회를 실행하고, usage settled·PC/폰 읽기·외부 `/internal/story-worker` 404를 확인한다. 실제 사용자 자료는 0이다. Google B5 실로그인은 별도로 검증한다.
 
 ## 7. 배포·cron (main)
@@ -421,6 +421,7 @@ RED 시나리오 핵심(동의 epoch·snapshot 추가분 우선 명시):
 
 ## 11. main 최종 보완·검증 경계
 
+- 생성 버튼은 입력이 있고 기존 이야기가 none/outdated이며 generation=ready일 때만 둔다. 원본0/current 이야기는 생성 버튼0이다. off는 기존 준비 중 문구와 `/settings#story-ai` 링크로 표시해 기존 단일 `/settings` 회고시간 링크를 보존한다.
 - provider의 전체 응답30초·128KiB 제한은 기존과 같다. 전체 worker는 사진 준비를 포함80초, native CLI100초다. 실제 기본 모델은 claude-sonnet-5-5이고 2026-11-11 공식 pricing에서 input2/output10 USD/MTok를 확인했다. 월 한도 미설정은 무과금이 아니며 unknown 호출을0원으로 보고하지 않는다.
 - 공식 Vision 문서의 base64 JPEG source를 사용한다(https://platform.claude.com/docs/en/build-with-claude/vision). 30장/장당256KiB/총4MiB binary·최대6MiB JSON은 이 서비스의 더 좁은 입력 한도다. JPEG의 실제 진위/크기/metadata 제거는 Sharp 준비 단계가 검증하고, 어댑터도 canonical base64/decoded byte 한도/알 수 없는 키를 검증한다. 외부 URL·Files 업로드·추가 beta/API헤더·새 provider/key fallback은0이다.
 - CLI는 `export async function runStoryWorkerCli({env,request,stdout,stderr}):Promise<0|1>`를 제공한다. request는 fetch 시그니처이며 고정 URL/POST/Bearer/redirect:error/100초 signal을 받는다. 시험은 이를 검사한 뒤 자기 loopback 임의 포트로 fetch하는 transport를 주입해 실HTTP를 확인할 수 있다. child process는 잘못된 token의 HTTP0·고정 stderr/exit1을 검증하면 충분하다. 실제 entry는 process.env/global fetch를 넣고 고정 URL만 사용하며 임의 URL CLI/env옵션은 없다. 모듈 import만으로 실행하지 않고 직접 entry인 경우에만 호출한다. 서비스3000포트 부재/선점을 추측하는 환경 의존 시험은 만들지 않는다.
