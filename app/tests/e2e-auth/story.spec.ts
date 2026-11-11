@@ -251,6 +251,7 @@ test("after every memo of the day is deleted, the calendar keeps a story-only li
     phoneBrowser = phone.browser;
     contexts.push(phone.context);
     expect(await signIn(phone.page, account.provider, account.subject)).toEqual(account);
+    await phone.page.goto("/settings");
     await phone.page.getByRole("button", { name: "로그아웃", exact: true }).click();
     await expect(phone.page).toHaveURL(`${AUTH_BASE}/login?notice=signed_out`);
     expect(await signIn(phone.page, account.provider, account.subject), "phone logs in again").toEqual(account);
@@ -323,6 +324,7 @@ test("shows the closed not-ready state with no button, renders an HTML-like body
 
     await pa.goto(path);
     await expectStoryBody(pa, body, 3, "after read recovery");
+    await pa.goto("/settings");
     await pa.getByRole("button", { name: "로그아웃", exact: true }).click();
     await expect(pa).toHaveURL(`${AUTH_BASE}/login?notice=signed_out`);
     await expect(pa.getByText(TEXT.signedOut, { exact: true })).toBeVisible();
