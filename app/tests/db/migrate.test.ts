@@ -309,7 +309,7 @@ describe("migrate CLI: down protection (product 0001)", () => {
     expectCliFail(r, db.urls.migrator);
     await withOwner(env, db, async (c) => {
       expect(await schemaSnapshot(c)).toEqual(snap);
-      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2, 3, 4]);
+      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2, 3, 4, 5]);
     });
   });
 
@@ -322,7 +322,7 @@ describe("migrate CLI: down protection (product 0001)", () => {
     expectCliFail(r, db.urls.migrator);
     await withOwner(env, db, async (c) => {
       expect(await schemaSnapshot(c)).toEqual(snap);
-      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2, 3, 4]);
+      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2, 3, 4, 5]);
     });
   });
 
@@ -406,7 +406,7 @@ describe("migrate CLI: down protection (product 0001)", () => {
     expectCliOk(await runMigrateCli(["up"], db.urls.migrator), db.urls.migrator);
     await withOwner(env, db, async (c) => {
       expect(await schemaSnapshot(c)).toEqual(first);
-      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2, 3, 4]);
+      expect((await readMigrationRows(c))?.map((x) => x.version)).toEqual([1, 2, 3, 4, 5]);
     });
   });
 });
