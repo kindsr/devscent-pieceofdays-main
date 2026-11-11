@@ -158,17 +158,51 @@ describe("internal story worker route authentication", () => {
     await expect404(await POST(new Request(URL_OK, { method: "POST", headers: bare })), "no authorization");
   });
 
-  it("answers an empty 404 when any forwarding header is present or the Host is not 127.0.0.1:3000", async () => {
+  // Main decision A (2026-11-11): Next v16.4.3 base-server.ts (L1024~1037) itself sets x-forwarded-host/port/proto/for with `??=`
+  // on every request before route handlers, so the real in-container CLI request carries exactly the Next default tuple.
+  // These headers are not a proof of the TCP peer; the security boundary is the token + Host + the front proxy's 404.
+  // Rule: all four absent (direct unit call) or all four exactly the loopback default; anything partial/different, or any Forwarded, is 404.
+  const NEXT_DEFAULT = { "x-forwarded-host": "127.0.0.1:3000", "x-forwarded-port": "3000", "x-forwarded-proto": "http" };
+
+  it("accepts the exact Next default x-forwarded tuple of an in-container loopback request", async () => {
     const POST = await route();
+    for (const forwardedFor of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
+      h.events = []; h.deps = [];
+      const response = await POST(request({ headers: { ...NEXT_DEFAULT, "x-forwarded-for": forwardedFor } }));
+      expect(response.status, `x-forwarded-for ${forwardedFor}`).toBe(200);
+      expect(await response.json()).toEqual({ expired: 1, enqueued: 2, result: "succeeded" });
+      expect(h.deps, `${forwardedFor}: one worker step`).toHaveLength(1);
+    }
+  });
+
+  it("answers an empty 404 for a partial or different x-forwarded tuple, any Forwarded header, or a Host other than 127.0.0.1:3000", async () => {
+    const POST = await route();
+    const full = { ...NEXT_DEFAULT, "x-forwarded-for": "127.0.0.1" };
+    const without = (name: string) => Object.fromEntries(Object.entries(full).filter(([key]) => key !== name));
     const cases: [string, Record<string, string>][] = [
-      ["x-forwarded-for", { "x-forwarded-for": "127.0.0.1" }],
-      ["x-forwarded-host", { "x-forwarded-host": "127.0.0.1:3000" }],
-      ["x-forwarded-proto", { "x-forwarded-proto": "http" }],
-      ["forwarded", { forwarded: "for=127.0.0.1" }],
+      ["only x-forwarded-for", { "x-forwarded-for": "127.0.0.1" }],
+      ["only x-forwarded-host", { "x-forwarded-host": "127.0.0.1:3000" }],
+      ["only x-forwarded-proto", { "x-forwarded-proto": "http" }],
+      ["only x-forwarded-port", { "x-forwarded-port": "3000" }],
+      ["missing x-forwarded-for", without("x-forwarded-for")],
+      ["missing x-forwarded-host", without("x-forwarded-host")],
+      ["missing x-forwarded-port", without("x-forwarded-port")],
+      ["missing x-forwarded-proto", without("x-forwarded-proto")],
+      ["forwarded host is public", { ...full, "x-forwarded-host": "dev.pieceofdays.com" }],
+      ["forwarded host is a name", { ...full, "x-forwarded-host": "localhost:3000" }],
+      ["forwarded port 80", { ...full, "x-forwarded-port": "80" }],
+      ["forwarded proto https", { ...full, "x-forwarded-proto": "https" }],
+      ["forwarded for another address", { ...full, "x-forwarded-for": "10.0.0.5" }],
+      ["forwarded for a list", { ...full, "x-forwarded-for": "127.0.0.1, 10.0.0.5" }],
+      ["forwarded for with a remote port", { ...full, "x-forwarded-for": "127.0.0.1:51234" }],
+      ["forwarded for bracketed", { ...full, "x-forwarded-for": "[::1]" }],
+      ["Forwarded alone", { forwarded: "for=127.0.0.1" }],
+      ["Forwarded with the full tuple", { ...full, forwarded: "for=127.0.0.1;proto=http" }],
       ["public host", { host: "dev.pieceofdays.com" }],
       ["localhost name", { host: "localhost:3000" }],
       ["other port", { host: "127.0.0.1:80" }],
       ["no port", { host: "127.0.0.1" }],
+      ["full tuple but public Host", { ...full, host: "dev.pieceofdays.com" }],
     ];
     for (const [label, headers] of cases) { h.events = []; await expect404(await POST(request({ headers })), label); }
   });

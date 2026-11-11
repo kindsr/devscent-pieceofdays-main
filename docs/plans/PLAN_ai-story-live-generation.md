@@ -1,5 +1,7 @@
 # PLAN — 사진+메모 실제 AI 하루 이야기·수동 생성·회고 시각 자동 생성
 
+> 2026-11-11 통합 시 좁은 시험 갱신: 설정에 AI 동의 저장 form이 추가되어 기존 `story.spec.ts`의 `saveReflection`·`reflection.spec.ts`의 `save`가 가정하던 페이지 전체 `저장` 버튼 1개는 성립하지 않는다. 두 selector만 기존 접근 이름 `회고 시간` region 안으로 한정하고 기대값·case·보안 단언을 보존한다. AI 저장 버튼을 숨겨 시험에 맞추지 않으며, 같은 값 재저장도 동의 epoch를 증가시킨다. 그 외 기존 auth44 및 신규 S3 RED15는 동결한다.
+
 - 2026-11-11 사용자 실제 AI 생성/dev 배포 요청에 따른 실행 계획. 기준 4ea611e, planner t1xh 초안을 main t93이 선택·보완했다. 월 한도는 사용자 확보 후 정하는 원문 의미로 적용하고, 비용 추적/중복 방지는 유지한다. dev 전용 MinIO/NAS 백업 연계는 별도 PLAN_dev-minio-story-runtime으로 검증한다.
 - **수락된 방향(t93):** 내부 인증 route + native CLI, 기존 Pool·S1 재사용. 일반 사용자의 사진+메모, 회고 설정, 수동 생성까지 연결한다.
 - 비용 상한: 최신 사용자 원문은 ‘사용자 확보 후 설정’이며 main이 이를 적용한다. 고정 월 cap은 0이고, 호출 usage·unknown 기록은 필수다. **닫는 조건은 키 null뿐**이다. cap 미설정 때문에 멈추는 기존 관문 문구는 최신 지시에 맞춰 바꾼다(§9).
@@ -294,7 +296,7 @@ export async function POST(request: Request): Promise<Response>;   // 그 밖의
 - 다음은 모두 본문 없는 **404**다:
   - env `POD_STORY_WORKER_TOKEN`이 `/^[0-9a-f]{64}$/`가 아님.
   - `authorization`이 `Bearer <64 lowerhex>`가 아님, 또는 `timingSafeEqual(Buffer.from(hex,'hex'))`가 불일치.
-  - `x-forwarded-for|host|proto`·`forwarded` 헤더가 있음.
+  - `forwarded` 헤더가 있거나, `x-forwarded-for|host|proto|port` 중 하나라도 있는데 완전한 loopback tuple이 아님. tuple은 host=`127.0.0.1:3000`, port=`3000`, proto=`http`, for는 `127.0.0.1`·`::1`·`::ffff:127.0.0.1` 중 단일 값이다. 네 필드가 모두 없는 직접 함수 호출도 허용한다. 토큰·Host·본문 검사는 그대로 유지한다.
   - Host가 `127.0.0.1:3000`이 아님.
   - content-length > 0.
 - 성공은 200 `{"expired":n,"enqueued":n,"result":"…"}`, 예상 밖 오류는 503 고정이다. cookie·세션 읽기는 0이고, 키·token·userId·원문 오류도 0이다.
@@ -388,6 +390,7 @@ RED 시나리오 핵심(동의 epoch·snapshot 추가분 우선 명시):
   - 같은 날 수동 3회 → limited, 동의 철회 → 버튼 0도 함께 확인한다.
 - **worker 본체 증명은 DB 통합 시험**(`tests/db/story-jobs.test.ts`)에서 한다. 실제 PG18 app role, 실제 sharp, 실제 v2 capture/모든 SQL(enqueue·claim·markSent·finish·expire), in-memory BlobStore, **mock fetch**를 주입한 `runOneStoryJob`을 쓴다. §6 RED 사례 전체를 다룬다.
 - **route 시험**(`tests/unit/story-worker-route.test.ts`): `vi.mock`으로 worker·db 의존을 대체하고 인증 경계만 검사한다(token·헤더·method·body·Host → 404, 성공 stats만, 503 고정).
+  - 2026-11-11 공식 [Next16.4.3 source](https://github.com/vercel/next.js/blob/v16.4.3/packages/next/src/server/base-server.ts#L1024-L1037)에서 route 전에 네 `x-forwarded-*` 기본값을 채우는 것을 확인했다. 최초 '존재하면 전부 거부' 계약은 실제 CLI까지 막으므로 위 tuple 양성/잘못된 tuple 음성으로 교정한다. 헤더는 TCP peer 인증이 아니며 실보안 경계는 비밀 token·고정 Host·공개 front 404다. 이 파일만 후속 RED 개정하고 나머지 신규 RED는 동결한다. 실제 Next/CLI 경로는 최종 불변 이미지에서 별도로 확인한다.
 - **CLI 시험**(`tests/unit/story-worker-cli.test.ts`): 실제 child process로 CLI를 실행하고, 가짜 loopback HTTP 서버(127.0.0.1, 시험이 연 port)에 **실제 HTTP**로 붙는다. 검사 항목은 Authorization 형식, stdout 1줄, token 미출력, 비200·timeout exit 1이다.
   - CLI 주소는 고정 `127.0.0.1:3000`이다. §11의 `runStoryWorkerCli({env,request,stdout,stderr})`만 export하며 entry는 상수 URL을 사용한다. 시험용 임의 URL env/CLI 옵션은 없고 고정3000포트 부재/선점을 가정하지 않는다.
 - **실제 API 완전 경로는 main 전용**이다. 최종 불변 이미지, 실제 MinIO, dev 전용 합성 계정, 합성 사진·메모로 수동 1회·자동 1회를 실행하고, usage settled·PC/폰 읽기·외부 `/internal/story-worker` 404를 확인한다. 실제 사용자 자료는 0이다. Google B5 실로그인은 별도로 검증한다.
