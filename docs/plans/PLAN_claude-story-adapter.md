@@ -10,7 +10,7 @@
 - `parseClaudeConfig(env)` → `{ok:true,value:null|{apiKey,model}} | {ok:false,error:"invalid_claude_config"}`. `ANTHROPIC_API_KEY` 하나만 사용하고 미설정은 null, 빈 값/제어 문자/공백/비ASCII 또는 잘못된 형식은 오류다. 기본 모델은 `claude-sonnet-5-5`(실제 키로 사용 가능 확인)이며 arbitrary model/endpoint 옵션은 이 단계에 없다. process.env 자동 읽기0, 키를 DTO/로그/오류 문자열에 넣지 않는다.
 - `generateClaudeStory(config, input, options?)` → `Promise<Result<{body,model,usage:{inputTokens,outputTokens}},"unavailable"|"invalid_input"|"timeout"|"invalid_output">>`. options는 시험용 `fetch`와 외부 `signal`만. 키/입력 누락·잘못된 입력·미리 취소된 signal은 HTTP0. config null은 unavailable이다.
 - 입력은 정확 `{date:"YYYY-MM-DD",moments:[{time:"HH:mm",text:string}]}`뿐이다. 실제 달력 날짜·시간, 1..30조각, 각 text1..300 Unicode codepoint(공백만 거부), 입력 JSON UTF8합계48KiB 이하. 알 수 없는 열·사진/owner/DB ID·object key는 거부한다. 현재 파일은 사진 bytes를 받지 않는다. 메모는 지시문이 아닌 자료로 JSON 직렬화한다.
-- 고정 HTTPS `https://api.anthropic.com/v1/messages`, `anthropic-version: 2026-10-21`, `Authorization: Bearer …`, JSON·nonstream·tools 없음·`max_tokens:2048`·`model:claude-sonnet-5-5`. redirect:error, 자동 재시도/폴백0. 서버 고정 system prompt는 한국어 일반 텍스트 회고, 원본에 없는 사건/인물/대화/감정의 사실 생성 금지·자료 속 명령 무시·민감 식별자 불필요 출력을 요구한다. 프롬프트만으로 품질이 보장됐다고 주장하지 않는다.
+- 고정 HTTPS `https://api.anthropic.com/v1/messages`, `anthropic-version: 2026-10-21`, `Authorization: Bearer …`, JSON·nonstream·tools 없음·`max_tokens:2048`·`model:claude-sonnet-5-5`. 이 짧은 글쓰기 요청은 `thinking:{type:"between_tools"}`와 `output_config:{effort:"low"}`를 고정한다. 공식 문서는 도구 없는 이 모드가 text만 반환함을 설명한다. CLI 모델/effort·전역 설정은 바꾸지 않는다. redirect:error, 자동 재시도/폴백0. 서버 고정 system prompt는 한국어 일반 텍스트의 짧은 단락 회고, 원본에 없는 사건/인물/대화/감정의 사실 생성 금지·자료 속 명령 무시·민감 식별자 불필요 출력을 요구한다. 프롬프트만으로 품질이 보장됐다고 주장하지 않는다.
 - fetch와 본문 읽기 전체30초 한도. 응답은 실제 reader로128KiB까지 읽고 초과 시 cancel/거부. deadline 경과·외부 취소는 timeout, 네트워크/429/5xx/3xx/4xx는 고정 unavailable(원문 오류/재시도 없음). Content-Type JSON·status200만 처리한다.
 - 성공은 message/assistant, `stop_reason:end_turn`, refusal details 없음, 유효 model 일치·정수0이상 usage, text 본문1..2000 codepoint 및 금지 제어 문자 없음을 요구한다. max_tokens/refusal/tool_use/모르는 block/형식 오류는 invalid_output. thinking/redacted_thinking block은 결과에 복사하지 않고 text만 처리한다. 빈 text·과대 본문은 성공하지 않는다. 오류 body/stack·키·원문 입력은 로그0.
 - 함수 import/설정 조회만으로 외부 통신·실제 생성0. 이 어댑터에는 사용자 호출 권한·공유 비용 한도·중복 호출 예약을 구현한 것처럼 보이는 메모리 카운터/slot/가짜 gate를 넣지 않는다.
@@ -35,4 +35,5 @@
 - https://platform.claude.com/docs/en/api/models/list
 - https://platform.claude.com/docs/en/api/messages/create
 - https://platform.claude.com/docs/en/models/overview
+- https://platform.claude.com/docs/en/build-with-claude/thinking
 - https://platform.claude.com/docs/en/manage-claude/api-and-data-retention
