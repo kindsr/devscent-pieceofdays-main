@@ -5,12 +5,13 @@
 // POD_IMAGE_TEST_NETWORK (Actions service network ID), POD_IMAGE_TEST_DB_HOST (PG18 alias).
 // Fourteen real contracts, no skip. #14 also runs the ORIGINAL ten preview cases, no retry/skip.
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { expect } from "@playwright/test";
-import { ANCESTOR_HIDDEN_HEADERS, APP_DIR, BASE, BASIC, PROVIDERS, FrontHarness, callbackInput, command, docker, hash, protect, request, values } from "./support/front-harness.mjs";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { ANCESTOR_HIDDEN_HEADERS, APP_DIR, BASE, BASIC, PROVIDERS, RELAY_BUCKET, STORAGE_ACCESS, FrontHarness, callbackInput, command, docker, hash, protect, request, values } from "./support/front-harness.mjs";
 
 const h = new FrontHarness();
 const OPTIONS = { timeout: 300_000 };
@@ -134,7 +135,105 @@ test("01 exact helper configuration and the complete outer fragment pass real ng
     assert.deepEqual([...body.matchAll(/\bproxy_hide_header\s+([^;]+);/g)].map((m) => m[1].trim()), [], "no local proxy_hide_header: a local list would replace the five inherited ancestor hides");
     assert.doesNotMatch(body, /\b(add_header|auth_basic|auth_basic_user_file|allow|deny|satisfy|return|rewrite)\s/, "photo proposal inherits server security and does not bypass Basic/IP");
   }
+  await relayContract(t);
 });
+
+// PLAN_dev-minio-story-runtime §1.1~1.3 inside the existing #01 (fourteen cases are kept).
+// A relay HTML 403 is not S3 XML; the SDK may then expose only the raw response status.
+const sdkStatus = (error) => error?.$metadata?.httpStatusCode ?? error?.$response?.statusCode;
+const relayKey = () => `photos/${protect(randomUUID())}.jpg`;
+/** nginx's own refusal (HTML body), as opposed to a storage S3 error (XML body) that proves the request was forwarded. */
+function relayRefused(r, label, status = 403) {
+  assert.equal(r.status, status, `${label}: relay refuses with ${status}`);
+  const body = r.body.toString("utf8");
+  assert.doesNotMatch(body, /<\?xml|<Error>/, `${label}: refused by the relay itself, never forwarded to storage`);
+  assert.match(body, /<html/i, `${label}: nginx-generated refusal`);
+}
+function storageRefusedAnonymous(r, label) {
+  assert.ok([401, 403].includes(r.status), `${label}: unsigned request is refused by storage (${r.status})`);
+  assert.match(r.body.toString("utf8"), /<Error>|<\?xml/, `${label}: refusal comes from storage after the relay forwarded the exact request`);
+}
+async function relayContract(t) {
+  assert.equal(typeof h.trusted.relay, "string", "scripts/ops/deploy.py must define DEV_FRONT_RELAY_NGINX_CONF (separate internal 8081 relay; not implemented yet)");
+  assert.equal(h.trusted.conf, h.trusted.public80 + h.trusted.relay, "front default.conf is the unchanged public80 constant followed by the relay constant");
+  assert.match(h.trusted.relay, /\blisten\s+8081\s*;/);
+
+  // The front already started without any `minio` on the network: public80 is never blocked by the relay.
+  const early = relayKey();
+  const missing = await h.relayRequest(`/${RELAY_BUCKET}/${early}?x-id=GetObject`);
+  assert.equal(missing.status, 502, "storage absent: relay answers 502 while public80 keeps serving");
+  assert.equal((await h.frontRequest("/try/")).status, 200, "public80 /try/ unaffected by an absent MinIO");
+
+  await h.storage();
+  const client = h.relayClient();
+  try {
+    let ready = false;
+    for (let n = 0; n < 240 && !ready; n++) {
+      try { await client.send(new GetObjectCommand({ Bucket: RELAY_BUCKET, Key: relayKey() }), { abortSignal: AbortSignal.timeout(2000) }); }
+      catch (error) { ready = sdkStatus(error) === 404; }
+      if (!ready) await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.ok(ready, "signed GET of a missing key through the relay reaches storage (NoSuchKey) once storage is up");
+
+    // Real SigV4 roundtrip: Host/URI/body must reach storage unchanged or the signature fails.
+    const key = relayKey();
+    const bytes = randomBytes(4 * 1024 * 1024);
+    await client.send(new PutObjectCommand({ Bucket: RELAY_BUCKET, Key: key, Body: bytes, ContentLength: bytes.length, ContentType: "image/jpeg" }), { abortSignal: AbortSignal.timeout(20_000) });
+    const got = await client.send(new GetObjectCommand({ Bucket: RELAY_BUCKET, Key: key }), { abortSignal: AbortSignal.timeout(20_000) });
+    assert.equal(hash(Buffer.from(await got.Body.transformToByteArray())), hash(bytes), "4MiB object bytes roundtrip through the relay");
+    await client.send(new DeleteObjectCommand({ Bucket: RELAY_BUCKET, Key: key }), { abortSignal: AbortSignal.timeout(10_000) });
+    let deleted;
+    try { await client.send(new GetObjectCommand({ Bucket: RELAY_BUCKET, Key: key }), { abortSignal: AbortSignal.timeout(10_000) }); }
+    catch (error) { deleted = error; }
+    assert.equal(sdkStatus(deleted), 404, "a deleted key is NoSuchKey (cleanup completion signal), not forbidden");
+
+    let otherBucket;
+    try { await client.send(new GetObjectCommand({ Bucket: "pieceofdays-photos", Key: relayKey() }), { abortSignal: AbortSignal.timeout(10_000) }); }
+    catch (error) { otherBucket = error; }
+    assert.equal(sdkStatus(otherBucket), 403, "a signed request for another bucket is refused at the relay");
+    const wrong = h.relayClient("ci-only-wrong-secret");
+    try {
+      let refusal;
+      try { await wrong.send(new GetObjectCommand({ Bucket: RELAY_BUCKET, Key: relayKey() }), { abortSignal: AbortSignal.timeout(10_000) }); }
+      catch (error) { refusal = error; }
+      assert.ok([401, 403].includes(sdkStatus(refusal)), "a wrong signature is refused by storage (the relay adds no authority)");
+    } finally { wrong.destroy(); }
+  } finally { client.destroy(); }
+
+  const id = protect(randomUUID());
+  const object = `/${RELAY_BUCKET}/photos/${id}.jpg`;
+  // Allowed shapes are forwarded verbatim (unsigned → storage refusal, never a relay page).
+  for (const [method, target] of [["GET", `${object}?x-id=GetObject`], ["GET", object], ["PUT", `${object}?x-id=PutObject`], ["DELETE", `${object}?x-id=DeleteObject`], ["DELETE", object]]) {
+    storageRefusedAnonymous(await h.relayRequest(target, { method, ...(method === "PUT" ? { body: Buffer.from("ci-only-unsigned"), headers: { "Content-Type": "image/jpeg" } } : {}) }), `${method} ${target.replace(id, "<id>")}`);
+  }
+  // Everything else is the relay's own 403: method/x-id mismatch, duplicate/extra query, other bucket/prefix/name,
+  // and raw $request_uri bypasses (percent-encoded dot/slash/uuid, double slash, dot segments).
+  const upper = id.toUpperCase();
+  for (const [method, target] of [
+    ["GET", `${object}?x-id=PutObject`], ["GET", `${object}?x-id=DeleteObject`], ["PUT", `${object}?x-id=GetObject`], ["DELETE", `${object}?x-id=GetObject`],
+    ["POST", object], ["POST", `${object}?x-id=PutObject`], ["PATCH", `${object}?x-id=PutObject`], ["OPTIONS", object],
+    ["GET", `${object}?x-id=GetObject&x-id=GetObject`], ["GET", `${object}?x-id=GetObject&ci-only=1`], ["GET", `${object}?ci-only=1&x-id=GetObject`],
+    ["GET", `${object}?acl`], ["GET", `${object}?x-id=ListObjectsV2`], ["GET", `${object}?x-id=getobject`], ["GET", `${object}?X-Id=GetObject`], ["GET", `${object}?`],
+    ["GET", `/pieceofdays-photos/photos/${id}.jpg?x-id=GetObject`], ["GET", `/pieceofdays-photos-dev2/photos/${id}.jpg`], ["GET", `/${RELAY_BUCKET}/other/${id}.jpg`],
+    ["GET", `/${RELAY_BUCKET}/photos/${upper}.jpg`], ["GET", `/${RELAY_BUCKET}/photos/${id}.png`], ["GET", `/${RELAY_BUCKET}/photos/${id}.jpg/`],
+    ["GET", `/${RELAY_BUCKET}/photos/${id}.jpgx`], ["GET", `/${RELAY_BUCKET}/photos/x${id}.jpg`], ["GET", `/${RELAY_BUCKET}/photos/${id.replaceAll("-", "")}.jpg`],
+    ["GET", `/${object}`], ["GET", `/${RELAY_BUCKET}//photos/${id}.jpg`], ["GET", `/${RELAY_BUCKET}/./photos/${id}.jpg`], ["GET", `/${RELAY_BUCKET}/x/../photos/${id}.jpg`],
+    ["GET", `/${RELAY_BUCKET}/photos/%2e%2e/photos/${id}.jpg`], ["GET", `/${RELAY_BUCKET}%2Fphotos%2F${id}.jpg`], ["GET", `/${RELAY_BUCKET}/photos%2F${id}.jpg`],
+    ["GET", `/${RELAY_BUCKET}/photos/${id}%2Ejpg`], ["GET", `/${RELAY_BUCKET}/photos/${encodeURIComponent(id).replace("-", "%2D")}.jpg`], ["GET", `/%70ieceofdays-photos-dev/photos/${id}.jpg`],
+    ["GET", `/${RELAY_BUCKET}?list-type=2`], ["GET", `/${RELAY_BUCKET}/`], ["GET", `/${RELAY_BUCKET}/photos/`], ["GET", "/"], ["GET", "/try/"], ["GET", "/minio/health/live"],
+  ]) relayRefused(await h.relayRequest(target, { method }), `${method} ${target.replace(id, "<id>").replace(upper, "<ID>")}`);
+  relayRefused(await h.relayRequest(`${object}?x-id=PutObject`, { method: "PUT", body: Buffer.alloc(5 * 1024 * 1024 + 1), headers: { "Content-Type": "image/jpeg" } }), "PUT above 5m", 413);
+
+  // access_log off / error_log crit: no object key, credential id or query value in any front log stream.
+  const sentinels = [early, id, STORAGE_ACCESS, "x-id=", RELAY_BUCKET];
+  const records = (await h.logs()).filter((record) => record.role === "front");
+  assert.ok(records.length > 0, "identified inner-front sinks with both positive controls are required");
+  for (const record of records) for (const stream of ["stdout", "stderr"]) for (const sentinel of sentinels) {
+    assert.ok(!record[stream].includes(sentinel), `${record.sink}/${stream}: relay sentinel absent`);
+  }
+  assert.equal((await h.frontRequest("/try/")).status, 200, "public80 still serves after relay traffic");
+  t.diagnostic("relay: absent-storage 502, SDK Put/Get/Delete/NoSuchKey, other-bucket/method/query/encoding 403, unsigned forwarded, logs clean");
+}
 
 test("02 actual Next with no providers: login preparation and configuration-before-Origin 503", OPTIONS, async () => {
   await h.upstream("off");

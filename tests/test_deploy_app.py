@@ -408,6 +408,94 @@ class DevFrontNginxConfTests(unittest.TestCase):
         self.assertCountEqual(re.findall(r"client_max_body_size\s+([^;]+);", conf), ["1m", "9m"], "the server 1m default stays; only one upload override")
 
 
+# ================================================================= dev MinIO relay(PLAN_dev-minio-story-runtime §1.1~1.3)
+
+# 2026-11-11 기준 public80 상수의 바이트(sha256). relay는 이 상수를 바꾸지 않고 별도 상수로 덧붙인다.
+PUBLIC80_SHA256 = "de6e6b96e27abd8847b3f5ba4f0399d5648104dbe83ea9ae9eb31741783cf7a6"
+RELAY_BUCKET = "pieceofdays-photos-dev"
+RELAY_FLAG = "POD_PHOTOS_INTERNAL_DEV_HTTP"
+RELAY_ENDPOINT = "http://10.231.17.11:8081/"  # FRONT_SUBNET의 +11
+RELAY_PHOTO_ENV = {**PHOTO_ENV, "POD_PHOTOS_S3_ENDPOINT": RELAY_ENDPOINT, "POD_PHOTOS_S3_BUCKET": RELAY_BUCKET, RELAY_FLAG: "1"}
+AI_KEY = "ci-only-anthropic-key-not-production+/=~!"
+WORKER_TOKEN = "0123456789abcdef" * 4
+STORY_ENV = {"ANTHROPIC_API_KEY": AI_KEY, "POD_STORY_WORKER_TOKEN": WORKER_TOKEN}
+
+
+def server_blocks(conf):
+    """최상위 `server { … }` 블록 본문 목록(중괄호 깊이로 자른다)."""
+    blocks = []
+    for match in re.finditer(r"(^|\n)\s*server\s*\{", conf):
+        depth, start = 0, match.end() - 1
+        for index in range(start, len(conf)):
+            if conf[index] == "{":
+                depth += 1
+            elif conf[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    blocks.append(conf[start + 1 : index])
+                    break
+    return blocks
+
+
+class DevFrontRelayNginxConfTests(unittest.TestCase):
+    def relay(self):
+        require(self, "DEV_FRONT_RELAY_NGINX_CONF")
+        conf = deploy.DEV_FRONT_RELAY_NGINX_CONF
+        self.assertIsInstance(conf, str)
+        return conf
+
+    def test_public80_policy_bytes_are_unchanged_and_the_relay_is_a_separate_internal_8081_server(self):
+        self.assertEqual(hashlib.sha256(deploy.DEV_FRONT_NGINX_CONF.encode()).hexdigest(), PUBLIC80_SHA256, "public80 constant is byte-preserved")
+        relay = self.relay()
+        self.assertNotIn("8081", deploy.DEV_FRONT_NGINX_CONF)
+        servers = server_blocks(relay)
+        self.assertEqual(len(servers), 1, "exactly one relay server")
+        self.assertEqual(re.findall(r"(?:^|[\s;{])listen\s+([^;]+);", relay), ["8081"], "one wildcard 8081 listener, never 80 or a fixed address")
+        self.assertNotIn("pieceofdays-app-dev", relay, "the relay never reaches the app")
+        self.assertNotIn("/usr/share/nginx/html", relay, "the relay serves no static files")
+
+    def test_relay_reaches_minio_only_through_a_runtime_resolved_variable_without_uri(self):
+        relay = self.relay()
+        self.assertRegex(relay, r"(?:^|[\s;{])resolver\s+127\.0\.0\.11(\s[^;]*)?;", "Docker DNS so a missing/moved MinIO never blocks nginx start")
+        targets = re.findall(r"proxy_pass\s+([^;]+);", relay)
+        self.assertTrue(targets, "the relay proxies")
+        for target in targets:
+            with self.subTest(target=target):
+                self.assertRegex(target.strip(), r"^\$[A-Za-z_][A-Za-z0-9_]*$", "variable proxy_pass without a URI part keeps the original signed URI")
+                variable = target.strip()[1:]
+                self.assertRegex(relay, r"set\s+\$" + variable + r"\s+\"?http://minio:9000\"?\s*;", "the variable is exactly the MinIO API origin")
+        self.assertNotRegex(relay, r"proxy_pass\s+https?://", "a literal upstream would be resolved at start")
+        self.assertNotRegex(relay, r"(?:^|\n)\s*upstream\s", "no static upstream block")
+        self.assertEqual(len(re.findall(r"minio:9000", relay)), len(set(targets)), "MinIO appears only in the variable assignment")
+
+    def test_relay_preserves_the_signed_request_and_writes_no_logs(self):
+        relay = self.relay()
+        headers = re.findall(r"proxy_set_header\s+(\S+)\s+([^;]+);", relay)
+        self.assertIn(("Host", "$http_host"), headers, "SigV4 host is forwarded unchanged")
+        for name, _value in headers:
+            with self.subTest(header=name):
+                self.assertNotRegex(name, r"(?i)^(authorization|content-.*|x-amz-.*|expect)$", "signed headers/body are never rewritten")
+                if name.lower() == "host":
+                    self.assertEqual(_value.strip(), "$http_host")
+        for directive, value in (("proxy_http_version", "1.1"), ("proxy_buffering", "off"), ("proxy_request_buffering", "off"), ("client_max_body_size", "5m"), ("access_log", "off"), ("error_log", "/dev/null crit")):
+            with self.subTest(directive=directive):
+                found = re.findall(r"(?:^|[\s;{])" + directive + r"\s+([^;]+);", relay)
+                self.assertTrue(found, directive + " is set")
+                self.assertEqual({v.strip() for v in found}, {value})
+        for directive in ("add_header", "proxy_hide_header", "proxy_set_body", "proxy_pass_request_headers", "proxy_pass_request_body", "rewrite", "proxy_cache", "log_format", "more_set_headers"):
+            self.assertNotRegex(relay, r"(?:^|[\s;{])" + directive + r"\s", directive + " is not used")
+
+    def test_relay_names_only_the_dev_bucket_photo_prefix_and_the_three_object_operations(self):
+        relay = self.relay()
+        self.assertIn(RELAY_BUCKET + "/photos/", relay)
+        self.assertEqual(set(re.findall(r"pieceofdays-photos[a-z0-9-]*", relay)), {RELAY_BUCKET}, "no other bucket")
+        for operation in ("GetObject", "PutObject", "DeleteObject"):
+            self.assertIn(operation, relay)
+        for other in ("ListBucket", "ListObjects", "uploads", "acl", "policy"):
+            self.assertNotIn(other, relay)
+        self.assertRegex(relay, r"return\s+403\s*;", "everything outside the exact allowlist is 403")
+
+
 # ================================================================= env 검사 §6.3
 
 
@@ -622,6 +710,76 @@ class ValidateAppEnvTests(unittest.TestCase):
                     deploy.validate_app_env(env_text(**{**PHOTO_ENV, key: value}), self.settings)
                 self.assertNotIn(value, str(caught.exception), "invalid storage values are never echoed")
                 assert_no_secret(self, str(caught.exception), key)
+
+
+class ValidateAppEnvRelayAndStoryTests(unittest.TestCase):
+    """PLAN_dev-minio-story-runtime §1.4·§1.5: 내부 relay flag와 AI 실행 자격만 새로 허용한다."""
+
+    def setUp(self):
+        require(self, "validate_app_env")
+        self.settings = settings_for(Path("/nonexistent-state"))
+
+    def accepted(self, text, settings=None):
+        """허용 요구는 거부(ValueError)를 오류가 아닌 명시 실패로 보고한다(정상 RED)."""
+        try:
+            return deploy.validate_app_env(text, settings or self.settings)
+        except ValueError as error:
+            self.fail(f"must be accepted (PLAN_dev-minio-story-runtime §1.4·§1.5): {error}")
+
+    def rejected(self, text, label, settings=None, values=()):
+        with self.subTest(label=label):
+            with self.assertRaises(ValueError) as caught:
+                deploy.validate_app_env(text, settings or self.settings)
+            message = str(caught.exception)
+            assert_no_secret(self, message, label)
+            for value in (AI_KEY, WORKER_TOKEN, *values):
+                self.assertNotIn(value, message, f"{label}: values are never echoed")
+
+    def test_exact_front_relay_endpoint_flag_and_dev_bucket_are_accepted(self):
+        self.assertEqual(self.accepted(env_text(**RELAY_PHOTO_ENV)), env_lines(**RELAY_PHOTO_ENV))
+        other = {**self.settings, "front_subnet": "192.168.40.0/24"}
+        moved = {**RELAY_PHOTO_ENV, "POD_PHOTOS_S3_ENDPOINT": "http://192.168.40.11:8081/"}
+        self.assertEqual(self.accepted(env_text(**moved), other), env_lines(**moved), "endpoint follows the configured front_subnet")
+        self.rejected(env_text(**RELAY_PHOTO_ENV), "endpoint of another front_subnet", settings=other)
+        self.assertEqual(deploy.validate_app_env(env_text(**PHOTO_ENV), self.settings), env_lines(**PHOTO_ENV), "ordinary HTTPS without flag is unchanged")
+
+    def test_relay_flag_endpoint_and_bucket_combinations_outside_the_contract_are_rejected(self):
+        self.rejected(env_text(**{**RELAY_PHOTO_ENV, RELAY_FLAG: None}), "relay HTTP without flag")
+        for value in ("0", "true", "yes", "01", "11", "on"):
+            self.rejected(env_text(**{**RELAY_PHOTO_ENV, RELAY_FLAG: value}), f"flag {value}")
+        self.rejected(env_text(**{RELAY_FLAG: "1"}), "flag without photo settings")
+        self.rejected(env_text(**{**PHOTO_ENV, RELAY_FLAG: "1"}), "flag with HTTPS endpoint")
+        self.rejected(env_text(**{**RELAY_PHOTO_ENV, "POD_PHOTOS_S3_ENDPOINT": "https://10.231.17.11:8081/"}), "flag with HTTPS relay address")
+        self.rejected(env_text(**{**RELAY_PHOTO_ENV, RELAY_FLAG: None, "POD_PHOTOS_INTERNAL_DEV_HTTPS": "1"}), "flag typo key")
+        for bucket in ("ci-only-private-photos", "pieceofdays-photos", "pieceofdays-photos-dev2", "pieceofdays-photos-prod"):
+            self.rejected(env_text(**{**RELAY_PHOTO_ENV, "POD_PHOTOS_S3_BUCKET": bucket}), f"relay bucket {bucket}")
+        for endpoint in (
+            "http://10.231.17.11:8081", "http://10.231.17.10:8081/", "http://10.231.17.12:8081/", "http://10.231.18.11:8081/",
+            "http://10.231.16.11:8081/", "http://10.231.17.11:8080/", "http://10.231.17.11:80/", "http://10.231.17.11/",
+            "http://pieceofdays-frontend-dev:8081/", "http://minio:9000/", "http://127.0.0.1:8081/", "http://010.231.17.11:8081/",
+            "http://10.231.17.11:8081/pieceofdays-photos-dev", "http://10.231.17.11:8081/?x-id=GetObject", "http://10.231.17.11:8081/#f",
+            "http://ci-only-user:ci-only-pass@10.231.17.11:8081/", "http://10.231.17.11:08081/", "HTTP://10.231.17.11:8081/",
+        ):
+            self.rejected(env_text(**{**RELAY_PHOTO_ENV, "POD_PHOTOS_S3_ENDPOINT": endpoint}), f"relay endpoint {endpoint}", values=(endpoint,))
+
+    def test_story_runtime_credentials_are_allowlisted_together_with_exact_formats(self):
+        self.assertEqual(self.accepted(env_text(**STORY_ENV)), env_lines(**STORY_ENV))
+        combined = {**RELAY_PHOTO_ENV, **STORY_ENV}
+        self.assertEqual(self.accepted(env_text(**combined)), env_lines(**combined))
+        visible = "".join(chr(c) for c in range(0x21, 0x7F) if chr(c) not in "#\"'`")
+        for key in ("k", "k" * 4096, visible):
+            with self.subTest(key_length=len(key)):
+                self.assertEqual(self.accepted(env_text(ANTHROPIC_API_KEY=key, POD_STORY_WORKER_TOKEN=WORKER_TOKEN))["ANTHROPIC_API_KEY"], key)
+        self.rejected(env_text(ANTHROPIC_API_KEY=AI_KEY), "API key without worker token")
+        self.rejected(env_text(POD_STORY_WORKER_TOKEN=WORKER_TOKEN), "worker token without API key")
+        for label, key in (("4097", "k" * 4097), ("inner space", "ci-only key"), ("non-ASCII", "ci-only-ké"), ("DEL", "ci-only\x7fkey"),
+                           ("hash", "ci-only#key"), ("leading quote", '"ci-only-key'), ("empty", "")):
+            self.rejected(env_text(ANTHROPIC_API_KEY=key, POD_STORY_WORKER_TOKEN=WORKER_TOKEN), f"API key {label}", values=(key,) if key else ())
+        for label, token in (("63", WORKER_TOKEN[:-1]), ("65", WORKER_TOKEN + "0"), ("uppercase", WORKER_TOKEN.upper()), ("non-hex", "g" * 64),
+                             ("base64", "A" * 43 + "="), ("empty", "")):
+            self.rejected(env_text(ANTHROPIC_API_KEY=AI_KEY, POD_STORY_WORKER_TOKEN=token), f"worker token {label}", values=(token,) if token else ())
+        for key in ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY", "POD_STORY_WORKER_TOKEN_2"):
+            self.rejected(env_text(**STORY_ENV) + f"{key}=ci-only-not-allowlisted\n", f"unknown {key}")
 
 
 # ================================================================= manifest·이미지 §6.3
@@ -1438,6 +1596,42 @@ class DeployAppTransitionTests(AppFlowBase):
             self.deploy_app()
         self.assertEqual(self.read_json(self.pending), previous)
         self.assertNotEqual((self.read_json(self.current) or {}).get("sha"), SHA)
+
+
+class DeployAppRelayFrontImageTests(AppFlowBase):
+    """front 이미지 default.conf = 기존 public80 상수 + 별도 relay 상수. 새 service·network·명령 원문 비밀 0."""
+
+    def setUp(self):
+        super().setUp()
+        self.front_confs = []
+
+    def fake_run(self, args, cwd=None, timeout=300, binary=False, **kwargs):
+        text = [str(a) for a in args]
+        if os.path.basename(text[0]) == "docker" and "build" in text and any(a.endswith("Dockerfile.front") for a in text):
+            conf = Path(text[-1]) / "default.conf"
+            self.front_confs.append(conf.read_text() if conf.is_file() else None)
+        return super().fake_run(args, cwd=cwd, timeout=timeout, binary=binary, **kwargs)
+
+    def test_relay_and_story_env_deploy_bakes_public80_plus_relay_without_new_services_or_value_leaks(self):
+        require(self, "DEV_FRONT_RELAY_NGINX_CONF")
+        write_private(self.live_env, env_text(**RELAY_PHOTO_ENV, **STORY_ENV))
+        previous = self.static_record()
+        self.write_json(self.current, previous)
+        self.write_json(self.static_last, previous)
+        self.deploy_app()
+        self.assertEqual(self.front_confs, [deploy.DEV_FRONT_NGINX_CONF + deploy.DEV_FRONT_RELAY_NGINX_CONF], "one front build with the exact two constants")
+        record = self.read_json(self.current)
+        self.assertEqual((record["mode"], record["status"]), ("app", "success"))
+        frozen = self.state / "releases" / "dev" / record["release_id"] / "app.env"
+        self.assertEqual(frozen.read_bytes(), self.live_env.read_bytes())
+        compose = json.loads((frozen.parent / "compose.json").read_text())
+        self.assertEqual(set(compose["services"]), {"pieceofdays-frontend-dev", "pieceofdays-app-dev"}, "no relay service")
+        self.assertEqual(set(compose["networks"]), {"edge", "front", "db", "egress"}, "no new network")
+        self.assertNotIn("ports", compose["services"]["pieceofdays-frontend-dev"], "no host port for 8081")
+        self.assertEqual(self.network_mutations(), [])
+        output = self.stdout + self.stderr + json.dumps(self.runs)
+        for value in (AI_KEY, WORKER_TOKEN, RELAY_PHOTO_ENV["POD_PHOTOS_S3_SECRET_ACCESS_KEY"], RELAY_PHOTO_ENV["POD_PHOTOS_S3_ACCESS_KEY_ID"]):
+            self.assertNotIn(value, output, "env values never reach output or command arguments")
 
 
 class DeployAppIdempotencyAndRotationTests(AppFlowBase):

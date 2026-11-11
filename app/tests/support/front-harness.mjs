@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+import { S3Client } from "@aws-sdk/client-s3";
 import { assertServerIs18, bootstrapRoles, cleanupAll, closeAllClients, createDisposableDatabase, readDisposableEnv, withAdmin } from "../db/helpers.ts";
 
 export const APP_DIR = fileURLToPath(new URL("../..", import.meta.url));
@@ -17,6 +18,12 @@ export const REPO_DIR = path.resolve(APP_DIR, "..");
 export const BASE = "https://dev.pieceofdays.com";
 export const PROVIDERS = ["google", "kakao"];
 export const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+// PLAN_dev-minio-story-runtime §1·§2: CI-only stand-in for the shared MinIO behind the 8081 relay.
+// Same pinned SeaweedFS as the auth e2e fixture, joined to the internal network as `minio:9000`.
+export const RELAY_BUCKET = "pieceofdays-photos-dev";
+const STORAGE_IMAGE = "chrislusf/seaweedfs:4.53@sha256:972ba30c529dfc72a6a12ed427e94d99c7b6a6e59d97bfa52be0a849f43e2cc9";
+export const STORAGE_ACCESS = "ci-only-relay-access";
+const STORAGE_SECRET = "ci-only-relay-secret-not-production";
 // Public-safe model of the actual http-level security include (main-confirmed 2026-11-10):
 // these five upstream headers are hidden by an ANCESTOR of the dev server. A location that
 // declares its own proxy_hide_header replaces this whole inherited list in nginx.
@@ -25,7 +32,7 @@ const FAKE_PASSWORD = "ci-front-only-not-a-secret";
 export const BASIC = `Basic ${Buffer.from(`ci:${FAKE_PASSWORD}`).toString("base64")}`;
 const SESSION_SECRET = "f6a2-ci-only-session-key-not-a-secret-000000";
 const FIXTURES = path.join(APP_DIR, "tests/fixtures/front");
-const masks = new Set([FAKE_PASSWORD, BASIC, SESSION_SECRET]);
+const masks = new Set([FAKE_PASSWORD, BASIC, SESSION_SECRET, STORAGE_SECRET]);
 export const protect = (value) => (masks.add(value), value);
 function sanitized(value) {
   let out = String(value);
@@ -110,7 +117,7 @@ export class FrontHarness {
     this.gid = process.getgid();
     assert.ok(this.uid > 0 && this.gid > 0, "non-root numeric uid:gid required");
     this.prefix = `pod-f6a2-${process.pid}-${randomBytes(4).toString("hex")}`;
-    this.names = Object.fromEntries(["upstream", "front", "outer"].map((k) => [k, `${this.prefix}-${k}`]));
+    this.names = Object.fromEntries(["upstream", "front", "outer", "storage"].map((k) => [k, `${this.prefix}-${k}`]));
     this.containers = new Set();
     this.images = new Set();
     this.archived = [];
@@ -135,9 +142,13 @@ export class FrontHarness {
     this.pgContainer = candidates[0];
 
     // Read constants from this checkout without calling the helper main/config/deployment functions.
-    const readConstants = await command("python3", ["-B", "-c", "import importlib.util,json,sys; s=importlib.util.spec_from_file_location('pod_front_source',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(json.dumps({'conf':m.DEV_FRONT_NGINX_CONF,'base':m.FRONT_NGINX_BASE}))", path.join(REPO_DIR, "scripts/ops/deploy.py")]);
+    // The relay constant is read without failing setup when absent: #01 asserts it explicitly (feature RED, not a load error).
+    const readConstants = await command("python3", ["-B", "-c", "import importlib.util,json,sys; s=importlib.util.spec_from_file_location('pod_front_source',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(json.dumps({'conf':m.DEV_FRONT_NGINX_CONF,'relay':getattr(m,'DEV_FRONT_RELAY_NGINX_CONF',None),'base':m.FRONT_NGINX_BASE}))", path.join(REPO_DIR, "scripts/ops/deploy.py")]);
     assert.equal(readConstants.code, 0, "read helper source constants");
     this.trusted = JSON.parse(readConstants.stdout);
+    this.trusted.public80 = this.trusted.conf;
+    // The helper bakes default.conf = public80 constant + separate relay constant.
+    if (typeof this.trusted.relay === "string") this.trusted.conf = this.trusted.public80 + this.trusted.relay;
     assert.match(this.trusted.base, /^nginx:stable-alpine@sha256:[0-9a-f]{64}$/);
     const publicDir = path.join(REPO_DIR, "frontend/public");
     this.staticFiles = [];
@@ -259,9 +270,9 @@ export class FrontHarness {
     assert.equal(endpoints.length, 1, "exactly one owned internal endpoint");
     return endpoints[0].IPAddress;
   }
-  async port(name) {
+  async port(name, internal = "80/tcp") {
     const info = JSON.parse((await docker(["inspect", name])).stdout)[0];
-    const mapping = info.NetworkSettings.Ports["80/tcp"];
+    const mapping = info.NetworkSettings.Ports[internal];
     assert.ok(Array.isArray(mapping), `nginx must have a real loopback port mapping (running=${info.State.Running})`);
     assert.equal(mapping.length, 1);
     assert.equal(mapping[0].HostIp, "127.0.0.1");
@@ -325,14 +336,35 @@ export class FrontHarness {
   async front(kind) {
     await this.remove(this.names.front);
     this.containers.add(this.names.front);
-    await docker(["create", "--name", this.names.front, "--network", this.ingress, "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "-p", `127.0.0.1:${this.frontPort ?? ""}:80`, this[`${kind}Image`]]);
+    // 8081 is published to loopback only so the CI SDK can reach the relay; the helper publishes no host port.
+    await docker(["create", "--name", this.names.front, "--network", this.ingress, "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "-p", `127.0.0.1:${this.frontPort ?? ""}:80`, "-p", `127.0.0.1:${this.relayPort ?? ""}:8081`, this[`${kind}Image`]]);
     await docker(["network", "connect", ...(this.frontIP ? ["--ip", this.frontIP] : []), this.network, this.names.front]);
     await docker(["start", this.names.front]);
     await this.observe(this.names.front, "front");
     this.frontIP ??= await this.address(this.names.front);
     this.frontPort = await this.port(this.names.front);
+    this.relayPort = await this.port(this.names.front, "8081/tcp");
     await this.waitPort(this.frontPort, 200, "/try/");
   }
+  /** Owned SeaweedFS on the internal network only (no host port), DNS alias `minio`, S3 on 9000. */
+  async storage() {
+    if (this.containers.has(this.names.storage)) return;
+    this.containers.add(this.names.storage);
+    await docker(["run", "-d", "--platform", "linux/amd64", "--name", this.names.storage, "--network", this.network, "--network-alias", "minio",
+      "--tmpfs", "/data:rw,nosuid,nodev,size=256m", "--env", `AWS_ACCESS_KEY_ID=${STORAGE_ACCESS}`, "--env", `AWS_SECRET_ACCESS_KEY=${STORAGE_SECRET}`,
+      "--env", `S3_BUCKET=${RELAY_BUCKET}`, STORAGE_IMAGE, "mini", "-dir=/data", "-s3.port=9000"], 180_000);
+    const info = JSON.parse((await docker(["inspect", this.names.storage])).stdout)[0];
+    for (const hosts of Object.values(info.NetworkSettings.Ports ?? {})) assert.ok(!hosts?.length, "storage publishes no host port");
+    const networks = Object.values(info.NetworkSettings.Networks ?? {});
+    assert.equal(networks.length, 1, "storage joins exactly one network");
+    assert.equal(networks[0].NetworkID, this.network, "storage is only on the internal network");
+  }
+  /** SDK client through the published relay port. Config object only; the app photo parser is not involved. */
+  relayClient(secretAccessKey = STORAGE_SECRET) {
+    return new S3Client({ endpoint: `http://127.0.0.1:${this.relayPort}`, region: "us-east-1", forcePathStyle: true, maxAttempts: 1,
+      credentials: { accessKeyId: STORAGE_ACCESS, secretAccessKey } });
+  }
+  relayRequest(target, options) { return request(this.relayPort, target, options); }
   async waitPort(port, status, target = "/") {
     for (let n = 0; n < 60; n++) {
       const r = await request(port, target).catch(() => null);
