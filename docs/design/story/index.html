@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>AI 하루 이야기 읽기 아트보드 — pieceofdays (시안 D)</title>
+  <title>AI 하루 이야기 읽기·생성 아트보드 — pieceofdays (시안 D)</title>
   <!-- D 정본 토큰·상단 셸·버튼·조각·하루 한 줄을 그대로 쓴다. 외부 글꼴·외부 요청 없음. -->
   <link rel="stylesheet" href="../concepts/d-warm-pieces/style.css">
   <style>
@@ -36,6 +36,11 @@
     .story .btn-main[aria-disabled="true"], .story .btn-ghost[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
     .story .btn-main[aria-disabled="true"]:active { transform: none; }
     .story-set { font-size: 15px; }
+    /* S3 생성 계약 보기: 회고 시간 줄과 동의 패널(D .settings·.font-opt 재사용) */
+    .story-reflect { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2); }
+    .art-s3[hidden], .art-s2[hidden] { display: none; }
+    .ai-consent .font-opt input[type="checkbox"] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); grid-row: span 2; }
+    .ai-consent p { max-width: 64ch; }
 
     /* 원본 영역 머리: 원본임을 문장으로만 밝힌다 */
     .src-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--s-2); margin: 0 0 var(--s-2); }
@@ -51,8 +56,14 @@
 </head>
 <body>
   <aside class="art-tool" aria-label="아트보드 도구">
-    <p class="art-tool-note">정적 아트보드 · 합성 예시 · 미배포 — 실제 생성·저장·로그인·네트워크 요청 없음. 이 줄은 제품 화면이 아니다.</p>
-    <label>이야기 상태
+    <p class="art-tool-note">정적 아트보드 · 합성 예시 · 미배포 — 실제 생성·외부 전송·저장·로그인·네트워크 요청 없음. 버튼은 이 화면의 상태 이름만 바꾼다(가짜 성공 없음). 이 줄은 제품 화면이 아니다.</p>
+    <label>보기
+      <select id="tool-mode">
+        <option value="s2">S2 읽기 7상태 (보존)</option>
+        <option value="s3">S3 생성 계약 (동의·작업 상태)</option>
+      </select>
+    </label>
+    <label class="art-s2">이야기 상태
       <select id="tool-state">
         <option value="unavailable">준비 전 (현재 S1·S2 실제 상태)</option>
         <option value="none">없음 · 생성 가능 (후속 계약)</option>
@@ -61,6 +72,40 @@
         <option value="outdated">조각이 바뀐 뒤</option>
         <option value="deleted">조각을 모두 지운 뒤</option>
         <option value="error">실패 (후속 계약)</option>
+      </select>
+    </label>
+    <label class="art-s3" hidden>화면
+      <select id="tool-screen">
+        <option value="day">날짜 화면</option>
+        <option value="settings">설정 · AI 하루 이야기</option>
+      </select>
+    </label>
+    <label class="art-s3" hidden>이야기(StoryDay)
+      <select id="tool-story">
+        <option value="none">없음 · 조각 있음</option>
+        <option value="current">최신 이야기</option>
+        <option value="outdated">조각이 바뀐 뒤</option>
+        <option value="deleted">조각을 모두 지운 뒤 (조각 0)</option>
+      </select>
+    </label>
+    <label class="art-s3" hidden>생성 상태(StoryGenerationView)
+      <select id="tool-gen">
+        <option value="unavailable">unavailable · 키 없음</option>
+        <option value="off">off · 직접 만들기 미동의</option>
+        <option value="withdrawn">off · 동의 철회 뒤</option>
+        <option value="ready">ready · 버튼 가능</option>
+        <option value="queued">queued · 차례 기다림</option>
+        <option value="running">running · 만드는 중</option>
+        <option value="failed_photo">failed · 사진 준비 실패</option>
+        <option value="failed">failed · 그 밖의 실패</option>
+        <option value="failed_last">failed · 오늘 한도 소진(canRetry 아님)</option>
+        <option value="limited">limited · 오늘 3회 소진</option>
+      </select>
+    </label>
+    <label class="art-s3" hidden>회고 시각
+      <select id="tool-reflect">
+        <option value="20:00">20:00 (기본)</option>
+        <option value="21:15">21:15 (계정 설정 예)</option>
       </select>
     </label>
     <label>본문 길이
@@ -92,6 +137,7 @@
   </header>
 
   <main id="view" tabindex="-1">
+    <div id="day-view">
     <a class="back" href="../concepts/d-warm-pieces/index.html#days">← 모아보기</a>
     <div class="board-head">
       <h1>11월 2일 월요일 <span class="count" id="piece-count" aria-label="조각 4개">4</span></h1>
@@ -116,6 +162,33 @@
         </div>
         <ul class="pieces" id="pieces"></ul>
         <p class="no-pieces" id="no-pieces" hidden>이 날의 조각이 없어요.</p>
+      </section>
+    </div>
+    </div>
+
+    <!-- S3: 설정 화면의 AI 하루 이야기 동의 영역(id story-ai). 두 항목 모두 기본 꺼짐. 저장은 아트보드 상태만 바꾼다. -->
+    <div id="settings-view" hidden>
+      <a class="back" href="#view" id="settings-back">← 날짜 화면</a>
+      <section class="settings ai-consent" id="story-ai" aria-labelledby="story-ai-h">
+        <h2 id="story-ai-h">AI 하루 이야기</h2>
+        <p>켜면 그날 남긴 메모 원문과 사진의 512px 사본을 Anthropic의 Claude API로 보내 이야기를 만들어요.</p>
+        <p>보낸 자료는 회수할 수 없어요. 끄면 그 뒤로는 새로 보내지 않아요. 저장할 때마다 새 동의로 기록하고, 그 전에 맡긴 요청은 보내지 않아요.</p>
+        <fieldset class="font-pick">
+          <legend class="lbl">만드는 방법</legend>
+          <label class="font-opt">
+            <input type="checkbox" id="ai-manual" aria-labelledby="ai-manual-name" aria-describedby="ai-manual-desc">
+            <span class="font-name" id="ai-manual-name">직접 만들기 허용</span>
+            <span class="font-desc" id="ai-manual-desc">날짜 화면에서 ‘AI 이야기 만들기’를 누를 때만 보내요. 하루 3번까지예요.</span>
+          </label>
+          <label class="font-opt">
+            <input type="checkbox" id="ai-auto" aria-labelledby="ai-auto-name" aria-describedby="ai-auto-desc">
+            <span class="font-name" id="ai-auto-name">회고 시간(현재 20:00)에 자동으로 만들기</span>
+            <span class="font-desc" id="ai-auto-desc">매일 회고 시간이 지나면 한 번 만들어요. 그날 조각이 없으면 만들지 않아요.</span>
+          </label>
+        </fieldset>
+        <p class="hint">두 항목 모두 기본으로 꺼져 있어요. 회고 시간은 위의 회고 시간 설정을 따라요(한국 시간).</p>
+        <div class="row"><button class="btn-main" type="button" id="ai-save">저장</button></div>
+        <p id="ai-saved" class="hint" aria-live="polite"></p>
       </section>
     </div>
   </main>
@@ -145,6 +218,13 @@
       }
 
       var view = {
+        mode: document.getElementById("tool-mode"),
+        screen: document.getElementById("tool-screen"),
+        story: document.getElementById("tool-story"),
+        gen: document.getElementById("tool-gen"),
+        reflect: document.getElementById("tool-reflect"),
+        dayView: document.getElementById("day-view"),
+        settingsView: document.getElementById("settings-view"),
         state: document.getElementById("tool-state"),
         len: document.getElementById("tool-len"),
         font: document.getElementById("tool-font"),
@@ -254,16 +334,93 @@
         }
       };
 
+      // ---------------- S3 생성 계약 보기(PLAN_ai-story-live-generation §3·§5). 합성 상태만 바꾸며 요청·타이머·자동 성공이 없다.
+      function link(label, href, onClick) {
+        var a = el("a", "text-btn story-set", label);
+        a.href = href;
+        if (onClick) a.addEventListener("click", function (e) { e.preventDefault(); onClick(); });
+        return a;
+      }
+      function showSettings() { view.screen.value = "settings"; render(false); document.getElementById("story-ai").scrollIntoView(); }
+      function enqueue() {
+        // 실제 앱: Server Action이 queued job 1건만 만든다. 결과는 다음 worker 호출 뒤 새로고침으로 본다.
+        view.gen.value = "queued";
+        render(true);
+      }
+      function s3Day(c) {
+        var story = view.story.value, gen = view.gen.value;
+        var hasMoments = story !== "deleted";
+        var hasStory = story !== "none";
+        var canMake = hasMoments && (story === "none" || story === "outdated");
+        var live = null;
+        if (story === "outdated") c.appendChild(el("p", "story-state", "이 이야기를 만든 뒤 조각이 바뀌었어요. 지금 조각과 다를 수 있어요."));
+        if (story === "deleted") c.appendChild(el("p", "story-state", "이 날의 조각을 모두 지웠지만, 이전에 만든 이야기는 남아 있어요."));
+        if (hasStory) {
+          c.appendChild(el("p", "story-src", "AI가 이날 조각의 메모로 쓴 글이에요. 원본 조각은 아래에 그대로 있어요. · " + MADE + "에 만든 이야기"));
+          c.appendChild(body());
+        }
+        var row = el("div", "row");
+        if (gen === "unavailable" || gen === "off" || gen === "withdrawn") {
+          if (!hasStory) c.appendChild(el("p", "hint", "AI 하루 이야기는 아직 준비 중이에요. 남긴 조각은 그대로 저장돼요."));
+          if (gen !== "unavailable" && canMake) row.appendChild(link("AI 이야기 설정", "#story-ai", showSettings));
+          live = hasStory ? null : "AI 하루 이야기는 아직 준비 중이에요.";
+        } else if (gen === "ready") {
+          if (canMake) row.appendChild(button("AI 이야기 만들기", hasStory ? "btn-ghost" : "btn-main", false, enqueue));
+          live = canMake ? "AI 이야기를 만들 수 있어요." : null;
+        } else if (gen === "queued" || gen === "running") {
+          c.appendChild(el("p", "story-state", gen === "queued" ? "AI 이야기를 만드는 중이에요. 만들 차례를 기다리고 있어요." : "AI 이야기를 만드는 중이에요."));
+          c.appendChild(el("p", "hint", "화면은 저절로 바뀌지 않아요. 잠시 뒤 새로고침해서 확인해 주세요."));
+          row.appendChild(link("새로고침", "#view"));
+          live = "AI 이야기를 만드는 중이에요.";
+        } else if (gen === "failed_photo" || gen === "failed" || gen === "failed_last") {
+          var err = el("p", "story-err", gen === "failed_photo" ? "사진을 읽지 못해 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요." : "이야기를 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요.");
+          err.setAttribute("role", "alert");
+          c.appendChild(err);
+          if (gen === "failed_last") c.appendChild(el("p", "hint", "오늘은 더 만들 수 없어요."));
+          else if (canMake) row.appendChild(button("AI 이야기 만들기", "btn-ghost", false, enqueue));
+        } else if (gen === "limited") {
+          c.appendChild(el("p", "story-state", "오늘은 더 만들 수 없어요. 직접 만들기는 하루 3번까지예요."));
+          live = "오늘은 더 만들 수 없어요.";
+        }
+        if (row.childNodes.length) c.appendChild(row);
+        var reflect = el("div", "story-reflect");
+        reflect.appendChild(el("p", "hint", "회고 시간 " + view.reflect.value + " (한국 시간)"));
+        var change = el("a", "text-btn", "회고 시간 바꾸기");
+        change.href = "../concepts/d-warm-pieces/index.html#settings";
+        reflect.appendChild(change);
+        c.appendChild(reflect);
+        var list = story === "deleted" ? [] : story === "outdated" ? PIECES.concat([ADDED]) : PIECES;
+        return { pieces: list, live: live };
+      }
+      function s3Settings() {
+        document.getElementById("ai-auto-name").textContent = "회고 시간(현재 " + view.reflect.value + ")에 자동으로 만들기";
+      }
+      document.getElementById("ai-save").addEventListener("click", function () {
+        var manual = document.getElementById("ai-manual").checked;
+        var before = view.gen.value;
+        view.gen.value = manual ? "ready" : (before === "off" || before === "unavailable" ? before : "withdrawn");
+        document.getElementById("ai-saved").textContent = "AI 이야기 설정을 저장했어요. (아트보드: 상태 이름만 바뀌고 저장·전송은 없어요)";
+      });
+      document.getElementById("settings-back").addEventListener("click", function (e) { e.preventDefault(); view.screen.value = "day"; render(false); });
+
       function render(announce) {
         document.documentElement.setAttribute("data-record-font", view.font.value);
+        var s3 = view.mode.value === "s3";
+        Array.prototype.forEach.call(document.querySelectorAll(".art-s2"), function (n) { n.hidden = s3; });
+        Array.prototype.forEach.call(document.querySelectorAll(".art-s3"), function (n) { n.hidden = !s3; });
+        var settings = s3 && view.screen.value === "settings";
+        view.dayView.hidden = settings;
+        view.settingsView.hidden = !settings;
         view.content.textContent = "";
-        var r = STATES[view.state.value](view.content);
+        if (settings) { s3Settings(); view.live.textContent = ""; return; }
+        var r = s3 ? s3Day(view.content) : STATES[view.state.value](view.content);
         renderPieces(r.pieces);
         // 포커스는 옮기지 않는다. 상태 변화는 polite 알림, 오류는 role=alert.
         view.live.textContent = announce && r.live ? r.live : "";
       }
 
       view.state.addEventListener("change", function () { render(true); });
+      [view.mode, view.screen, view.story, view.gen, view.reflect].forEach(function (n) { n.addEventListener("change", function () { render(true); }); });
       view.len.addEventListener("change", function () { render(false); });
       view.font.addEventListener("change", function () { render(false); });
       render(false);
