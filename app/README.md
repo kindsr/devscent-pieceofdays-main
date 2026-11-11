@@ -1,5 +1,9 @@
 # pieceofdays app (F1 화면·F2 DB·F3 도메인·F4 인증 기반)
 
+2026-11-11 실제 생성 연결 진행: [PR90](https://github.com/kindsr/devscent-pieceofdays-main/pull/90)·[S3 계획](../docs/plans/PLAN_ai-story-live-generation.md)은 사진 512px 사본과 메모, 명시적 수동/자동 동의, PG 작업·사용량 기록, 내부 worker/CLI와 화면을 연결한다. 설정된 회고 시각은 기본20:00(서울)이며 자동 생성은 기본 OFF다. 생성 action은 작업만 등록하고 외부 API를 기다리지 않는다. 월 한도는 사용자 확보 뒤 정하는 방향이며 토큰·결과 불명 호출과 일일 기술 제한을 기록한다. 소스·합성 CI·실제 MinIO/AI·서비스 DB·정시 작업·dev 배포는 각각 판정한다. 현재 source/CI 검증 중으로 실사용 완료가 아니다.
+
+같은 날 [PR89](https://github.com/kindsr/devscent-pieceofdays-main/pull/89)의 dev 전용 MinIO relay와 env 검증은 독립 검토·CI를 통과해 dev 브랜치에 통합했다. 공용 root 자격 없이 비공개 버킷/접두만 쓰며 내부 HTTP 예외는 정확한 dev front 주소로 제한한다. 실제 namespace/IAM·설치 helper는 준비했으나 app env 활성화·DB3~6·실제 생성/자동 실행은 S3 최종 배포에서 별도로 확인한다. 아래 날짜별 문단은 당시 구현 범위다.
+
 2026-11-11 이야기 읽기 화면 후보: [PR88](https://github.com/kindsr/devscent-pieceofdays-main/pull/88)는 오늘/선택 날짜에 AI 글을 원본 조각과 구분하고, 메모 수정·전체 삭제 뒤에도 기존 이야기를 보존해 달력으로 다시 여는 흐름을 연결한다. 본문은 기록 글꼴·개행·64ch 읽기 폭을 따르며 실제 회고 설정값을 표시한다. [S2 계획](../docs/plans/PLAN_ai-daily-story-view.md)·[아트보드](../docs/design/story/index.html)를 따르고, DB2·PC Chromium/폰 WebKit E2E3·실제 컴포넌트 합성15PNG를 별도로 검증한다. 생성 버튼/외부 전송·live env·서비스 DB·정시 실행·dev 배포는 아직 닫혀 있다. S1은 c3c3023의 unit335·DB216·auth41 등 CI와 독립 검토를 통과했고, S2의 최종 통과·직접 이미지 확인은 PR의 정확한 SHA 증거로 판단한다.
 
 2026-11-11 이야기 저장 후보: [PR87](https://github.com/kindsr/devscent-pieceofdays-main/pull/87)는 `story_versions`(0005)·입력 스냅샷/revision·계정 상태/세션 세대 확인·버전별 보존·날짜별 none/current/outdated 읽기를 추가한다. 같은 입력은 저장된 글을 재사용하고, 원본이 바뀌거나 없어져도 기존 이야기를 보존한다. app 권한은 SELECT/INSERT뿐이고 탈퇴 purge는 CASCADE다. [S1 계획](../docs/plans/PLAN_ai-daily-story-storage.md)의 신규 단위12·PG19 사례와 기본 schema 기대 확장을 먼저 RED로 확인했으며 GREEN은 같은 SHA의 CI/독립 검토로 판단한다. 생성기는 닫혀 있어 실제 일기 전송/일반 action/화면/정시 실행·서비스 DB 적용·앱 배포는 아직 없다. 단독 어댑터의 합성 생성 성공과 실제 제품 연결은 구분한다.
