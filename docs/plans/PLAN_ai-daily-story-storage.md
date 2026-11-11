@@ -43,7 +43,7 @@ DTO에 userId/gen/momentId/photoId/object key·내부 sourceRevision은 넣지 �
 - `storyRevision(date, refs:readonly {id:string;version:number}[]):string` = sha256(`v1\n` + date + `\n` + id 오름차순으로 정렬한 `${id}:${version}\n` 연결). caller 배열을 변경하지 않는다. 날짜/id/version/추가/삭제 변화는 revision을 바꾼다. 정리 한 줄·글꼴·회고 시간은 입력이 아니다.
 - `storyPayload(input:StoryInput)` → 새 plain `{date,moments:[{time,text}]}`만 복사. DB 식별자·사진 정보0.
 - `captureStoryInput(db:Pick<Db,"query">,userId:string,date:string)` → Result<StoryInput,"invalid_date"|"no_input"|"input_too_large"|"invalid_input">. userId/date 형식 오류는 SQL 전에 invalid_date. 미래 판정은 generate가 담당한다.
-- SQL 문1개: diary_moments를 user_id/local_date로 제한하고 `ORDER BY occurred_at,id LIMIT 31`. time은 `to_char(occurred_at AT TIME ZONE time_zone,'HH24:MI')`, text는 원래 body. 사진 JOIN·day_summaries 없음. 현재 사진 연결은 조각과 함께 불변으로 생성되며, 사진 전송 계약을 도입하면 revision v2와 별도 RED를 적용한다.
+- SQL 문1개: diary_moments를 user_id/local_date로 제한하고 `ORDER BY occurred_at,id LIMIT 31`. time은 `to_char(occurred_at AT TIME ZONE time_zone,'HH24:MI')`, text는 원래 body. 현재 기록 삭제는 실제 DELETE이며 숨김/soft-delete 열이 없다. 기존 getDay와 같은 메모 가시성을 따른다. 사진 JOIN·day_summaries 없음. 현재 사진 연결은 조각과 함께 불변으로 생성되며, 사진 전송 계약을 도입하면 revision v2와 별도 RED를 적용한다.
 - 0행 no_input, 31행 input_too_large. 어떤 text든 trim 후 비었거나300codepoint 초과·금지 제어 문자(C0/DEL/C1, LF/CR/TAB 제외)이면 invalid_input. 행을 건너뛰거나 자르지 않는다. payload JSON UTF8 48KiB 초과는 input_too_large. 현재 다른 상한 뒤 도달 불가여도 방어를 유지한다.
 
 `store.pg.ts`:
@@ -58,7 +58,7 @@ DTO에 userId/gen/momentId/photoId/object key·내부 sourceRevision은 넣지 �
 
 `generate.ts`: `STORY_GENERATE_TIMEOUT_MS=20000`; `generateDailyStory(db:Db,generator:StoryGenerator|null,subject:SessionSubject,args:{date:string;expectedInputRevision:string|null},opts?:{now?:()=>Date})` → Result<{story:StoryRef;replayed:boolean},StoryError>.
 
-처리 순서는 subject UUID/양의 안전 정수 gen → 날짜/미래(서울 현재일 기준) 및 expectedRevision(null 또는64hex) → verifyActiveAccount(active+gen) → capture → expected revision 충돌 → 이미 저장된 같은 revision 재사용 → generator null이면 unavailable → generator에 20초 signal과 식별자 없는 payload 전달 → 결과 검증 → append fence이다. stale/pending 계정은 capture와 generator 전에 거부한다.
+처리 순서는 subject UUID/양의 안전 정수 gen → 날짜/미래(서울 현재일 기준) 및 expectedRevision(null 또는64hex, 형식 오류는 conflict) → verifyActiveAccount(active+gen) → capture → expected revision 충돌 → 이미 저장된 같은 revision 재사용 → generator null이면 unavailable → generator에 20초 signal과 식별자 없는 payload 전달 → 결과 검증 → append fence이다. stale/pending 계정은 capture와 generator 전에 거부한다.
 
 결과와 value는 plain/null-prototype record이며 body는 own string이어야 한다. trim 뒤 비거나2000codepoint 초과·금지 제어 문자면 invalid_output. 허용되지 않은 port 오류/throw는 unavailable, timeout은 timeout. 원문·stack은 로그/결과0. 실패는 기존 이야기/원본을 보존한다. 주입 생성기 호출 중 별도 연결로 원본 CRUD가 가능하고, 캡처한 revision으로 저장한 결과는 이후 read에서 outdated가 될 수 있다. S1의 주입 port는 격리 시험 전용이며 실제 provider 진입점0이다.
 
