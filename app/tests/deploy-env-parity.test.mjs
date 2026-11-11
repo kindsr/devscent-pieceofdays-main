@@ -132,14 +132,36 @@ const VALID = {
   "no trailing newline": lines(BASE_ENTRIES).slice(0, -1),
 };
 
+// PLAN_dev-minio-story-runtime §1.4·§1.5: dev relay flag와 AI 실행 자격. 29개 최상위 사례를 유지하려고
+// 기존 "base google" 사례 안의 추가 vector로 둔다(자식 test·개수 변경 없음).
+const RELAY_ENTRIES = [
+  ["POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.11:8081/"],
+  ["POD_PHOTOS_S3_REGION", "ci-only-region-1"],
+  ["POD_PHOTOS_S3_BUCKET", "pieceofdays-photos-dev"],
+  ["POD_PHOTOS_S3_ACCESS_KEY_ID", "ci-only-relay-access+/=key"],
+  ["POD_PHOTOS_S3_SECRET_ACCESS_KEY", "ci-only-relay-secret+/==value"],
+  ["POD_PHOTOS_INTERNAL_DEV_HTTP", "1"],
+];
+const AI_KEY = "ci-only-parity-anthropic-key+/=~!";
+const WORKER_TOKEN = "0123456789abcdef".repeat(4);
+const STORY_ENTRIES = [["ANTHROPIC_API_KEY", AI_KEY], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]];
+const RELAY_STORY_VALID = [
+  ["relay photos", lines([...BASE_ENTRIES, ...RELAY_ENTRIES])],
+  ["story credentials", lines([...BASE_ENTRIES, ...STORY_ENTRIES])],
+  ["relay photos + story credentials", lines([...BASE_ENTRIES, ...RELAY_ENTRIES, ...STORY_ENTRIES])],
+  ["4096-byte API key", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", "k".repeat(4096)], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+];
+
 for (const [label, text] of Object.entries(VALID)) {
   test(`accepted file is read identically by Python and Node --env-file: ${label}`, () => {
-    const py = python(text);
-    assert.ok(py.ok, `python rejected a valid file: ${py.message ?? ""}`);
-    const keys = keysOf(text);
-    const node = nodeEnvFile(text, keys);
-    assert.deepEqual(Object.keys(py.ok).sort(), [...keys].sort(), "python returns exactly the file keys");
-    assert.deepEqual(node, py.ok, "Node --env-file values equal the Python values");
+    for (const [vector, input] of [[label, text], ...(label === "base google" ? RELAY_STORY_VALID : [])]) {
+      const py = python(input);
+      assert.ok(py.ok, `${vector}: python rejected a valid file: ${py.message ?? ""}`);
+      const keys = keysOf(input);
+      const node = nodeEnvFile(input, keys);
+      assert.deepEqual(Object.keys(py.ok).sort(), [...keys].sort(), `${vector}: python returns exactly the file keys`);
+      assert.deepEqual(node, py.ok, `${vector}: Node --env-file values equal the Python values`);
+    }
   });
 }
 
@@ -219,13 +241,42 @@ for (const [key, value] of [
   ["AWS_PROFILE", "ci-only-profile"], ["AWS_SHARED_CREDENTIALS_FILE", "/nonexistent/ci-only-credentials"],
   ["POD_PHOTOS_S3_EXTRA", "ci-only-not-allowlisted"],
 ]) PHOTO_REJECTED.push([key, lines([...BASE_ENTRIES, ...PHOTO_ENTRIES, [key, value]])]);
+// dev relay/AI 거부 vector도 같은 기존 사례 안에 둔다.
+const relayWith = (key, value) => lines([...BASE_ENTRIES, ...(value === undefined ? RELAY_ENTRIES.filter(([k]) => k !== key) : replace(RELAY_ENTRIES, key, value))]);
+for (const [label, text] of [
+  ["relay without flag", relayWith("POD_PHOTOS_INTERNAL_DEV_HTTP", undefined)],
+  ["relay flag 0", relayWith("POD_PHOTOS_INTERNAL_DEV_HTTP", "0")],
+  ["relay flag true", relayWith("POD_PHOTOS_INTERNAL_DEV_HTTP", "true")],
+  ["flag without photos", lines([...BASE_ENTRIES, ["POD_PHOTOS_INTERNAL_DEV_HTTP", "1"]])],
+  ["flag with HTTPS photos", lines([...BASE_ENTRIES, ...PHOTO_ENTRIES, ["POD_PHOTOS_INTERNAL_DEV_HTTP", "1"]])],
+  ["relay other bucket", relayWith("POD_PHOTOS_S3_BUCKET", "ci-only-private-photos")],
+  ["relay prod bucket", relayWith("POD_PHOTOS_S3_BUCKET", "pieceofdays-photos")],
+  ["relay app address", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.10:8081/")],
+  ["relay egress address", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.18.11:8081/")],
+  ["relay port", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.11:8080/")],
+  ["relay no slash", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.11:8081")],
+  ["relay name", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://pieceofdays-frontend-dev:8081/")],
+  ["relay leading zero", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://010.231.17.11:8081/")],
+  ["relay path", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.11:8081/pieceofdays-photos-dev")],
+  ["relay HTTPS with flag", relayWith("POD_PHOTOS_S3_ENDPOINT", "https://10.231.17.11:8081/")],
+  ["flag typo", lines([...BASE_ENTRIES, ...RELAY_ENTRIES.filter(([k]) => k !== "POD_PHOTOS_INTERNAL_DEV_HTTP"), ["POD_PHOTOS_INTERNAL_DEV_HTTPS", "1"]])],
+  ["API key without token", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", AI_KEY]])],
+  ["token without API key", lines([...BASE_ENTRIES, ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+  ["API key 4097", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", "k".repeat(4097)], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+  ["API key inner space", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", "ci-only key"], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+  ["API key non-ASCII", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", "ci-only-k\u00e9y"], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+  ["token uppercase", lines([...BASE_ENTRIES, ...replace(STORY_ENTRIES, "POD_STORY_WORKER_TOKEN", WORKER_TOKEN.toUpperCase())])],
+  ["token 63", lines([...BASE_ENTRIES, ...replace(STORY_ENTRIES, "POD_STORY_WORKER_TOKEN", WORKER_TOKEN.slice(1))])],
+  ["token non-hex", lines([...BASE_ENTRIES, ...replace(STORY_ENTRIES, "POD_STORY_WORKER_TOKEN", "g".repeat(64))])],
+  ["other Anthropic key", lines([...BASE_ENTRIES, ...STORY_ENTRIES, ["ANTHROPIC_BASE_URL", "https://ci-only.invalid/"]])],
+]) PHOTO_REJECTED.push([label, text]);
 
 for (const [label, text] of Object.entries(REJECTED)) {
   test(`Python rejects text outside the Node-identical subset without echoing values: ${label}`, () => {
     for (const [vector, input] of [[label, text], ...(label === "forbidden fixture" ? PHOTO_REJECTED : [])]) {
       const py = python(input);
       assert.equal(py.error, "ValueError", `${vector}: expected ValueError, got ${JSON.stringify(py).slice(0, 120)}`);
-      for (const secret of [SECRET, "ci-only-parity-pass", "ci-only-parity-session-key-1-", ...PHOTO_ENTRIES.map((entry) => entry[1])]) {
+      for (const secret of [SECRET, "ci-only-parity-pass", "ci-only-parity-session-key-1-", ...PHOTO_ENTRIES.map((entry) => entry[1]), ...RELAY_ENTRIES.slice(3, 5).map((entry) => entry[1]), AI_KEY, WORKER_TOKEN]) {
         assert.ok(!py.message.includes(secret), `${vector}: error message must not contain values`);
       }
     }
