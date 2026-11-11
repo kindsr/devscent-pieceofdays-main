@@ -9,7 +9,7 @@ const LABEL = "매일 회고할 시간";
 const SAVED = "회고 시간을 저장했어요.";
 const READ_FAILED = "회고 시간을 불러오지 못했어요";
 const time = (page: Page) => page.getByLabel(LABEL, { exact: true });
-const save = (page: Page) => page.getByRole("button", { name: "저장", exact: true });
+const save = (page: Page) => page.getByRole("region", { name: "회고 시간", exact: true }).getByRole("button", { name: "저장", exact: true });
 
 /** 관리자 SELECT: 실제 UI 저장 결과만 확인하며 행이 없으면 null이다. */
 async function storedTime(userId: string): Promise<string | null> {

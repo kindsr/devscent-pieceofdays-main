@@ -126,7 +126,7 @@ async function expectStoryBody(page: Page, body: string, headingLevel: 2 | 3, la
 async function saveReflection(page: Page, value: string): Promise<void> {
   await page.goto("/settings");
   await reflectionTime(page).fill(value);
-  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await page.getByRole("region", { name: "회고 시간", exact: true }).getByRole("button", { name: "저장", exact: true }).click();
   await expect(page.getByText("회고 시간을 저장했어요.", { exact: true })).toBeVisible();
   await expect(reflectionTime(page)).toBeEnabled();
 }
