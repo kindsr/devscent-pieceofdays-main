@@ -269,3 +269,5 @@ html[data-record-font="hand"] { --font-record: var(--font-hand); }
 .story h2, .story h3 { font-size: 20px; font-weight: 800; }
 .story-body { max-width: 64ch; font-family: var(--font-record); font-size: 17px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .story-time { gap: 4px var(--s-2); }
+/* 생성 상태(PLAN_ai-story-live-generation §5): 버튼·진행·실패·한도 안내 한 줄. 동의 설정은 기존 settings·auth-check 규칙을 쓴다. */
+.story-generation { gap: 4px var(--s-2); }

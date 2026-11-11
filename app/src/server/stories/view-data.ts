@@ -10,11 +10,16 @@ import { getReflectionTime } from "../account/reflection-time.pg";
 import { getViewer } from "../context";
 import { getAppDb } from "../db/pool";
 import { dateParts } from "@/shared/local-date";
-import type { StoryDay } from "@/shared/stories";
+import type { StoryDay, StoryGenerationView } from "@/shared/stories";
 import { listStoryDates } from "./calendar.pg";
+import { parseClaudeConfig } from "./claude";
+import { readStoryGeneration } from "./jobs.pg";
 import { readStoryDay } from "./read";
 
-export type StoryView = { kind: "signed_out" } | { kind: "ok"; data: StoryDay | null; reflectionTime: string | null };
+/** generation은 생성 상태(PLAN_ai-story-live-generation §3). 읽지 못하면 null이며 버튼을 보이지 않는다. */
+export type StoryView =
+  | { kind: "signed_out" }
+  | { kind: "ok"; data: StoryDay | null; reflectionTime: string | null; generation: StoryGenerationView | null };
 export type StoryDatesView = { kind: "signed_out" } | { kind: "ok"; dates: string[] | null };
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -22,7 +27,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export async function readStoryView(date: string): Promise<StoryView> {
   const viewer = await getViewer();
   if (viewer.kind === "signed_out") return { kind: "signed_out" };
-  if (viewer.kind !== "user") return { kind: "ok", data: null, reflectionTime: null };
+  if (viewer.kind !== "user") return { kind: "ok", data: null, reflectionTime: null, generation: null };
   const subject = { userId: viewer.userId, gen: viewer.gen };
   let data: StoryDay | null = null;
   try {
@@ -38,7 +43,14 @@ export async function readStoryView(date: string): Promise<StoryView> {
   } catch {
     // 조회 실패를 기본20:00으로 꾸미지 않는다.
   }
-  return { kind: "ok", data, reflectionTime };
+  let generation: StoryGenerationView | null = null;
+  try {
+    const claude = parseClaudeConfig(process.env);
+    generation = await readStoryGeneration(getAppDb(), viewer.userId, date, claude.ok && claude.value !== null);
+  } catch {
+    // 생성 상태를 읽지 못하면 버튼·상태를 보이지 않는다. 저장된 글 읽기는 그대로다.
+  }
+  return { kind: "ok", data, reflectionTime, generation };
 }
 
 /** 달력 두 달(지난달 1일 ~ 다음 달 1일 전)의 이야기 날짜. 범위는 기존 thisMonth·lastMonth와 같다. */

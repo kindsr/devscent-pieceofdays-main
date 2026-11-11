@@ -129,14 +129,25 @@ async function readLimited(response, signal) {
 
 const tokenCount = (value) => Number.isSafeInteger(value) && value >= 0;
 
-/** 성공 응답 형식만 받아 text 본문·모델·사용량을 복사한다. 그 밖의 필드는 버린다. */
-function parseMessage(bytes) {
+/**
+ * 응답 bytes를 해석한다. 결과와 별도로, JSON 객체에 유효한 usage가 있으면 그 값을 함께 돌려준다(본문이 무효여도).
+ * 기존 함수는 result만 쓰므로 반환 형태·판정이 그대로다.
+ */
+function parseMessageWithUsage(bytes) {
   let message;
   try {
     message = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
-    return fail("invalid_output");
+    return { result: fail("invalid_output"), usage: null };
   }
+  const measured = isRecord(message) && isRecord(message.usage) && tokenCount(message.usage.input_tokens) && tokenCount(message.usage.output_tokens)
+    ? { inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens }
+    : null;
+  return { result: checkMessage(message), usage: measured };
+}
+
+/** 성공 응답 형식만 받아 text 본문·모델·사용량을 복사한다. 그 밖의 필드는 버린다. */
+function checkMessage(message) {
   if (!isRecord(message) || message.type !== "message" || message.role !== "assistant" || message.model !== MODEL) return fail("invalid_output");
   if (message.stop_reason !== "end_turn" || (message.stop_details !== undefined && message.stop_details !== null)) return fail("invalid_output");
   const { usage, content } = message;
@@ -155,6 +166,10 @@ function parseMessage(bytes) {
   const body = joined.trim();
   if (CONTROL.test(joined) || body === "" || codePoints(body) > BODY_MAX) return fail("invalid_output");
   return { ok: true, value: { body, model: MODEL, usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens } } };
+}
+
+function parseMessage(bytes) {
+  return parseMessageWithUsage(bytes).result;
 }
 
 const JSON_TYPE = /^application\/json\s*(?:;|$)/i;
@@ -186,4 +201,99 @@ export async function generateClaudeStory(config, input, options = {}) {
   }
   const read = await readLimited(response, signal);
   return read.ok ? parseMessage(read.value) : read;
+}
+
+// ---------------------------------------------------------------- 사진+메모(PLAN_ai-story-live-generation §4.4)
+// 기존 generateClaudeStory는 그대로 둔다. 새 함수는 사진이 0장인 날도 처리하고, 결과마다 송신 여부와 실측 usage를 함께 준다.
+
+const PHOTO_MAX_BYTES = 256 * 1024;
+const PHOTOS_TOTAL_MAX_BYTES = 4 * 1024 * 1024;
+const PHOTO_PREFIX = "아래 JSON 자료와 사진으로 이날의 회고를 써 줘.\n";
+const PHOTO_SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n사진에 실제로 보이는 것만 다루고, 사진에서 추측한 사람·관계·장소·감정을 사실처럼 쓰지 않는다.`;
+// 표준 alphabet, 패딩 필수, 공백·줄바꿈 없음.
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+/** canonical base64면 복원한 byte 수, 아니면 null. */
+function decodedLength(data) {
+  if (typeof data !== "string" || data === "" || !BASE64.test(data)) return null;
+  const bytes = Buffer.from(data, "base64");
+  return bytes.toString("base64") === data ? bytes.byteLength : null;
+}
+
+/** 정확한 {date, moments:[{time,text,photo:null|{mediaType,data}}]}만 받는다. 사진 자리는 순번으로 바꾼 text 자료와 사진 목록을 만든다. */
+function parsePhotoInput(input) {
+  if (!isRecord(input) || !hasExactKeys(input, ["date", "moments"]) || !validDate(input.date)) return null;
+  const { moments } = input;
+  if (!Array.isArray(moments) || moments.length < 1 || moments.length > MOMENTS_MAX) return null;
+  const copied = [];
+  const photos = [];
+  let total = 0;
+  for (const item of moments) {
+    if (!isRecord(item) || !hasExactKeys(item, ["time", "text", "photo"])) return null;
+    if (typeof item.time !== "string" || !TIME.test(item.time) || !validText(item.text)) return null;
+    let position = null;
+    if (item.photo !== null) {
+      const photo = item.photo;
+      if (!isRecord(photo) || !hasExactKeys(photo, ["mediaType", "data"]) || photo.mediaType !== "image/jpeg") return null;
+      const size = decodedLength(photo.data);
+      if (size === null || size > PHOTO_MAX_BYTES) return null;
+      total += size;
+      if (total > PHOTOS_TOTAL_MAX_BYTES) return null;
+      position = photos.length + 1;
+      photos.push({ position, time: item.time, data: photo.data });
+    }
+    copied.push({ time: item.time, text: item.text, photo: position });
+  }
+  const data = JSON.stringify({ date: input.date, moments: copied });
+  return utf8Length(data) <= INPUT_MAX_BYTES ? { data, photos } : null;
+}
+
+function photoRequestBody({ data, photos }) {
+  const content = [{ type: "text", text: `${PHOTO_PREFIX}${data}` }];
+  for (const photo of photos) {
+    content.push({ type: "text", text: `사진 ${photo.position} (${photo.time})` });
+    content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: photo.data } });
+  }
+  return JSON.stringify({
+    model: MODEL,
+    max_tokens: MAX_TOKENS,
+    system: PHOTO_SYSTEM_PROMPT,
+    messages: [{ role: "user", content }],
+    thinking: { type: "between_tools" },
+    output_config: { effort: "low" },
+  });
+}
+
+export async function generateClaudePhotoStory(config, input, options = {}) {
+  const notSent = (error) => ({ ok: false, error, sent: false, usage: null });
+  if (!isRecord(config) || typeof config.apiKey !== "string" || !KEY.test(config.apiKey)) return notSent("unavailable");
+  const parsed = parsePhotoInput(input);
+  if (parsed === null) return notSent("invalid_input");
+  const external = options.signal;
+  if (external?.aborted) return notSent("timeout");
+  const deadline = AbortSignal.timeout(DEADLINE_MS);
+  const signal = external ? AbortSignal.any([deadline, external]) : deadline;
+  const send = options.fetch ?? globalThis.fetch;
+  const sentFail = (error, usage = null) => ({ ok: false, error, sent: true, usage });
+  let response;
+  try {
+    response = await send(MESSAGES_URL, {
+      method: "POST",
+      headers: { authorization: `Bearer ${config.apiKey}`, "anthropic-version": API_VERSION, "content-type": "application/json" },
+      body: photoRequestBody(parsed),
+      redirect: "error",
+      signal,
+    });
+  } catch {
+    return sentFail(signal.aborted ? "timeout" : "unavailable");
+  }
+  if (response.status !== 200 || !JSON_TYPE.test(response.headers.get("content-type") ?? "")) {
+    void response.body?.cancel().catch(() => undefined);
+    return sentFail(response.status === 200 ? "invalid_output" : "unavailable");
+  }
+  const read = await readLimited(response, signal);
+  if (!read.ok) return sentFail(read.error);
+  const { result, usage } = parseMessageWithUsage(read.value);
+  if (!result.ok) return sentFail(result.error, usage);
+  return { ok: true, value: { body: result.value.body, model: result.value.model }, sent: true, usage: result.value.usage };
 }

@@ -26,6 +26,8 @@ COPY --from=build /app/src/server/db/migrate-cli.ts /app/src/server/db/migrate.t
 COPY --from=build /app/migrations ./migrations
 # 직접 Node로 실행하는 사진 cleanup과 공유 순수 core. Next 번들/server-only alias를 요구하지 않는다.
 COPY --from=build /app/src/server/photos/cleanup-cli.mjs /app/src/server/photos/cleanup-core.mjs /app/src/server/photos/config-core.mjs /app/src/server/photos/blob-store.s3-core.mjs ./src/server/photos/
+# 직접 Node로 실행하는 story worker CLI(의존성 0). 컨테이너 안 127.0.0.1:3000 내부 route만 부른다(PLAN_ai-story-live-generation §4.8).
+COPY --from=build /app/src/server/stories/worker-cli.mjs ./src/server/stories/
 # migrate CLI(ESM import "pg")가 쓰는 pg 런타임 의존성 전체(lock 기준 14개). standalone trace의 부분 복사를 보완한다.
 COPY --from=deps /app/node_modules/pg ./node_modules/pg
 COPY --from=deps /app/node_modules/pg-cloudflare ./node_modules/pg-cloudflare

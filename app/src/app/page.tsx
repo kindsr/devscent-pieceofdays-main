@@ -3,6 +3,7 @@ import { getDiaryContext } from "@/server/context";
 import { parsePhotoConfig } from "@/server/photos/config";
 import { readStoryView } from "@/server/stories/view-data";
 import type { DiaryDay } from "@/shared/diary";
+import { requestStoryFormAction } from "@/app/actions/story";
 import { DailyStory } from "@/ui/d/DailyStory";
 import { DayBoard } from "@/ui/d/DayBoard";
 import { NotConnected } from "@/ui/d/NotConnected";
@@ -26,7 +27,7 @@ export default async function TodayPage() {
   const hasMoments = day.moments.length > 0;
   // 원본·이야기가 모두 없는 날은 영역을 두지 않는다(기존 첫 조각 화면 유지). 읽기 실패는 고정 안내로 보인다.
   const storySlot = story?.kind === "ok" && (hasMoments || story.data === null || story.data.story !== null)
-    ? <DailyStory date={day.date} data={story.data} reflectionTime={story.reflectionTime} hasMoments={hasMoments} headingLevel={2} />
+    ? <DailyStory date={day.date} data={story.data} reflectionTime={story.reflectionTime} hasMoments={hasMoments} generation={story.generation} requestAction={requestStoryFormAction.bind(null, day.date)} headingLevel={2} />
     : undefined;
   const photos = ctx.kind === "account" ? parsePhotoConfig(process.env) : null;
   return (

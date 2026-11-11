@@ -4,6 +4,7 @@ import { parsePhotoConfig } from "@/server/photos/config";
 import { readDaysView } from "@/server/diary/view-data";
 import { readStoryDates, readStoryView } from "@/server/stories/view-data";
 import { parseLocalDate } from "@/shared/local-date";
+import { requestStoryFormAction } from "@/app/actions/story";
 import { DailyStory } from "@/ui/d/DailyStory";
 import { DaysView } from "@/ui/d/DaysView";
 import { NotConnected } from "@/ui/d/NotConnected";
@@ -30,7 +31,7 @@ export default async function DayPage({ params }: PageProps<"/days/[date]">) {
   const hasMoments = !!data.day?.moments.length;
   // 원본·이야기가 모두 없는 날은 영역을 두지 않는다(기존 빈 날 유지). 읽기 실패는 고정 안내로 보인다.
   const storySlot = story?.kind === "ok" && (hasMoments || story.data === null || story.data.story !== null)
-    ? <DailyStory date={date} data={story.data} reflectionTime={story.reflectionTime} hasMoments={hasMoments} headingLevel={3} />
+    ? <DailyStory date={date} data={story.data} reflectionTime={story.reflectionTime} hasMoments={hasMoments} generation={story.generation} requestAction={requestStoryFormAction.bind(null, date)} headingLevel={3} />
     : undefined;
   const photos = ctx.kind === "account" ? parsePhotoConfig(process.env) : null;
   return (

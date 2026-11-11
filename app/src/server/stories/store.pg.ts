@@ -7,7 +7,7 @@
  */
 import "server-only";
 import type { SessionSubject } from "../account/lifecycle";
-import { withTransaction, type Db } from "../db/pool";
+import { withTransaction, type Db, type Tx } from "../db/pool";
 import { isUuid } from "../ids";
 import type { Result } from "../result";
 import { parseLocalDate } from "@/shared/local-date";
@@ -58,22 +58,35 @@ export async function appendStoryVersion(
   body: string,
 ): Promise<Result<{ story: StoryRef; replayed: boolean }, "not_signed_in">> {
   if (!isStorySubject(subject)) return { ok: false, error: "not_signed_in" };
-  return withTransaction(db, async (tx) => {
-    const locked = await tx.query(
-      `SELECT 1 FROM pod.users
+  return withTransaction(db, (tx) => appendStoryVersionTx(tx, subject, date, revision, body));
+}
+
+/**
+ * appendStoryVersion의 core를 호출자 트랜잭션 안에서 실행한다(PLAN_ai-story-live-generation §4.1).
+ * worker finish가 job·usage 갱신과 같은 tx에서 쓴다. 같은 tx에서 users 행을 다시 잠가도 무해하다.
+ */
+export async function appendStoryVersionTx(
+  tx: Tx,
+  subject: SessionSubject,
+  date: string,
+  revision: string,
+  body: string,
+): Promise<Result<{ story: StoryRef; replayed: boolean }, "not_signed_in">> {
+  if (!isStorySubject(subject)) return { ok: false, error: "not_signed_in" };
+  const locked = await tx.query(
+    `SELECT 1 FROM pod.users
         WHERE id = $1::uuid AND status = 'active' AND auth_generation::bigint = $2::bigint FOR UPDATE`,
-      [subject.userId, subject.gen],
-    );
-    if (locked.rowCount !== 1) return { ok: false, error: "not_signed_in" } as const;
-    const existing = (await tx.query<StoryRow>(BY_REVISION, [subject.userId, date, revision])).rows[0];
-    if (existing) return { ok: true, value: { story: toRef(existing), replayed: true } } as const;
-    const r = await tx.query<StoryRow>(
-      `INSERT INTO pod.story_versions (user_id, local_date, version, source_revision, body)
+    [subject.userId, subject.gen],
+  );
+  if (locked.rowCount !== 1) return { ok: false, error: "not_signed_in" } as const;
+  const existing = (await tx.query<StoryRow>(BY_REVISION, [subject.userId, date, revision])).rows[0];
+  if (existing) return { ok: true, value: { story: toRef(existing), replayed: true } } as const;
+  const r = await tx.query<StoryRow>(
+    `INSERT INTO pod.story_versions (user_id, local_date, version, source_revision, body)
        SELECT $1::uuid, $2::date, COALESCE(max(version), 0) + 1, $3, $4
          FROM pod.story_versions WHERE user_id = $1::uuid AND local_date = $2::date
        RETURNING ${COLUMNS}`,
-      [subject.userId, date, revision, body],
-    );
-    return { ok: true, value: { story: toRef(r.rows[0]!), replayed: false } } as const;
-  });
+    [subject.userId, date, revision, body],
+  );
+  return { ok: true, value: { story: toRef(r.rows[0]!), replayed: false } } as const;
 }
