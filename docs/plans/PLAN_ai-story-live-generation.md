@@ -204,7 +204,7 @@ export async function requestManualStory(db: Db, subject: SessionSubject, date: 
 export async function readStoryGeneration(db: Pick<Db, "query">, userId: string, date: string, keyReady: boolean)
   : Promise<StoryGenerationView>;
 export async function expireStoryLeases(db: Db): Promise<number>;
-export async function enqueueDueStories(db: Db): Promise<number>;
+export async function enqueueDueStories(db: Db, opts?: { now?: Date }): Promise<number>;
 export type ClaimedStoryJob = { id: string; userId: string; date: string; kind: "manual" | "scheduled";
   leaseToken: string; gen: number; consentVersion: number; consentRevision: number; input: StoryInputV2 };
 export async function claimStoryJob(db: Db): Promise<
@@ -228,7 +228,7 @@ export async function finishStoryJob(db: Db, job: ClaimedStoryJob, outcome:
 - **expireStoryLeases**: `UPDATE story_jobs SET state='failed', error='lease_expired', lease_token=NULL, lease_until=NULL WHERE state='running' AND lease_until <= clock_timestamp()`. 같은 tx에서 job → usage 순서로 해당 job_id의 usage `sent`를 `unknown, settled_at=now()`로 바꾼다(users 잠금 0). 재큐잉은 0이다.
 - **enqueueDueStories** (문 1개):
 ```sql
-WITH clock AS (SELECT (now() AT TIME ZONE 'Asia/Seoul') AS ts)
+WITH clock AS (SELECT (COALESCE($2::timestamptz, clock_timestamp()) AT TIME ZONE 'Asia/Seoul') AS ts)
 INSERT INTO pod.story_jobs (user_id, local_date, kind, state, auth_generation, consent_version, consent_revision)
 SELECT s.user_id, (c.ts)::date, 'scheduled', 'queued', u.auth_generation, s.consent_version, s.consent_revision
   FROM pod.story_ai_settings s
@@ -240,6 +240,7 @@ SELECT s.user_id, (c.ts)::date, 'scheduled', 'queued', u.auth_generation, s.cons
    AND s.auto_enabled_at < (((c.ts)::date + COALESCE(p.reflection_time, '20:00')::time) AT TIME ZONE 'Asia/Seoul')
 ON CONFLICT DO NOTHING;   -- scheduled_once·one_inflight 모두 흡수(다음 호출에서 같은 날 재평가)
 ```
+- `$2`는 주입한 유효 Date의 ISO 값이며 기본 NULL로 DB 시각을 쓴다. 제품 worker는 인자 없이 호출한다. 잘못된 Date는 SQL 전에 고정 오류로 거부한다. 경계 시험에서 실제 현재 날짜/시각을 가정하지 않는다.
 - **claimStoryJob** (단일 tx):
   1. 후보 조회(잠금 없음): `SELECT id, user_id FROM story_jobs WHERE state='queued' ORDER BY created_at, id LIMIT 1`.
   2. **users FOR UPDATE** → settings 조회 → job `SELECT … WHERE id=$1 AND state='queued' FOR UPDATE SKIP LOCKED`. job 행이 없으면 rollback하고 none을 반환한다(다음 호출에서 다시 시도).
@@ -426,4 +427,5 @@ RED 시나리오 핵심(동의 epoch·snapshot 추가분 우선 명시):
 - main은 디자인 핸드오프와 승인 D 아트보드를 갱신한다. 제품에 가짜성공이나 예시본 원문을 넣지 않는다. 기존15PNG·기존44 E2E는 회귀로 유지하고 새 UI 상태는 추가 E2E에서 검증한다. 설정 링크는 기존 href=/settings 단일 링크 기대를 보존한다.
 - 소유에 명시되지 않은 공통 auth/issuer/실행 모드/패키지/lock/workflow/권한은 변경하지 않는다. worker API용 runtime test backdoor는 만들지 않는다. host 앱/DB/브라우저 시험·설치0, 모든 기능 검증은 기존 격리 CI다. main 실서버 검증과 사용자별 명시 동의, 실제 B5를 mock CI로 대신하지 않는다.
 - 개인정보 고지는 사진·메모가 Anthropic API로 전송되는 목적/자료와 철회 후 새 호출 중단, 이미 전송된 자료 회수 불가를 사실대로 표시한다. 공급자 보존기간/법률 적합성은 검증 없이 단정하지 않는다. 실제 안내가 필요한 공개 정책 경로는 dev front에서 제공/대조한 뒤 활성화한다.
+- 기존 schema 시험 개정은 최신 버전/이름/checksum/15표 기대와 down snapshot에서0006의3표를 제외하는 부분에만 한정한다. `stories.test.ts`의0005 down SQL 자체 guard는 기존12표 그대로 검사하며, 동결된0005 SQL에 새3표를 요구하지 않는다. migrate의3개 버전 배열뿐 아니라 migrate/lifecycle-schema/photo-storage/reflection-time의 정확 버전 목록도6까지 추가한다. 원0001~0005 migration bytes는 불변이다.
 
