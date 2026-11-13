@@ -26,6 +26,13 @@
 .auth-body { display: grid; gap: var(--s-3); max-width: 640px; }
 .auth-providers { display: grid; gap: var(--s-2); justify-items: start; }
 .auth-status { min-height: 1.6em; font-weight: 700; }
+/* 로그인 한 열(app globals.css의 .auth-page와 같은 값). 가운데 420px, 안은 좌정렬.
+   빈 상태 문구(aria-live)는 DOM에 남기고 높이만 없앤다. 체험 안내 구분선은 제품 화면에만 있다. */
+.auth-page { max-width: 420px; margin-inline: auto; }
+.auth-page .board-head { margin-bottom: var(--s-1); }
+.auth-page .auth-lead { color: var(--muted); margin-bottom: var(--s-3); }
+.auth-page .auth-body { gap: var(--s-2); }
+.auth-page .auth-status { min-height: 0; }
 
 /* 공급자 버튼: 내용·색은 공식 에셋·규정 그대로. D는 포커스 외곽선만 더한다. */
 .auth-pbtn { display: block; padding: 0; margin: 0; border: 0; background: none; cursor: pointer; line-height: 0; }

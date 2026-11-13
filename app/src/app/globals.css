@@ -240,6 +240,14 @@ html[data-record-font="hand"] { --font-record: var(--font-hand); }
 .auth-danger { color: #8E2A12; border-color: #8E2A12; }
 .auth-warn { font-weight: 700; }
 .auth-trial { display: grid; gap: var(--s-1); max-width: 640px; margin-top: var(--s-3); }
+/* /login 전용 한 열(가운데 420px, 안은 좌정렬). 설정 화면의 auth-body·auth-trial은 그대로다.
+   빈 상태 문구(aria-live)는 DOM에 남기고 높이만 없앤다. 체험 안내는 1px 선으로 보조 영역임을 나눈다. */
+.auth-page { max-width: 420px; margin-inline: auto; }
+.auth-page .board-head { margin-bottom: var(--s-1); }
+.auth-page .auth-lead { color: var(--muted); margin-bottom: var(--s-3); }
+.auth-page .auth-body { gap: var(--s-2); }
+.auth-page .auth-status { min-height: 0; }
+.auth-page .auth-trial { margin-top: var(--s-2); padding-top: var(--s-3); border-top: 1px dashed var(--muted); }
 .row a.text-btn, .row .text-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
 .top-login { grid-area: add; justify-self: end; }
 .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }

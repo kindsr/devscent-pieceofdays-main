@@ -21,10 +21,11 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const notice = allowListed(LOGIN_NOTICES, sp.notice);
 
   return (
-    <>
+    <div className="auth-page">
       <header className="board-head">
         <h1 tabIndex={-1}>{AUTH_TEXT.loginTitle}</h1>
       </header>
+      <p className="auth-lead">사진과 메모로 하루를 남기고 돌아보는 기록장이에요.</p>
       <div className="auth-body">
         {error ? (
           <section className="notice is-error" role="status" aria-live="polite">
@@ -45,6 +46,6 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         )}
         <TrialLinks />
       </div>
-    </>
+    </div>
   );
 }

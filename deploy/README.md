@@ -8,7 +8,9 @@
 
 ## 반영 흐름
 
-2026-11-08 [PR70](https://github.com/kindsr/devscent-pieceofdays-main/pull/70)의 C1 이미지 게시 소스를 통합하고 [실제 dev 게시](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42484654242)를 완료했다. 같은 SHA의 필수 앱 검사와 같은 이미지 ID의 이미지6·프런트14·preview10, 실제 push·raw manifest/config 검증·logout·최종5outputs를 확인했다. 서버에서도 익명 full pull·manifest 생바이트 hash/config·이미지 라벨을 대조했다. **현재 개발 배포는 계속 정적 방식**이다. 전용 DB migration 2·앱 역할 접속·검토 helper 설치·dev 외곽 콜백 반영을 완료했으며, OAuth 설정과 최종 환경·실제 앱 콜백 검증 뒤 별도 [C2 PR72](https://github.com/kindsr/devscent-pieceofdays-main/pull/72)에서 앱으로 전환한다. PR72의 source/CI PASS를 실제 dev 활성화 성공으로 세지 않는다.
+2026-11-12 사용자 지시로 **dev 로그인 앱을 지속 제공**한다. 이전 첫 전환 계획의 30분 상한과 실제 Google 검증 미완료만을 이유로 하는 정적 복귀를 폐기한다. 배포 실패 시 helper의 복귀와 인증·접근 제한·민감값 비기록 검사는 유지한다. 실제 Google/B5 미확인 항목은 개발 환경에서 계속 검증하며 운영 승격 완료로 표시하지 않는다. AI 수동·회고 시각 생성은 개인별 명시 동의와 검토된 dev 소비자로 처리한다.
+
+2026-11-08 [PR70](https://github.com/kindsr/devscent-pieceofdays-main/pull/70)의 C1 이미지 게시 소스를 통합하고 [실제 dev 게시](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/42484654242)를 완료했다. 같은 SHA의 필수 앱 검사와 같은 이미지 ID의 이미지6·프런트14·preview10, 실제 push·raw manifest/config 검증·logout·최종5outputs를 확인했다. 서버에서도 익명 full pull·manifest 생바이트 hash/config·이미지 라벨을 대조했다. 당시 개발 배포는 정적 방식이었으며 이후 [C2 PR72](https://github.com/kindsr/devscent-pieceofdays-main/pull/72)와 후속 앱·DB·사진/이야기 기능을 통합했다. source/CI PASS와 실제 dev 활성화 성공은 각각 Actions 실행·서버 기록·HTTPS로 확인한다.
 
 1. GitHub 작업 브랜치에서 개발하고 `dev`에 반영한다.
 2. `dev` push가 Actions의 검사와 개발 배포를 실행한다. URL은 `https://dev.pieceofdays.com`이다.

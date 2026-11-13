@@ -120,3 +120,4 @@
   - 출처·hash는 [`auth-assets/SOURCES.md`](concepts/d-warm-pieces/auth-assets/SOURCES.md)에 있다.
   - Google HTML 한국어 후보(`?g=html`)는 규정 적합성을 확인하지 못해 실제 화면에 쓰지 않는다.
 - **상태 기준:** 문구·구조는 [OIDC 계획](../plans/PLAN_mvp-oidc-integration.md) §8을 따른다.
+- **로그인 한 열(2026-11-13):** `/login`은 `.auth-page` 래퍼로 제목·목적 설명 1문장·공급자 버튼·체험 안내를 가운데 420px 열(안은 좌정렬)에 모은다. 빈 상태 문구(aria-live)는 DOM에 남기고 높이만 없애며, 체험 안내는 1px 점선으로 나눈다. 새 색·글꼴·장식 없음, 공급자 에셋·크기·순서 불변. 아트보드의 로그인·준비 중 상태(`auth.js` loginView·unavailableView)도 같은 래퍼·설명 문구를 쓴다. 한계: 체험 안내(TrialLinks)와 그 구분선은 기존 아트보드 범위 밖이라 제품 화면에만 있다.

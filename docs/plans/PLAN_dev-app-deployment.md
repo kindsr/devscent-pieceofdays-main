@@ -198,7 +198,7 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 
 - `Id`는 유효한 sha256 형식의 **엔진 image ID**로만 취급한다. `config_digest`와 비교하지 않는다. `RepoDigests`에 `APP_IMAGE_REPOSITORY@<manifest_digest>`가 정확히 있어야 한다. `RepoTags`는 `null`·빈 배열 또는 **요청한 그 불변 주소 하나만 담은 배열**을 허용한다. 일반 태그, 다른 digest·저장소, 혼합·잘못된 자료형은 거부한다. 이는 2026-11-09 첫 C2의 실제 digest pull이 같은 주소를 `RepoTags`에도 노출해 거부된 호환성 수정이며, archive의 별도 `RepoTags` 금지 계약은 바꾸지 않는다. fresh pull 전에 manifest/config 연결을 위 함수로 검증하고 Docker의 digest 검증으로 같은 자료를 pull한다.
 
-  수정은 해당 순수 검사와 회귀 시험으로 제한한다. 별도 시험 커밋의 기존 Actions에서 정확한 불변 별칭 양성의 실패를 먼저 확인하고, 시험 바이트를 유지한 최소 구현 뒤 같은 CI를 확인한다. 설치 helper는 검토된 수정본과 원본을 대조·백업한 뒤 메인이 반영한다. 실패한 첫 C2는 정적 화면을 유지했고, 수정·재검증 동안 dev 앱 enable은 꺼 둔다. 재시도는 최종 같은 SHA의 필수 앱 검사·새 publisher 증거·실제 helper와 전체 chain/B5·30분 복귀 관문을 다시 따른다.
+  수정은 해당 순수 검사와 회귀 시험으로 제한한다. 별도 시험 커밋의 기존 Actions에서 정확한 불변 별칭 양성의 실패를 먼저 확인하고, 시험 바이트를 유지한 최소 구현 뒤 같은 CI를 확인한다. 설치 helper는 검토된 수정본과 원본을 대조·백업한 뒤 메인이 반영한다. 실패한 첫 C2는 정적 화면을 유지했고, 수정·재검증 동안 dev 앱 enable은 꺼 둔다. 재시도는 최종 같은 SHA의 필수 앱 검사·게시 증거·실제 helper와 전체 chain 점검을 따른다. 실제 B5 결과는 별도 기록하며 dev 가용성은 아래 2026-11-12 사용자 지시를 따른다.
 - `Config.User`가 비어 있지 않고 root·0이 아님.
 - 라벨 `revision == sha`, `pod.tree == tree`, `source == 저장소 URL`, `pod.migrations.latest`는 양의 정수.
 - `ExposedPorts == {"3000/tcp": {}}`, `Volumes`가 비어 있음.
@@ -446,13 +446,18 @@ COPY default.conf /etc/nginx/conf.d/default.conf
 - edge 설정 계획은 PR62(dev-edge-callback, 메인 준비)다. edge 한정 예외는 fixture 증명 뒤 사용자 승인이 필요하다. 바깥 edge의 실제 설정은 이 계획에서 바꾸지 않는다.
 - 첫 C2 실제 run이 `app-checks`의 모든 callee job 실행·성공과 두 concurrency group 동작을 증명해야 C2 완료다. 구조 시험만으로 완료라고 하지 않는다.
 
-**첫 전환의 실측 순서 명확화(2026-11-09, 메인 수락)**
+**dev 지속 사용(2026-11-12 사용자 지시, 종전 30분 복귀 조건 대체)**
+- 사용자 “왜 자꾸 롤백하는거지? dev는 로그인해서 사용할 수 있게 해줘”에 따라 dev 앱을 계속 제공한다. 실제 Google B5 미완료·사용자 응답 대기·시간 경과만을 이유로 정적 화면으로 복귀하지 않으며, 기존 일회성 30분 감시기를 새 배포에 실행하지 않는다.
+- 게시 이미지·migration 승인·helper 검증 및 배포 실패 시 기존 자동 복귀는 유지한다. 실제 callback 도달·단일 보안 헤더·민감값 비기록·접근 제한 등 기술 점검에서 확인된 장애나 보안 문제, 필수 기술 점검이나 로그 조회를 수행할 수 없는 상태는 조사·수정하고 필요하면 복귀한다.
+- 실제 Google 로그인·B5 미확인 항목은 남은 검증으로 명시한다. dev 접속 제공을 B5 전체 완료 또는 운영 승격으로 표시하지 않는다. 개인별 AI 전송 동의·기본 자동 OFF·원자 작업/중복 방지·사용량 기록을 유지하며, 검토된 worker/사진 정리 소비자를 dev에서 실행해 수동 생성과 설정한 회고 시각 생성을 처리한다.
+
+**첫 전환의 실측 순서(2026-11-09 기록, dev 가용성 조건은 위 사용자 지시 우선)**
 - 정적 dev에는 Next 앱이 없어 최초 전환 전에 실제 edge→앱 도달을 관측할 수 없다. 사전 준비, 첫 자동 전환 시도, C2 완료 판정을 구분한다. 사전의 정적 callback 404나 edge 단독 로그 검사를 전체 chain PASS로 세지 않는다.
 - 사전에는 C1 완료·불변 이미지·DB/승인 변수·검토 helper·유효한 실제 OAuth env·기존 접근 제한을 확인한다. 승인된 실제 edge의 단일 no-referrer/안전 로그와 동일 callback 블록의 격리 front/Next CI를 대조한다. 실제 env의 앱 후보는 외부 공개/host port 없이 내부 readiness·로그인 화면·flow 없는 합성 callback을 확인하고 회수한다. URI 등록 오류 등 확인된 공급자 설정 실패가 있으면 첫 공개 전환을 시작하지 않는다.
 - 이 준비 뒤에만 같은 SHA의 모든 필수 검증·게시·migration gate·helper 검증을 거치는 **첫 C2 자동 전환을 검증 중 상태로 시도**한다. 수동 사전 앱 개통, 추가 edge 라우팅, dummy 자격, 검사 skip으로 순서를 우회하지 않는다. 사전 C1 후보의 SHA/digest를 첫 C2의 최종 SHA/digest와 같다고 주장하지 않으며 최종 run의 proof를 새로 확인한다. 후보 이후 앱/runtime/helper-front 내용이 달라졌거나 동일성을 확인할 수 없으면 사전 후보 검증을 재사용하지 않는다.
-- 첫 전환 직후 메인이 실제 edge→새 front→Next의 합성 callback 도달·단일 헤더·query/code/state/referrer 비기록을 확인한다. 그 뒤에만 B5 실제 Google 로그인·기존 서버 게시 기준을 검증한다. 이 항목과 모든 callee/concurrency의 실제 판정 전에는 C2 완료나 실사용 가능으로 알리지 않는다.
-- 시작 전에 현재 메인 세션을 사후 검증/복귀 담당으로 정하고, 직전 정적 기록·동결 Compose/이미지·복귀 명령의 사용 가능 여부를 확인한다. helper의 첫 앱 성공 보고부터 **30분을 전체 사후 검증 상한**으로 기록하며, 메인이 그 시간 동안 결과를 회수할 수 없으면 첫 시도를 시작하지 않는다.
-- 사후 callback·B5·원 §8 게시 기준은 helper의 readiness·`/try/`·`/login` 자동 rollback보다 넓다. 어느 항목이든 실패·필수 검증 미실행·로그 조회 불가·30분 초과이면 메인이 기존 `revert-static dev`로 복귀하고 정적 본문·이미지·상태를 실검증한다. dev 앱 enable flag를 끄고 후속 dev push/대기 배포를 통제하며 C2 소스 복귀를 정리하기 전 재시도하지 않는다. DB down·세션/기록 삭제·운영 전환은 하지 않는다.
+- 전환 직후 메인이 실제 edge→새 front→Next의 합성 callback 도달·단일 헤더·query/code/state/referrer 비기록을 확인한다. B5 실제 Google 로그인·기존 서버 게시 기준은 이어서 검증하고 미확인 항목은 보고한다. 모든 callee/concurrency의 실제 판정 전에는 C2 전체 완료로 표시하지 않는다.
+- 시작 전에 현재 메인 세션을 사후 점검 담당으로 정하고, 직전 정적 기록·동결 Compose/이미지·복귀 명령의 사용 가능 여부를 확인한다. **30분 상한과 미완료 시 자동 정적 복귀는 폐기한다.**
+- 사후 callback·B5·원 §8 게시 기준은 helper의 readiness·`/try/`·`/login` 자동 rollback보다 넓다. 확인된 기술 장애·보안 문제로 복귀가 필요하면 메인이 기존 `revert-static dev`를 사용하고 정적 본문·이미지·상태를 실검증한다. dev 앱 enable flag와 후속 배포를 함께 통제한다. B5 검증 대기나 경과 시간만으로 복귀하지 않으며 DB down·세션/기록 삭제·운영 전환은 하지 않는다.
 
 **정적 dev와 `/try/`**
 - C2 뒤 dev push는 정적 `deploy` job을 실행하지 않는다(정적 dev 갱신 중지). 정적 job은 main 전용이다.

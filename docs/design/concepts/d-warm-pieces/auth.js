@@ -84,12 +84,16 @@
     if (n) body.append(h("section", { class: "notice" + (n.error ? " is-error" : ""), role: "status", "aria-live": "polite" },
       h("p", { class: "auth-msg", text: n.text })));
     body.append(providers, status);
-    return [head("pieceofdays에 로그인"), body];
+    // 제품 /login과 같은 한 열 래퍼·목적 설명(app/src/app/login/page.tsx)
+    return [h("div", { class: "auth-page" }, head("pieceofdays에 로그인"),
+      h("p", { class: "auth-lead", text: "사진과 메모로 하루를 남기고 돌아보는 기록장이에요." }), body)];
   }
 
   function unavailableView() {
-    return [head("pieceofdays에 로그인"),
-      h("section", { class: "notice", "aria-labelledby": "nc-h" }, h("h2", { id: "nc-h", text: "로그인을 준비하고 있어요" }))];
+    return [h("div", { class: "auth-page" }, head("pieceofdays에 로그인"),
+      h("p", { class: "auth-lead", text: "사진과 메모로 하루를 남기고 돌아보는 기록장이에요." }),
+      h("div", { class: "auth-body" },
+        h("section", { class: "notice", "aria-labelledby": "nc-h" }, h("h2", { id: "nc-h", text: "로그인을 준비하고 있어요" }))))];
   }
 
   function signedInView() {
