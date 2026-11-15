@@ -188,6 +188,7 @@ export function generateClaudePhotoStory(config: ClaudeConfig | null,
   - image block = `{type:"image", source:{type:"base64", media_type:"image/jpeg", data}}`.
   - user content 순서 = [자료 JSON text(사진 자리는 순번), 사진마다 `사진 N (HH:MM)` text + image block]. RED가 정확한 순서와 바이트를 단언한다.
   - system prompt에 ‘사진에 보이는 것만, 추측한 사람·관계·감정은 사실로 쓰지 않음’을 추가한다. model·version·thinking/effort·max_tokens·redirect·no-retry·응답 128KiB cap은 기존 상수를 공유한다.
+  - 2026-11-15 문체 보완(좁은 변경): 두 함수가 공유하는 system 뒤의 문체 5줄은 PLAN_claude-story-adapter §1에 적었다. 사진 규칙은 여전히 한 줄이며 ‘사진은 그날을 떠올리는 보조 근거로만 쓰고 사진 설명문으로 만들지 않음’을 앞에 더하고 사람·관계·장소·감정 추측을 사실로 쓰지 않는 규칙은 유지한다. 사진 머리말·사진 순서·나머지 wire·revision·동의·원장은 바뀌지 않았다. 시험은 system 문자열을 복제하지 않고 기존 `generateClaudeStory`가 별도 mock fetch로 보낸 system을 받아 사진 system이 그 값 + 사진 규칙 한 줄임을 비교한다. 이는 프롬프트 공유 wire 계약의 갱신이며 문체 품질의 증명이 아니다. 기존 저장 이야기는 자동 교체하지 않고, 합성 자료의 질적 평가는 별도로 한다.
 - deadline: 기존과 같은 내부30_000ms와 외부 signal 중 먼저 오는 쪽을 따른다. 80_000ms는 사진 준비를 포함하는 worker 전체 시한이며 어댑터의 별도80초 시한을 만들지 않는다.
 - `claude.ts`는 export 목록에 `generateClaudePhotoStory`와 새 타입만 추가한다.
 
