@@ -55,8 +55,8 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Install (lockfile only)
         run: npm ci
-      - name: Install the existing Playwright Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install Chromium and the phone case's WebKit
+        run: npx playwright install --with-deps chromium webkit
       - name: Run only the synthetic story edit cases (chromium)
         run: npx playwright test -c playwright.auth.config.ts --project=chromium tests/e2e-auth/story-edit.spec.ts
       - name: Validate and stage exactly twelve PNGs
