@@ -41,6 +41,12 @@
     .art-s3[hidden], .art-s2[hidden] { display: none; }
     .ai-consent .font-opt input[type="checkbox"] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); grid-row: span 2; }
     .ai-consent p { max-width: 64ch; }
+    /* S4 이야기 수정: D textarea를 그대로 쓰고 읽기 폭·줄 간격만 본문과 맞춘다 */
+    .art-s4[hidden] { display: none; }
+    .story-edit { display: grid; gap: var(--s-1); max-width: 64ch; }
+    .story-edit textarea { line-height: 1.8; }
+    /* 저장 결과 고르기는 아트보드 도구다(제품 화면이 아님): 도구 줄과 같은 점선 */
+    .art-result { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2); max-width: 64ch; padding: var(--s-1) var(--s-2); font-size: 13px; color: var(--muted); border: 1px dashed var(--muted); }
 
     /* 원본 영역 머리: 원본임을 문장으로만 밝힌다 */
     .src-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--s-2); margin: 0 0 var(--s-2); }
@@ -61,6 +67,15 @@
       <select id="tool-mode">
         <option value="s2">S2 읽기 7상태 (보존)</option>
         <option value="s3">S3 생성 계약 (동의·작업 상태)</option>
+        <option value="s4">S4 이야기 수정·다시 만들기</option>
+      </select>
+    </label>
+    <label class="art-s4" hidden>수정 상태
+      <select id="tool-edit">
+        <option value="read">read · 읽기</option>
+        <option value="edit">edit · 고치는 중</option>
+        <option value="conflict">conflict · 다른 곳에서 바뀜</option>
+        <option value="confirm">confirm · 다시 만들기 확인</option>
       </select>
     </label>
     <label class="art-s2">이야기 상태
@@ -88,7 +103,7 @@
         <option value="deleted">조각을 모두 지운 뒤 (조각 0)</option>
       </select>
     </label>
-    <label class="art-s3" hidden>생성 상태(StoryGenerationView)
+    <label class="art-s3 art-s4" hidden>생성 상태(StoryGenerationView)
       <select id="tool-gen">
         <option value="unavailable">unavailable · 키 없음</option>
         <option value="off">off · 직접 만들기 미동의</option>
@@ -403,25 +418,148 @@
       });
       document.getElementById("settings-back").addEventListener("click", function (e) { e.preventDefault(); view.screen.value = "day"; render(false); });
 
-      function render(announce) {
+      // ---------------- S4 이야기 수정·다시 만들기 보기. 수정은 AI 전송 없이 글만 바꾼다(off·unavailable에서도 가능).
+      // 다시 만들기는 확인 뒤 queued로만 바뀐다(자동 성공 0). 이 보기의 날은 늘 조각 4개가 있다.
+      var LIMIT = 2000; // 코드포인트 기준. textarea maxlength(UTF-16 단위)는 쓰지 않는다.
+      var EDITED_AT = "11월 2일 21:10";
+      var editState = document.getElementById("tool-edit");
+      var s4 = { text: null, edited: false, draft: null, pending: false, notice: null };
+      function cp(s) { return Array.from(s).length; }
+      function s4Text() { return s4.text != null ? s4.text : (view.len.value === "max" ? maxBody() : BODY); }
+      function s4Busy() { return view.gen.value === "queued" || view.gen.value === "running"; }
+      // 다시 만들기: 직접 만들기 동의(ready) 또는 다시 시도 가능한 실패 + 조각 있음 + 오늘 3회 잔여
+      function s4CanRegen() { var g = view.gen.value; return g === "ready" || g === "failed" || g === "failed_photo"; }
+      function s4Go(state, focusId, notice) { editState.value = state; s4.notice = notice || null; render(true, focusId); }
+
+      function s4Day(c) {
+        var st = editState.value, gen = view.gen.value;
+        if ((st === "edit" && s4Busy()) || (st === "confirm" && (s4Busy() || !s4CanRegen()))) { st = "read"; editState.value = "read"; s4.pending = false; s4.draft = null; }
+        c.appendChild(el("p", "story-src", s4.edited
+          ? "직접 다듬은 글이에요. 원본 조각은 아래에 그대로 있어요. · " + EDITED_AT + "에 고친 이야기"
+          : "AI가 이날 조각의 메모로 쓴 글이에요. 원본 조각은 아래에 그대로 있어요. · " + MADE + "에 만든 이야기"));
+        if (st === "edit" || st === "conflict") return s4Form(c, st === "conflict");
+        c.appendChild(el("p", "story-body", s4Text()));
+        var row = el("div", "row");
+        var live = s4.notice; s4.notice = null;
+        if (st === "confirm") {
+          var ask = el("p", "story-state", "지금 조각을 AI에 다시 보내 새 글을 만들어요. 직접 고친 글을 포함한 이전 글은 이력으로 남아요.");
+          ask.id = "s4-ask";
+          c.appendChild(ask);
+          var ok = button("AI로 다시 만들기", "btn-main", false, function () { view.gen.value = "queued"; s4Go("read", "s4-edit"); });
+          ok.id = "s4-ok"; ok.setAttribute("aria-describedby", "s4-ask");
+          row.appendChild(ok);
+          row.appendChild(button("취소", "btn-ghost", false, function () { s4Go("read", "s4-regen"); }));
+          c.appendChild(row);
+          return { pieces: PIECES, live: live };
+        }
+        if (s4Busy()) {
+          c.appendChild(el("p", "story-state", gen === "queued" ? "AI 이야기를 다시 만드는 중이에요. 만들 차례를 기다리고 있어요." : "AI 이야기를 다시 만드는 중이에요."));
+          var busy = el("p", "hint", "다 만들 때까지 이야기를 고칠 수 없어요. 화면은 저절로 바뀌지 않아요. 잠시 뒤 새로고침해서 확인해 주세요.");
+          busy.id = "s4-busy";
+          c.appendChild(busy);
+          live = live || "AI 이야기를 다시 만드는 중이에요.";
+        } else if (gen === "failed_photo" || gen === "failed" || gen === "failed_last") {
+          var err = el("p", "story-err", gen === "failed_photo" ? "사진을 읽지 못해 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요." : "이야기를 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요.");
+          err.setAttribute("role", "alert");
+          c.appendChild(err);
+          if (gen === "failed_last") c.appendChild(el("p", "hint", "오늘은 더 만들 수 없어요."));
+        } else if (gen === "limited") {
+          c.appendChild(el("p", "hint", "오늘은 더 만들 수 없어요. 직접 만들기는 하루 3번까지예요."));
+        }
+        var edit = button("이야기 수정", "btn-ghost", s4Busy(), function () { s4.draft = null; s4Go("edit", "story-edit-text"); });
+        edit.id = "s4-edit";
+        if (s4Busy()) edit.setAttribute("aria-describedby", "s4-busy");
+        row.appendChild(edit);
+        if (!s4Busy() && s4CanRegen()) {
+          var regen = button("다시 만들기", "btn-ghost", false, function () { s4Go("confirm", "s4-ok"); });
+          regen.id = "s4-regen";
+          row.appendChild(regen);
+        }
+        if (s4Busy()) row.appendChild(link("새로고침", "#view"));
+        c.appendChild(row);
+        return { pieces: PIECES, live: live };
+      }
+
+      function s4Form(c, conflict) {
+        // 충돌을 도구로 바로 고르면 합성 초안 하나를 쓴다. 저장 중 → 충돌이면 그 초안을 그대로 둔다.
+        if (conflict && s4.draft == null) s4.draft = s4Text().replace("하루를 시작했다.", "하루를 천천히 시작했다.");
+        if (conflict) {
+          var err = el("p", "story-err", "다른 곳에서 이야기가 바뀌었어요. 고친 글을 복사한 뒤 다시 불러와 주세요.");
+          err.id = "s4-err"; err.setAttribute("role", "alert");
+          c.appendChild(err);
+        }
+        if (s4.pending) c.appendChild(el("p", "story-state", "고친 이야기를 저장하는 중이에요."));
+        var box = el("div", "story-edit");
+        var lab = el("label", "lbl", "이야기 내용");
+        lab.htmlFor = "story-edit-text";
+        var ta = document.createElement("textarea");
+        ta.id = "story-edit-text"; ta.rows = 12;
+        ta.value = s4.draft != null ? s4.draft : s4Text();
+        ta.readOnly = s4.pending;
+        var count = el("p", "hint"); count.id = "s4-count";
+        var msg = el("p", "err"); msg.id = "s4-msg"; msg.hidden = true; msg.setAttribute("role", "alert");
+        ta.setAttribute("aria-describedby", "s4-count s4-msg" + (conflict ? " s4-err" : ""));
+        function update() {
+          var n = cp(ta.value);
+          count.textContent = n + " / " + LIMIT + "자";
+          if (n > LIMIT) ta.setAttribute("aria-invalid", "true"); else ta.removeAttribute("aria-invalid");
+        }
+        ta.addEventListener("input", function () { s4.draft = ta.value; msg.hidden = true; update(); });
+        update();
+        box.appendChild(lab); box.appendChild(ta); box.appendChild(count); box.appendChild(msg);
+        c.appendChild(box);
+        var row = el("div", "row");
+        if (conflict) {
+          // 실제 앱은 같은 날짜 경로를 다시 불러온다. 초안은 사용자가 이 링크를 누를 때만 버려진다.
+          row.appendChild(link("새로고침", "#view", function () { s4.draft = null; s4Go("read", "s4-edit", "이야기를 다시 불러왔어요."); }));
+        } else {
+          var save = button("저장", "btn-main", s4.pending, function () {
+            var v = ta.value, n = cp(v);
+            function stop(t) { msg.textContent = t; msg.hidden = false; ta.setAttribute("aria-invalid", "true"); }
+            if (!v.trim()) return stop("이야기 내용이 비어 있어요. 글을 쓰거나 취소해 주세요.");
+            if (n > LIMIT) return stop("이야기는 " + LIMIT + "자까지 쓸 수 있어요. 지금 " + n + "자예요.");
+            if (v === s4Text()) { s4.draft = null; return s4Go("read", "s4-edit", "바뀐 내용이 없어 닫았어요."); }
+            s4.draft = v; s4.pending = true;
+            s4Go("edit", "s4-save");
+          });
+          save.id = "s4-save";
+          row.appendChild(save);
+          row.appendChild(button("취소", "btn-ghost", s4.pending, function () { s4.draft = null; s4Go("read", "s4-edit"); }));
+        }
+        c.appendChild(row);
+        if (s4.pending) {
+          var pick = el("div", "art-result");
+          pick.appendChild(el("p", null, "아트보드 도구 · 저장 결과 고르기 (제품 화면이 아님)"));
+          pick.appendChild(button("저장됨", "btn-ghost", false, function () {
+            s4.text = s4.draft; s4.edited = true; s4.draft = null; s4.pending = false;
+            s4Go("read", "s4-edit", "고친 이야기를 저장했어요.");
+          }));
+          pick.appendChild(button("충돌", "btn-ghost", false, function () { s4.pending = false; s4Go("conflict", "story-edit-text"); }));
+          c.appendChild(pick);
+        }
+        return { pieces: PIECES, live: s4.pending ? "고친 이야기를 저장하는 중이에요." : null };
+      }
+
+      function render(announce, focusId) {
         document.documentElement.setAttribute("data-record-font", view.font.value);
-        var s3 = view.mode.value === "s3";
-        Array.prototype.forEach.call(document.querySelectorAll(".art-s2"), function (n) { n.hidden = s3; });
-        Array.prototype.forEach.call(document.querySelectorAll(".art-s3"), function (n) { n.hidden = !s3; });
+        var mode = view.mode.value, s3 = mode === "s3";
+        Array.prototype.forEach.call(document.querySelectorAll(".art-s2, .art-s3, .art-s4"), function (n) { n.hidden = !n.classList.contains("art-" + mode); });
         var settings = s3 && view.screen.value === "settings";
         view.dayView.hidden = settings;
         view.settingsView.hidden = !settings;
         view.content.textContent = "";
         if (settings) { s3Settings(); view.live.textContent = ""; return; }
-        var r = s3 ? s3Day(view.content) : STATES[view.state.value](view.content);
+        var r = mode === "s4" ? s4Day(view.content) : s3 ? s3Day(view.content) : STATES[view.state.value](view.content);
         renderPieces(r.pieces);
-        // 포커스는 옮기지 않는다. 상태 변화는 polite 알림, 오류는 role=alert.
+        // S2·S3는 포커스를 옮기지 않는다. S4만 누른 버튼이 사라지는 전환에서 다음 대상으로 옮긴다. 오류는 role=alert.
         view.live.textContent = announce && r.live ? r.live : "";
+        if (focusId && document.getElementById(focusId)) document.getElementById(focusId).focus();
       }
 
       view.state.addEventListener("change", function () { render(true); });
+      editState.addEventListener("change", function () { s4.pending = false; if (editState.value !== "conflict") s4.draft = null; render(true); });
       [view.mode, view.screen, view.story, view.gen, view.reflect].forEach(function (n) { n.addEventListener("change", function () { render(true); }); });
-      view.len.addEventListener("change", function () { render(false); });
+      view.len.addEventListener("change", function () { s4.text = null; s4.edited = false; s4.draft = null; s4.pending = false; render(false); });
       view.font.addEventListener("change", function () { render(false); });
       render(false);
     })();
