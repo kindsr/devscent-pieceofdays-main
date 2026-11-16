@@ -280,7 +280,7 @@ describe("0007_story_edits schema, privileges and down guard", () => {
         { t: "story_versions", col: "origin", type: "text", nul: "NO", def: "'ai'::text" },
       ]);
       expect((await uniqueByColumns(c, "pod.story_versions")).map((x) => x.cols), "the full-table revision key is gone; the version key stays").toEqual(["user_id,local_date,version"]);
-      const fks = (await c.query<{ def: string }>("SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'pod.story_versions'::regclass AND contype = 'f' ORDER BY 1")).rows.map((r) => r.def);
+      const fks = (await c.query<{ def: string }>("SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'pod.story_versions'::regclass AND contype = 'f' ORDER BY pg_get_constraintdef(oid) COLLATE \"C\"")).rows.map((r) => r.def);
       expect(fks).toEqual([
         "FOREIGN KEY (user_id) REFERENCES pod.users(id) ON DELETE CASCADE",
         "FOREIGN KEY (user_id, local_date, base_version) REFERENCES pod.story_versions(user_id, local_date, version)",

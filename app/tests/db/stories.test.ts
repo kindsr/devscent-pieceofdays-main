@@ -325,7 +325,7 @@ describe("0005_daily_stories schema, privileges and down guard", () => {
       );
       expect(defaults.rows).toEqual([{ column_name: "created_at", column_default: "now()" }, { column_name: "id", column_default: "uuidv7()" }]);
       const cons = await c.query<{ contype: string; def: string }>(
-        "SELECT contype::text, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'pod.story_versions'::regclass AND contype IN ('p', 'f', 'u') ORDER BY 1, 2",
+        "SELECT contype::text, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'pod.story_versions'::regclass AND contype IN ('p', 'f', 'u') ORDER BY contype::text COLLATE \"C\", pg_get_constraintdef(oid) COLLATE \"C\"",
       );
       // 0007은 전체 UNIQUE(user_id, local_date, source_revision)를 base_version IS NULL 부분 index로 바꾸고 자기 FK를 더한다.
       expect(cons.rows).toEqual([
