@@ -54,3 +54,9 @@
 - 메인이 실제 이미지의 migration status/up/status로0007만 적용, 승인7 확인 후 같은 publication 소비자를 실행·runtime/HTTPS/cron 검증한다. 자동 시간복귀0, production 변경0.
 - 14일은 메인이 이전 보존 proof와 일치하는 단1사용자/현재 story version·동의를 확인해 **제품 requestManualStory 재생성 경로로 단1회** 요청하고 job/usage/새version 성공 및 기존v1 hash 불변을 확인한다. 동의/한도/권한 우회·직접 story INSERT·원문 덮어쓰기0. 코드가 native operator에서 호출되려면 exact source·불변 image의 Node26/조건부 server-only·alias 해석을 검토한 소유 일회 컨테이너를 쓴다(가짜 endpoint/production backdoor0). 개인정보 출력0, 자동재시도0.
 - 14일 새 글은 사용자 화면에서 최신 버전으로 보인다. 하위에는 원문/사진/키/DB를 제공하지 않는다.
+
+## 6. 검증 중 보완
+
+- `story-edit-visuals`의 Chromium project 안에서도 폰 context는 WebKit을 직접 띄운다. 첫 GREEN의 바이너리 부재 실증에 따라 설치를 chromium+webkit으로 맞췄다(실제 외부 API/권한 변경0). RED의 0007 부재가 이 후행 도구 결함을 가렸으므로 존재 검사 통과와 종단 통과를 구분한다.
+- 두 FK의 표시 순서는 DB 기본 collation의 구두점 처리에 따라 달랐다. 제약 집합은 같았으며 시험의 `pg_get_constraintdef(oid)` 정렬 표현식에 COLLATE "C"를 명시해 기대를 안정화했다. 기대 제약·권한을 완화하지 않는다.
+- 같은 날 새 이야기 version이 RSC로 들어와도 편집 초안/확인이 자동 폐기되지 않아야 한다. 컨트롤 key는 story.id 대신 date로 고정하고, 편집을 연 시점의 version/body 및 재생성 확인을 연 시점의 version을 snapshot한다. 새 props를 옛 초안의 기준으로 사용하지 않는다. 기존 하루 한 줄 저장 action이 유발한 RSC 갱신·타기기 새 버전·충돌·생성 job0을 새 회귀1건으로 검증한다.

@@ -55,7 +55,7 @@ export function DailyStory({ date, data, reflectionTime, hasMoments, generation 
           </p>
           {controls ? (
             <StoryControls
-              key={story.id}
+              key={date}
               date={date}
               version={story.version}
               body={story.body}

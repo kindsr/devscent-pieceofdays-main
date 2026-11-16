@@ -16,6 +16,8 @@ import {
  * - 수정: 지금 본문 전체가 든 ‘이야기 내용’ textarea. 글자 수는 codepoint(UTF-16 maxLength로 자르지 않는다).
  *   저장 중 중복 0, 오류·충돌이면 입력을 그대로 두고 자동 새로고침·초안 폐기 0. 성공 때만 닫고 새로고침한다.
  * - 재생성: 명시 확인 단계 뒤 queued job 1건만 맡긴다. 성공 뒤에만 새로고침하고, 새 글을 저절로 보여 주는 연출은 없다.
+ * - 편집·확인을 연 시점의 version(편집은 본문도)을 고정해 요청·같은 내용 판정에 쓴다. 그 뒤 RSC로 새 version이 와도
+ *   따라가지 않으므로 오래된 초안·확인은 서버 conflict로 거부되고 초안은 남는다(같은 날은 DailyStory가 key={date}로 유지).
  */
 
 const EDIT_TEXT: Record<StoryEditActionError, string> = {
@@ -57,6 +59,8 @@ export function StoryControls({ date, version, body, busy, canRegenerate, editAc
   const inFlight = useRef(false);
   const [mode, setMode] = useState<"read" | "edit" | "confirm">("read");
   const [text, setText] = useState(body);
+  const [base, setBase] = useState<{ version: number; body: string }>({ version, body });
+  const [confirmVersion, setConfirmVersion] = useState(version);
   const [editError, setEditError] = useState<StoryEditActionError | null>(null);
   const [regenError, setRegenError] = useState<StoryRegenerationActionError | null>(null);
   const focusNext = useRef<"edit" | "text" | "confirm" | "regen" | null>(null);
@@ -85,6 +89,7 @@ export function StoryControls({ date, version, body, busy, canRegenerate, editAc
   function openEdit() {
     if (busy || pending) return;
     setText(body);
+    setBase({ version, body });
     setEditError(null);
     go("edit", "text");
   }
@@ -100,7 +105,7 @@ export function StoryControls({ date, version, body, busy, canRegenerate, editAc
       setEditError("invalid_body");
       return;
     }
-    if (text.trim() === body) {
+    if (text.trim() === base.body) {
       setEditError(null);
       go("read", "edit");
       return;
@@ -109,7 +114,7 @@ export function StoryControls({ date, version, body, busy, canRegenerate, editAc
     setEditError(null);
     startTransition(async () => {
       try {
-        const result = await editAction({ expectedVersion: version, body: text });
+        const result = await editAction({ expectedVersion: base.version, body: text });
         if (!result.ok) {
           setEditError(result.error);
           return;
@@ -127,7 +132,7 @@ export function StoryControls({ date, version, body, busy, canRegenerate, editAc
     setRegenError(null);
     startTransition(async () => {
       try {
-        const result = await regenerateAction(version);
+        const result = await regenerateAction(confirmVersion);
         if (!result.ok) {
           setRegenError(result.error);
           return;
@@ -197,7 +202,7 @@ export function StoryControls({ date, version, body, busy, canRegenerate, editAc
             </button>
           ) : null}
           {regenerateAction && canRegenerate && !busy ? (
-            <button ref={regenRef} className="btn-ghost" type="button" onClick={() => { setRegenError(null); go("confirm", "confirm"); }}>다시 만들기</button>
+            <button ref={regenRef} className="btn-ghost" type="button" onClick={() => { setRegenError(null); setConfirmVersion(version); go("confirm", "confirm"); }}>다시 만들기</button>
           ) : null}
           {busy && editAction ? <p className="hint" id={`${id}-busy`}>AI가 새 이야기를 만드는 동안에는 고칠 수 없어요.</p> : null}
         </div>
