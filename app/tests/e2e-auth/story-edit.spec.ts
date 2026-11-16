@@ -397,3 +397,86 @@ test("a current story offers regeneration only after a confirmation that explain
     await Promise.all(contexts.map((c) => c.close()));
   }
 });
+
+test("an open story draft survives an RSC refresh caused by another action while a newer version arrived; saving it is a conflict and the newer version stays", async ({ browser, browserName }) => {
+  test.setTimeout(180_000);
+  expect(browserName).toBe("chromium");
+  await expectEditSchema();
+  const contexts: BrowserContext[] = [];
+  try {
+    const context = await browser.newContext({ baseURL: AUTH_BASE });
+    contexts.push(context);
+    const page = await context.newPage();
+    const account = await signIn(page);
+    const date = await createMemo(page, account, "ci-only 새로고침 경쟁 조각");
+    await insertAiStory(account, date, V1);
+    const rev = await currentRevision(account.userId, date);
+    await page.goto(`/days/${date}`);
+    await expectBody(page, V1, "v1");
+
+    // 사용자가 v1에서 편집기를 열고 아직 저장하지 않은 초안을 쓴다.
+    await editButton(page).click();
+    const draft = `${V1}\nci-only 아직 저장하지 않은 초안`;
+    await content(page).fill(draft);
+
+    // 다른 기기에서 v2가 저장된 상태(합성 fixture: v1 다음 user_edit, 같은 실제 입력 revision).
+    const other = "ci-only 다른 기기에서 고친 글";
+    await admin((c) => c.query(
+      "INSERT INTO pod.story_versions (user_id, local_date, version, source_revision, body, origin, base_version) VALUES ($1::uuid, $2::date, 2, $3, $4, 'user_edit', 1)",
+      [account.userId, date, rev, other]));
+    const before = await storiesOf(account.userId);
+    expect(before.map((r) => [r.version, r.origin, r.base, r.body])).toEqual([[1, "ai", null, V1], [2, "user_edit", 1, other]]);
+
+    // 같은 화면의 다른 기존 동작(하루 한 줄 저장)이 RSC 갱신을 일으킨다. 전체 reload/goto는 하지 않는다.
+    await page.evaluate(() => { (window as unknown as { __podSameDocument?: number }).__podSameDocument = 1; });
+    const oneline = page.getByRole("region", { name: /^(오늘을 한 줄로|그날 한 줄)$/ });
+    await oneline.getByRole("button", { name: "한 줄 쓰기", exact: true }).click();
+    const summaryText = "ci-only 새로고침을 부르는 한 줄";
+    await oneline.getByRole("textbox", { name: "하루 한 줄", exact: true }).fill(summaryText);
+    await oneline.getByRole("button", { name: "저장", exact: true }).click();
+    await expect(statusWith(page, DIARY_TEXT.summarySaved)).toBeVisible();
+    // 한 줄 표시는 서버 props(day.summary)이므로 이 문구가 보이면 RSC 갱신이 도착한 것이다.
+    await expect(oneline.getByText(summaryText, { exact: true }), "the refreshed server props arrived").toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { __podSameDocument?: number }).__podSameDocument), "no full document reload").toBe(1);
+
+    // 열린 편집기와 사용자의 초안은 그대로다(새 버전 본문으로 바뀌거나 닫히지 않는다).
+    await expect(content(page), "the editor stays open after the refresh").toBeVisible();
+    await expect(content(page), "the dirty draft is kept, not replaced by the newer body").toHaveValue(draft);
+
+    // 저장은 편집을 연 시점의 v1 기준이므로 충돌이다. 초안은 남고 v2는 덮어쓰지 않는다.
+    await saveButton(page).click();
+    await expect(story(page).getByRole("alert"), "fixed conflict notice").toBeVisible();
+    await expect(content(page), "draft kept on conflict").toHaveValue(draft);
+    expect(await storiesOf(account.userId), "the newer version is neither overwritten nor followed by a new one").toEqual(before);
+    expect(await usageCount()).toBe(0);
+
+    // 재생성 확인도 연 시점의 version을 유지한다: v2에서 확인을 연 뒤 v3가 생기고 RSC 갱신이 와도, 확인은 옛 v2 기준 conflict이고 job 0.
+    await cancelButton(page).click(); // 사용자가 직접 초안을 닫는다(이동 전 의도적 폐기)
+    await expect(content(page)).toHaveCount(0);
+    await saveConsent(page, account, true);
+    await page.goto(`/days/${date}`);
+    await expectBody(page, other, "v2 is the current latest");
+    await regenButton(page).click();
+    await expect(regenConfirm(page)).toBeVisible();
+    const third = "ci-only 또 다른 기기에서 고친 글";
+    await admin((c) => c.query(
+      "INSERT INTO pod.story_versions (user_id, local_date, version, source_revision, body, origin, base_version) VALUES ($1::uuid, $2::date, 3, $3, $4, 'user_edit', 2)",
+      [account.userId, date, rev, third]));
+    const withThird = await storiesOf(account.userId);
+    await page.evaluate(() => { (window as unknown as { __podSameDocument?: number }).__podSameDocument = 2; });
+    await oneline.getByRole("button", { name: "고쳐 쓰기", exact: true }).click();
+    const summaryAgain = "ci-only 두 번째 새로고침 한 줄";
+    await oneline.getByRole("textbox", { name: "하루 한 줄", exact: true }).fill(summaryAgain);
+    await oneline.getByRole("button", { name: "저장", exact: true }).click();
+    await expect(oneline.getByText(summaryAgain, { exact: true }), "the refreshed server props arrived").toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { __podSameDocument?: number }).__podSameDocument), "no full document reload").toBe(2);
+    await expect(regenConfirm(page), "the confirmation stays open after the refresh").toBeVisible();
+    await regenConfirm(page).click();
+    await expect(story(page).getByRole("alert"), "the stale confirmation is refused").toBeVisible();
+    expect(await jobsOf(account.userId), "no job is queued for the newer v3 behind the user's back").toEqual([]);
+    expect(await storiesOf(account.userId)).toEqual(withThird);
+    expect(await usageCount()).toBe(0);
+  } finally {
+    await Promise.all(contexts.map((c) => c.close()));
+  }
+});
