@@ -202,11 +202,13 @@ test("explicit manual consent enables one real queued job from the date screen; 
     await expect(story(page), "the earlier story body stays visible").toContainText(body);
     await capture(page, "failed");
 
-    // 동의 철회 → 버튼 0, 준비 중 문구.
+    // 동의 철회 → 생성·재생성 버튼 0. 저장된 이야기의 직접 수정은 동의와 무관하게 1개만 남는다(PLAN_story-edit-regenerate §3).
     await saveConsent(page, account, false, false);
     await page.goto(path);
     await expect(makeButton(page)).toHaveCount(0);
-    await expect(story(page).getByRole("button")).toHaveCount(0);
+    await expect(story(page).getByRole("button", { name: /다시 만들기/ }), "no regenerate button after withdrawal").toHaveCount(0);
+    await expect(story(page).getByRole("button", { name: "이야기 수정", exact: true }), "direct edit needs no consent").toHaveCount(1);
+    await expect(story(page).getByRole("button"), "the edit entry is the only story button").toHaveCount(1);
     expect((await jobsOf(account.userId)).length, "withdrawal creates no job").toBe(2);
   } finally {
     await Promise.all(contexts.map((c) => c.close()));

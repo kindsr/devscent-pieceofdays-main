@@ -87,6 +87,7 @@ async function expectLifecycleApplied(db: DisposableDatabase): Promise<void> {
     { version: 4, name: "private_photos" },
     { version: 5, name: "daily_stories" },
     { version: 6, name: "story_generation" },
+    { version: 7, name: "story_edits" },
   ]);
 }
 

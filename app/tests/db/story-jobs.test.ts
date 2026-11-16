@@ -118,7 +118,7 @@ async function expectGenerationApplied(db: DisposableDatabase): Promise<void> {
   const pairs = ((await withOwner(env, db, (c) => readMigrationRows(c))) ?? []).map((r) => [r.version, r.name]);
   expect(pairs.slice(0, 5), "the existing harness migrates the 0001~0005 chain").toEqual(BEFORE_0006);
   for (const file of [GEN_UP, GEN_DOWN]) expect(existsSync(file), `${path.relative(APP_DIR, file)} must exist (PLAN §2)`).toBe(true);
-  expect(pairs, "the default up must apply 0006_story_generation").toEqual([...BEFORE_0006, [6, "story_generation"]]);
+  expect(pairs, "the default up must apply 0006_story_generation").toEqual([...BEFORE_0006, [6, "story_generation"], [7, "story_edits"]]);
   for (const t of NEW_TABLES) expect(await withOwner(env, db, (c) => relationExists(c, `pod.${t}`)), `to_regclass('pod.${t}') IS NOT NULL`).toBe(true);
 }
 
@@ -365,7 +365,7 @@ describe("0006_story_generation schema, privileges and down guard", () => {
     });
   }, 90_000);
 
-  it("down refuses while any of the fifteen tables has rows, refuses non-ci, and an empty CI down --to 5 removes only the three tables", async () => {
+  it("down refuses while any of the fifteen tables has rows, refuses non-ci, and an empty CI down --to 5 removes 0007 then only the three tables", async () => {
     const db = await freshMigratedDb(env, "jobsdown");
     await expectGenerationApplied(db);
     const downSql = await readFile(GEN_DOWN, "utf8");
@@ -387,7 +387,14 @@ describe("0006_story_generation schema, privileges and down guard", () => {
     await owner(db, async (c) => {
       expect((await readMigrationRows(c))?.map((r) => [r.version, r.name])).toEqual(BEFORE_0006);
       for (const t of NEW_TABLES) expect(await relationExists(c, `pod.${t}`)).toBe(false);
-      expect(await schemaSnapshot(c)).toEqual(full.filter((line) => !NEW_TABLES.some((t) => line.includes(t))));
+      // 0007 down이 story_versions를 0005 형태로 되돌리므로 story_versions는 따로 본다(나머지는 세 표만 빠진다).
+      const snap = await schemaSnapshot(c);
+      const rest = (line: string) => !NEW_TABLES.some((t) => line.includes(t)) && !line.includes("story_versions");
+      expect(snap.filter(rest)).toEqual(full.filter(rest));
+      const versions = snap.filter((line) => line.includes("story_versions"));
+      expect(versions.some((line) => /story_versions\.(?:origin|base_version) /.test(line)), "0007 columns removed").toBe(false);
+      expect(versions.some((line) => line.includes("UNIQUE (user_id, local_date, source_revision)")), "0005 revision key restored").toBe(true);
+      expect(versions.some((line) => line.includes("story_versions_first_per_revision")), "0007 partial index removed").toBe(false);
     });
     expectCliOk(await runMigrateCli(["up"], db.urls.migrator), db.urls.migrator);
     expect(await owner(db, (c) => schemaSnapshot(c))).toEqual(full);

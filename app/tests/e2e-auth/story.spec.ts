@@ -114,13 +114,21 @@ async function deleteMemo(page: Page, text: string): Promise<void> {
   await expect(piece(page, text)).toHaveCount(0);
 }
 
-/** 이야기 영역이 정확한 본문(줄바꿈 포함)을 text로 담고 있고, 수정·생성 버튼이 없음을 확인한다. */
+/**
+ * 이야기 영역이 정확한 본문(줄바꿈 포함)을 text로 담고 있음을 확인한다. 이 파일의 모든 호출은 실제 계정·저장된 이야기·
+ * AI 동의 없음·job 0 상황이다(PLAN_story-edit-regenerate §3): 직접 수정 진입 '이야기 수정' 1개만 있고
+ * 생성·재생성·삭제 버튼은 없다(동의 없는 전송 0, 원문 삭제 0).
+ */
 async function expectStoryBody(page: Page, body: string, headingLevel: 2 | 3, label: string): Promise<void> {
   const region = story(page);
   await expect(region, `${label}: story region`).toBeVisible();
   await expect(region.getByRole("heading", { level: headingLevel, name: STORY, exact: true }), `${label}: h${headingLevel}`).toBeVisible();
   await expect.poll(() => region.evaluate((el, text) => [...el.querySelectorAll("*")].some((n) => n.textContent === text), body), { message: `${label}: exact body text` }).toBe(true);
-  await expect(region.getByRole("button"), `${label}: no edit/delete/generate button`).toHaveCount(0);
+  await expect(region.getByRole("button", { name: "이야기 수정", exact: true }), `${label}: one direct edit entry`).toHaveCount(1);
+  await expect(region.getByRole("button", { name: "AI 이야기 만들기", exact: true }), `${label}: no generate button without consent`).toHaveCount(0);
+  await expect(region.getByRole("button", { name: /다시 만들기/ }), `${label}: no regenerate button without consent`).toHaveCount(0);
+  await expect(region.getByRole("button", { name: /삭제|지우기/ }), `${label}: no delete button`).toHaveCount(0);
+  await expect(region.getByRole("button"), `${label}: the edit entry is the only story button`).toHaveCount(1);
 }
 
 async function saveReflection(page: Page, value: string): Promise<void> {

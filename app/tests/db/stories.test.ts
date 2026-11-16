@@ -120,7 +120,7 @@ async function expectStoriesApplied(db: DisposableDatabase): Promise<void> {
   for (const file of [STORY_UP, STORY_DOWN]) {
     expect(existsSync(file), `${path.relative(APP_DIR, file)} must exist (PLAN §1)`).toBe(true);
   }
-  expect(pairs, "the default up must apply 0005_daily_stories (then 0006_story_generation)").toEqual([...BASE_MIGRATIONS, [5, "daily_stories"], [6, "story_generation"]]);
+  expect(pairs, "the default up must apply 0005_daily_stories (then 0006_story_generation and 0007_story_edits)").toEqual([...BASE_MIGRATIONS, [5, "daily_stories"], [6, "story_generation"], [7, "story_edits"]]);
   expect(await withOwner(env, db, (c) => relationExists(c, "pod.story_versions")), "to_regclass('pod.story_versions') IS NOT NULL").toBe(true);
 }
 
@@ -302,7 +302,7 @@ describe("0005_daily_stories schema, privileges and down guard", () => {
     await expectLedgerInvariants(env, db);
   }, 90_000);
 
-  it("defines exact NOT NULL columns, PK/FK CASCADE/two UNIQUE keys, CHECKs and no extra trigger/index, with app SELECT/INSERT only", async () => {
+  it("defines exact columns (0007 adds origin/base_version), PK/FK CASCADE/self FK, the version key and the 0007 partial revision index, CHECKs and no extra trigger/index, with app SELECT/INSERT only", async () => {
     const db = await freshMigratedDb(env, "storyschema");
     await expectStoriesApplied(db);
     await withOwner(env, db, async (c) => {
@@ -310,10 +310,12 @@ describe("0005_daily_stories schema, privileges and down guard", () => {
         "SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'pod' AND table_name = 'story_versions' ORDER BY column_name",
       );
       expect(cols.rows).toEqual([
+        { column_name: "base_version", data_type: "integer", is_nullable: "YES" },
         { column_name: "body", data_type: "text", is_nullable: "NO" },
         { column_name: "created_at", data_type: "timestamp with time zone", is_nullable: "NO" },
         { column_name: "id", data_type: "uuid", is_nullable: "NO" },
         { column_name: "local_date", data_type: "date", is_nullable: "NO" },
+        { column_name: "origin", data_type: "text", is_nullable: "NO" },
         { column_name: "source_revision", data_type: "text", is_nullable: "NO" },
         { column_name: "user_id", data_type: "uuid", is_nullable: "NO" },
         { column_name: "version", data_type: "integer", is_nullable: "NO" },
@@ -325,17 +327,18 @@ describe("0005_daily_stories schema, privileges and down guard", () => {
       const cons = await c.query<{ contype: string; def: string }>(
         "SELECT contype::text, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'pod.story_versions'::regclass AND contype IN ('p', 'f', 'u') ORDER BY 1, 2",
       );
+      // 0007은 전체 UNIQUE(user_id, local_date, source_revision)를 base_version IS NULL 부분 index로 바꾸고 자기 FK를 더한다.
       expect(cons.rows).toEqual([
         { contype: "f", def: "FOREIGN KEY (user_id) REFERENCES pod.users(id) ON DELETE CASCADE" },
+        { contype: "f", def: "FOREIGN KEY (user_id, local_date, base_version) REFERENCES pod.story_versions(user_id, local_date, version)" },
         { contype: "p", def: "PRIMARY KEY (id)" },
-        { contype: "u", def: "UNIQUE (user_id, local_date, source_revision)" },
         { contype: "u", def: "UNIQUE (user_id, local_date, version)" },
       ]);
       const extra = await c.query<{ idx: number; trg: number }>(
         `SELECT (SELECT count(*)::int FROM pg_index WHERE indrelid = 'pod.story_versions'::regclass) AS idx,
                 (SELECT count(*)::int FROM pg_trigger WHERE tgrelid = 'pod.story_versions'::regclass AND NOT tgisinternal) AS trg`,
       );
-      expect(extra.rows, "only the PK and two UNIQUE indexes; no trigger").toEqual([{ idx: 3, trg: 0 }]);
+      expect(extra.rows, "only the PK, the version key and the 0007 partial revision index; no trigger").toEqual([{ idx: 3, trg: 0 }]);
       const priv = await c.query<Record<string, boolean>>(
         `SELECT has_table_privilege($1, 'pod.story_versions', 'SELECT') AS app_select,
                 has_table_privilege($1, 'pod.story_versions', 'INSERT') AS app_insert,
