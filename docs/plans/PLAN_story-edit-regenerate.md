@@ -44,7 +44,7 @@
 - edit 정상/원문보존/revision current/후속outdated/unchanged·타계정·stalegen·탈퇴·busy·2연결 충돌·입력 validation·실패 draft 보존. HTML은 text로만 표시.
 - regen request/claim/markSent/finish 전체 경로를 실PG+mock fetch로 검증(외부HTTP0). 같은 base 중복·일한도·동의철회·입력변경·lease/삭제·usage 정산·current 유지. 재생성 후 수정, 수정 후 재생성의 버전 chain도 확인한다.
 - E2E는 기존 fake2env/issuer를 그대로 사용한다. 수정/취소/충돌/폰↔PC/로그아웃 보호와 재생성 확인→실 action queue 확인, 결과만 fixture seed로 종단한다(실 API라고 주장0).
-- 기존 story-visual-capture의 순수 소스 복사에 StoryControls도 포함한다(서버 import0·전후hash 검증 유지). 기존 story-generation visuals의 'current 버튼0' 계약은 action prop 없는 legacy 캡처 그대로다. 기존 E2E에서 실제 current 계정의 버튼0 의미 단언은 새 수정/재생성 버튼을 특정해 범위를 갱신한다.
+- 기존 story-visual-capture는 이미 src/ui 전체를 재귀 복사·hash 검증하므로 StoryControls도 포함된다(지원 스크립트 변경0, 서버 import0 유지). 기존 story-generation visuals의 'current 버튼0' 계약은 action prop 없는 legacy 캡처 그대로다. 기존 E2E에서 실제 current 계정의 버튼0 의미 단언은 새 수정/재생성 버튼을 특정해 범위를 갱신한다.
 - 새 E2E는 읽기/편집/충돌/재생성확인 × 375/768/1440의 PNG12를 만든다. 기존 visual workflow의 exact PNG12는 유지하고 이번12를 별도 artifact로 추가하는 검사 변경은 메인 검토 후 한다. 불필요한 workflow/보안권한 변경 없음.
 - 호스트 npm 설치/앱시험/서버 실행0. 정적 diff/gate/문법만, 유효 RED·GREEN·전체 회귀는 기존 격리 Actions 원문으로 판정한다.
 
