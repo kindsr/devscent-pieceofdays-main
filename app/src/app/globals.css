@@ -279,3 +279,7 @@ html[data-record-font="hand"] { --font-record: var(--font-hand); }
 .story-time { gap: 4px var(--s-2); }
 /* 생성 상태(PLAN_ai-story-live-generation §5): 버튼·진행·실패·한도 안내 한 줄. 동의 설정은 기존 settings·auth-check 규칙을 쓴다. */
 .story-generation { gap: 4px var(--s-2); }
+/* 직접 수정·재생성 확인(PLAN_story-edit-regenerate §3, docs/design/story §8). D textarea·버튼 그대로, 읽기 폭만 본문과 맞춘다. */
+.story-edit { display: grid; gap: var(--s-1); max-width: 64ch; }
+.story-edit textarea { line-height: 1.7; }
+.story-controls { gap: 4px var(--s-2); }

@@ -15,8 +15,11 @@ export type StoryError =
   | "timeout"
   | "invalid_output";
 
-/** 저장된 이야기 한 버전. 사용자·조각·사진 식별자와 내부 revision은 넣지 않는다. */
-export type StoryRef = { id: string; version: number; body: string; createdAt: string };
+/**
+ * 저장된 이야기 한 버전. 사용자·조각·사진 식별자와 내부 revision은 넣지 않는다.
+ * edited는 사용자가 직접 고친 버전(origin user_edit)에만 붙는다. AI 글에는 키 자체가 없다(PLAN_story-edit-regenerate §2).
+ */
+export type StoryRef = { id: string; version: number; body: string; createdAt: string; edited?: true };
 
 /** 날짜별 읽기 결과. inputRevision은 예상 입력 비교용 불투명 값이며 조각을 읽지 못하면 null이다. */
 export type StoryDay = {
@@ -73,3 +76,16 @@ export type StoryRequestError =
   | "already_current"
   | "busy"
   | "limited";
+
+// ---------------------------------------------------------------- 직접 수정·재생성(PLAN_story-edit-regenerate §2·§3)
+
+/** 직접 수정 결과의 예상 실패. 화면은 고정 문구만 보여 주고 원문 오류를 쓰지 않는다. */
+export type StoryEditError = "not_signed_in" | "invalid_date" | "invalid_body" | "conflict" | "busy";
+/** Server Action이 더하는 실패(같은 Origin 아님·설정/DB 불가). */
+export type StoryEditActionError = StoryEditError | "forbidden" | "unavailable";
+export type StoryEditActionResult =
+  | { ok: true; value: { story: StoryRef; unchanged: boolean } }
+  | { ok: false; error: StoryEditActionError };
+/** 재생성 요청은 job을 queued로만 넣는다. 결과는 새로고침한 날짜 화면에서 본다. */
+export type StoryRegenerationActionError = StoryRequestError | "conflict" | "forbidden";
+export type StoryRegenerationActionResult = { ok: true } | { ok: false; error: StoryRegenerationActionError };

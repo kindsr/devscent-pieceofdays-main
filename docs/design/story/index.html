@@ -500,7 +500,7 @@
         var msg = el("p", "err"); msg.id = "s4-msg"; msg.hidden = true; msg.setAttribute("role", "alert");
         ta.setAttribute("aria-describedby", "s4-count s4-msg" + (conflict ? " s4-err" : ""));
         function update() {
-          var n = cp(ta.value);
+          var n = cp(ta.value.trim()); // 제품과 같이 앞뒤 공백을 뺀 codepoint 수
           count.textContent = n + " / " + LIMIT + "자";
           if (n > LIMIT) ta.setAttribute("aria-invalid", "true"); else ta.removeAttribute("aria-invalid");
         }
@@ -514,11 +514,11 @@
           row.appendChild(link("새로고침", "#view", function () { s4.draft = null; s4Go("read", "s4-edit", "이야기를 다시 불러왔어요."); }));
         } else {
           var save = button("저장", "btn-main", s4.pending, function () {
-            var v = ta.value, n = cp(v);
+            var v = ta.value, n = cp(v.trim());
             function stop(t) { msg.textContent = t; msg.hidden = false; ta.setAttribute("aria-invalid", "true"); }
             if (!v.trim()) return stop("이야기 내용이 비어 있어요. 글을 쓰거나 취소해 주세요.");
             if (n > LIMIT) return stop("이야기는 " + LIMIT + "자까지 쓸 수 있어요. 지금 " + n + "자예요.");
-            if (v === s4Text()) { s4.draft = null; return s4Go("read", "s4-edit", "바뀐 내용이 없어 닫았어요."); }
+            if (v.trim() === s4Text()) { s4.draft = null; return s4Go("read", "s4-edit", "바뀐 내용이 없어 닫았어요."); }
             s4.draft = v; s4.pending = true;
             s4Go("edit", "s4-save");
           });

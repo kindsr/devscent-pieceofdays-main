@@ -1,5 +1,7 @@
 # pieceofdays app (F1 화면·F2 DB·F3 도메인·F4 인증 기반)
 
+2026-11-16 이야기 부분 수정·재생성 후보([계획](../docs/plans/PLAN_story-edit-regenerate.md)): 날짜 화면의 ‘이야기 수정’에서 본문 일부를 고쳐 저장한다. 직접 수정은 AI에 보내지 않으며 AI 원문과 이전 수정본을 버전으로 보존한다. 다른 기기에서 먼저 저장하면 초안을 유지한 채 충돌을 알린다. ‘다시 만들기’는 현재 조각의 외부 전송을 확인한 뒤 기존 동의·하루3회 한도로 새 작업을 맡긴다. 0007은 표를 추가하지 않고 이야기/작업의 버전 연결을 확장한다. 격리 시험·PNG와 실제 dev 적용/14일 재생성은 각각 확인하며, 아래 날짜별 기록은 당시 범위다.
+
 2026-11-11 실제 생성 연결 진행: [PR90](https://github.com/kindsr/devscent-pieceofdays-main/pull/90)·[S3 계획](../docs/plans/PLAN_ai-story-live-generation.md)은 사진 512px 사본과 메모, 명시적 수동/자동 동의, PG 작업·사용량 기록, 내부 worker/CLI와 화면을 연결한다. 설정된 회고 시각은 기본20:00(서울)이며 자동 생성은 기본 OFF다. 생성 action은 작업만 등록하고 외부 API를 기다리지 않는다. 월 한도는 사용자 확보 뒤 정하는 방향이며 토큰·결과 불명 호출과 일일 기술 제한을 기록한다. 소스·합성 CI·실제 MinIO/AI·서비스 DB·정시 작업·dev 배포는 각각 판정한다. 현재 source/CI 검증 중으로 실사용 완료가 아니다.
 
 같은 날 [PR89](https://github.com/kindsr/devscent-pieceofdays-main/pull/89)의 dev 전용 MinIO relay와 env 검증은 독립 검토·CI를 통과해 dev 브랜치에 통합했다. 공용 root 자격 없이 비공개 버킷/접두만 쓰며 내부 HTTP 예외는 정확한 dev front 주소로 제한한다. 실제 namespace/IAM·설치 helper는 준비했으나 app env 활성화·DB3~6·실제 생성/자동 실행은 S3 최종 배포에서 별도로 확인한다. 아래 날짜별 문단은 당시 구현 범위다.

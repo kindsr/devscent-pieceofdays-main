@@ -6,6 +6,8 @@
  *   달라지면 새 값으로 구제하지 않고 실패로 닫는다. 자동 재시도·재큐잉은 0이다.
  * - 사용량 원장은 송신 직전에 'sent'로 남기고, 완료 결과와 무관하게 실측 usage(settled)·불명(unknown)·미송신(not_sent)으로 정산한다.
  * - 외부 I/O(사진 읽기·HTTP)는 이 파일 밖에서 하며, 여기의 트랜잭션은 그동안 열려 있지 않다.
+ * - 같은 입력 재생성(PLAN_story-edit-regenerate §2)은 base_version(요청 때 최신 version)을 가진 manual job이다.
+ *   claim·송신 직전·완료에서 최신 version이 base이고 그 revision이 실제 입력 v1과 같아야 하며, 아니면 input_changed로 닫는다.
  */
 import "server-only";
 import type { DatabaseError } from "pg";
@@ -22,11 +24,13 @@ import {
   type StoryRequestError,
 } from "@/shared/stories";
 import { captureStoryInputV2, type StoryInputV2 } from "./input-v2.pg";
-import { appendStoryVersionTx, findStoryByRevision, isStorySubject } from "./store.pg";
+import { appendStoryVersionTx, findLatestStory, findStoryByRevision, isStorySubject } from "./store.pg";
 
 export type ClaimedStoryJob = {
   id: string; userId: string; date: string; kind: "manual" | "scheduled";
   leaseToken: string; gen: number; consentVersion: number; consentRevision: number; input: StoryInputV2;
+  /** 재생성 job의 기준 version. 일반 job은 null(없으면 일반 job으로 본다). */
+  baseVersion?: number | null;
 };
 type Usage = { inputTokens: number; outputTokens: number };
 export type StoryJobOutcome =
@@ -55,6 +59,12 @@ async function readSettings(db: Pick<Db, "query">, userId: string): Promise<Sett
   );
   return r.rows[0] ?? null;
 }
+const isVersion = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 1;
+/** 재생성 기준이 그대로인지: 최신 version이 base이고 그 revision이 지금 입력 v1과 같다. */
+async function baseHolds(db: Pick<Db, "query">, userId: string, date: string, base: number, revisionV1: string): Promise<boolean> {
+  const latest = await findLatestStory(db, userId, date);
+  return latest !== null && latest.version === base && latest.sourceRevision === revisionV1;
+}
 const userActive = (u: UserRow | null, gen: number): boolean => u !== null && u.status === "active" && u.gen === String(gen);
 /** 현재 정책 버전·같은 동의 epoch·해당 종류 동의가 모두 유지되는지. */
 const consentHolds = (s: SettingsRow | null, kind: "manual" | "scheduled", revision: number): boolean =>
@@ -67,15 +77,19 @@ export async function requestManualStory(
   db: Db,
   subject: SessionSubject,
   date: string,
-  opts?: { now?: () => Date },
-): Promise<Result<{ jobId: string }, StoryRequestError>> {
+  opts?: { now?: () => Date; expectedStoryVersion?: unknown },
+): Promise<Result<{ jobId: string }, StoryRequestError | "conflict">> {
   if (!isStorySubject(subject)) return { ok: false, error: "not_signed_in" };
   const now = opts?.now?.() ?? new Date();
   if (parseLocalDate(date) === null || !(now instanceof Date) || Number.isNaN(now.getTime())) return { ok: false, error: "invalid_date" };
   const today = seoulLocalDate(now);
   if (date > today) return { ok: false, error: "invalid_date" };
+  // 생략하면 기존 일반 생성 그대로다. 주면 같은 입력 재생성이며 형식이 틀리면 conflict다.
+  const expected = opts?.expectedStoryVersion;
+  const regenerate = expected !== undefined;
+  if (regenerate && !isVersion(expected)) return { ok: false, error: "conflict" };
   try {
-    return await withTransaction(db, async (tx): Promise<Result<{ jobId: string }, StoryRequestError>> => {
+    return await withTransaction(db, async (tx): Promise<Result<{ jobId: string }, StoryRequestError | "conflict">> => {
       const user = await lockUser(tx, subject.userId);
       if (!userActive(user, subject.gen)) return { ok: false, error: "not_signed_in" };
       const settings = await readSettings(tx, subject.userId);
@@ -91,12 +105,19 @@ export async function requestManualStory(
       if (count.rows[0]!.n >= STORY_MANUAL_DAILY_MAX) return { ok: false, error: "limited" };
       const input = await captureStoryInputV2(tx, subject.userId, date);
       if (!input.ok) return { ok: false, error: input.error };
-      if (await findStoryByRevision(tx, subject.userId, date, input.value.revisionV1)) return { ok: false, error: "already_current" };
+      if (regenerate) {
+        // 재생성은 지금 최신 version이 화면의 version이고 그 글이 지금 조각으로 만든(current) 경우만이다. outdated는 일반 생성을 쓴다.
+        if (!(await baseHolds(tx, subject.userId, date, expected as number, input.value.revisionV1))) return { ok: false, error: "conflict" };
+        const inflight = await tx.query("SELECT 1 FROM pod.story_jobs WHERE user_id = $1::uuid AND state IN ('queued', 'running') LIMIT 1", [subject.userId]);
+        if ((inflight.rowCount ?? 0) > 0) return { ok: false, error: "busy" };
+      } else if (await findStoryByRevision(tx, subject.userId, date, input.value.revisionV1)) {
+        return { ok: false, error: "already_current" };
+      }
       const r = await tx.query<{ id: string }>(
-        `INSERT INTO pod.story_jobs (user_id, local_date, kind, state, source_revision, auth_generation, consent_version, consent_revision)
-         VALUES ($1::uuid, $2::date, 'manual', 'queued', $3, $4::bigint, $5, $6::bigint)
+        `INSERT INTO pod.story_jobs (user_id, local_date, kind, state, source_revision, auth_generation, consent_version, consent_revision, base_version)
+         VALUES ($1::uuid, $2::date, 'manual', 'queued', $3, $4::bigint, $5, $6::bigint, $7::integer)
          RETURNING id::text AS id`,
-        [subject.userId, date, input.value.revision, user!.gen, settings.consent_version, settings.consent_revision],
+        [subject.userId, date, input.value.revision, user!.gen, settings.consent_version, settings.consent_revision, regenerate ? expected : null],
       );
       return { ok: true, value: { jobId: r.rows[0]!.id } };
     });
@@ -104,6 +125,7 @@ export async function requestManualStory(
     const e = err as Partial<DatabaseError>;
     if (e?.code === "23505" && e.constraint === "story_jobs_one_inflight") return { ok: false, error: "busy" };
     if (e?.code === "23505" && e.constraint === "story_jobs_manual_once") return { ok: false, error: "already_current" };
+    if (e?.code === "23505" && e.constraint === "story_jobs_regen_once") return { ok: false, error: "already_current" };
     return { ok: false, error: "unavailable" };
   }
 }
@@ -199,7 +221,7 @@ export async function enqueueDueStories(db: Db, opts?: { now?: Date }): Promise<
 
 type JobRow = {
   id: string; user_id: string; local_date: string; kind: "manual" | "scheduled"; source_revision: string | null;
-  auth_generation: string; consent_version: number; consent_revision: string;
+  auth_generation: string; consent_version: number; consent_revision: string; base_version: number | null;
 };
 
 export async function claimStoryJob(db: Db): Promise<
@@ -216,7 +238,7 @@ export async function claimStoryJob(db: Db): Promise<
     const settings = await readSettings(tx, candidate.user_id);
     const job = (await tx.query<JobRow>(
       `SELECT id::text AS id, user_id::text AS user_id, local_date::text AS local_date, kind, source_revision,
-              auth_generation::text AS auth_generation, consent_version, consent_revision::text AS consent_revision
+              auth_generation::text AS auth_generation, consent_version, consent_revision::text AS consent_revision, base_version
          FROM pod.story_jobs WHERE id = $1::uuid AND state = 'queued' FOR UPDATE SKIP LOCKED`,
       [candidate.id],
     )).rows[0];
@@ -234,7 +256,12 @@ export async function claimStoryJob(db: Db): Promise<
       if (input.error === "no_input") return close("skipped", "no_input");
       return close("failed", input.error === "invalid_date" ? "invalid_input" : input.error);
     }
-    if (await findStoryByRevision(tx, job.user_id, job.local_date, input.value.revisionV1)) return close("skipped", "already_current");
+    if (job.base_version === null) {
+      if (await findStoryByRevision(tx, job.user_id, job.local_date, input.value.revisionV1)) return close("skipped", "already_current");
+    } else if (!(await baseHolds(tx, job.user_id, job.local_date, job.base_version, input.value.revisionV1))) {
+      // 재생성은 이미 current인 글을 다시 쓰는 요청이다. 요청 뒤 최신 version·입력이 바뀌었으면 보내지 않는다.
+      return close("failed", "input_changed");
+    }
     if (job.source_revision !== null && job.source_revision !== input.value.revision) return close("failed", "input_changed");
     const r = await tx.query<{ lease_token: string }>(
       `UPDATE pod.story_jobs
@@ -248,7 +275,7 @@ export async function claimStoryJob(db: Db): Promise<
       kind: "claimed",
       job: {
         id: job.id, userId: job.user_id, date: job.local_date, kind: job.kind, leaseToken: r.rows[0]!.lease_token,
-        gen, consentVersion: job.consent_version, consentRevision, input: input.value,
+        gen, consentVersion: job.consent_version, consentRevision, input: input.value, baseVersion: job.base_version,
       },
     } as const;
   });
@@ -277,6 +304,7 @@ export async function markStorySent(
     else {
       const input = await captureStoryInputV2(tx, job.userId, job.date);
       if (!input.ok || input.value.revision !== job.input.revision) error = "input_changed";
+      else if (isVersion(job.baseVersion) && !(await baseHolds(tx, job.userId, job.date, job.baseVersion, input.value.revisionV1))) error = "input_changed";
     }
     if (error !== null) {
       await tx.query(
@@ -335,9 +363,13 @@ export async function finishStoryJob(db: Db, job: ClaimedStoryJob, outcome: Stor
       const input = await captureStoryInputV2(tx, job.userId, job.date);
       if (!input.ok || input.value.revision !== job.input.revision) error = "input_changed";
       else {
-        const saved = await appendStoryVersionTx(tx, { userId: job.userId, gen: job.gen }, job.date, input.value.revisionV1, outcome.body);
+        const subject = { userId: job.userId, gen: job.gen };
+        // 재생성은 base 다음 version(origin ai)으로만 넣는다. 그 사이 최신 version이 바뀌었으면 conflict → input_changed(기존 글 보존).
+        const saved = isVersion(job.baseVersion)
+          ? await appendStoryVersionTx(tx, subject, job.date, input.value.revisionV1, outcome.body, { baseVersion: job.baseVersion, origin: "ai" })
+          : await appendStoryVersionTx(tx, subject, job.date, input.value.revisionV1, outcome.body);
         if (saved.ok) storyId = saved.value.story.id;
-        else error = "not_signed_in";
+        else error = saved.error === "conflict" ? "input_changed" : "not_signed_in";
       }
     }
     if (storyId !== null) {

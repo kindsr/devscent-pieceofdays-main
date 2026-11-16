@@ -1,21 +1,26 @@
 import Link from "next/link";
 import { dateLabel, seoulLocalDate, seoulTime } from "@/shared/local-date";
-import type { StoryDay, StoryGenerationView } from "@/shared/stories";
+import type { StoryDay, StoryEditActionResult, StoryGenerationView, StoryRegenerationActionResult } from "@/shared/stories";
+import { StoryControls } from "./StoryControls";
 
 /*
  * AI 하루 이야기 읽기 영역(PLAN_ai-daily-story-view §1·§2, docs/design/story). 화면 자료만 받는다.
  * - data=null은 읽기 실패다. 저장된 글은 React text로만 렌더한다(HTML 해석 없음).
- * - 수정·삭제 버튼은 없다. generation(생성 상태)이 주어질 때만 생성 버튼·진행·실패·한도 안내를 더한다
+ * - 삭제 버튼은 없다. generation(생성 상태)이 주어질 때만 생성 버튼·진행·실패·한도 안내를 더한다
  *   (PLAN_ai-story-live-generation §5). generation이 없으면 기존 읽기 화면과 같다.
  * - 버튼은 동의(ready 또는 재시도 가능한 실패)·조각 있음·현재 이야기가 아님일 때만 보인다(같은 입력의 유료 재생성 0).
+ * - 직접 수정·재생성(PLAN_story-edit-regenerate §3)은 선택 action props(editAction·regenerateAction)가 있을 때만 붙는다.
+ *   props가 없으면 기존 읽기 화면·버튼 수 그대로다. 재생성은 current + 조각 있음 + 직접 만들기 가능일 때 명시 확인 뒤에만 맡긴다.
  */
-export function DailyStory({ date, data, reflectionTime, hasMoments, generation = null, requestAction, headingLevel = 2 }: {
+export function DailyStory({ date, data, reflectionTime, hasMoments, generation = null, requestAction, editAction, regenerateAction, headingLevel = 2 }: {
   date: string;
   data: StoryDay | null;
   reflectionTime: string | null;
   hasMoments: boolean;
   generation?: StoryGenerationView | null;
   requestAction?: (formData: FormData) => void | Promise<void>;
+  editAction?: (input: { expectedVersion: number; body: string }) => Promise<StoryEditActionResult>;
+  regenerateAction?: (expectedVersion: number) => Promise<StoryRegenerationActionResult>;
   headingLevel?: 2 | 3;
 }) {
   const story = data?.story ?? null;
@@ -23,6 +28,10 @@ export function DailyStory({ date, data, reflectionTime, hasMoments, generation 
   const H = headingLevel === 3 ? "h3" : "h2";
   const id = `story-h-${date}`;
   const created = story ? new Date(story.createdAt) : null;
+  const controls = Boolean(editAction || regenerateAction);
+  const busy = generation?.state === "queued" || generation?.state === "running";
+  const canRegenerate = data?.state === "current" && hasMoments
+    && (generation?.state === "ready" || (generation?.state === "failed" && generation.canRetry));
   return (
     <section className="story" aria-labelledby={id}>
       <H id={id}>AI 하루 이야기</H>
@@ -36,14 +45,28 @@ export function DailyStory({ date, data, reflectionTime, hasMoments, generation 
       ) : story && created ? (
         <>
           <p className="hint">
+            {story.edited ? "직접 다듬은 글이에요. " : null}
             {data.state === "current"
-              ? "AI가 이날 조각의 메모로 쓴 글이에요. 원본 조각은 아래에 그대로 있어요."
+              ? story.edited ? "원본 조각은 아래에 그대로 있어요." : "AI가 이날 조각의 메모로 쓴 글이에요. 원본 조각은 아래에 그대로 있어요."
               : hasMoments
                 ? "이 이야기를 만든 뒤 조각이 바뀌었어요. 지금 조각과 다를 수 있어요."
                 : "이 날의 조각을 모두 지웠지만, 이전에 만든 이야기는 남아 있어요."}
-            {` · ${dateLabel(seoulLocalDate(created))} ${seoulTime(created)}에 만들었어요`}
+            {` · ${dateLabel(seoulLocalDate(created))} ${seoulTime(created)}에 ${story.edited ? "고쳤어요" : "만들었어요"}`}
           </p>
-          <p className="story-body">{story.body}</p>
+          {controls ? (
+            <StoryControls
+              key={story.id}
+              date={date}
+              version={story.version}
+              body={story.body}
+              busy={busy}
+              canRegenerate={canRegenerate}
+              editAction={editAction}
+              regenerateAction={regenerateAction}
+            />
+          ) : (
+            <p className="story-body">{story.body}</p>
+          )}
         </>
       ) : generation && generation.state !== "off" && generation.state !== "unavailable" ? (
         <p className="hint">아직 만든 AI 하루 이야기가 없어요. 남긴 조각은 그대로 저장돼요.</p>
