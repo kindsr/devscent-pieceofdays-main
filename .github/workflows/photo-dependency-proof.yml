@@ -1,0 +1,49 @@
+name: Prove isolated photo dependencies
+
+# Compatibility spike only. No product changes, deployment, credentials or S3 requests.
+on:
+  pull_request:
+    branches: [dev, main]
+    paths: [".github/workflows/photo-dependency-proof.yml", "app/tests/support/photo-dependency-proof.mjs"]
+
+permissions:
+  contents: read
+
+jobs:
+  photo-dependency-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    env:
+      POD_FULL_CHECK_ISOLATED: "1"
+    steps:
+      # Official pins reused from app-validation.yml.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+      - name: Generate and prove the temporary app lock
+        id: proof
+        run: node tests/support/photo-dependency-proof.mjs
+      # Official actions/upload-artifact v7 pin, checked 2026-11-10.
+      - name: Upload exactly the two approved package files
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: photo-dependency-lock-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 3
+          compression-level: 0
+          path: |
+            ${{ steps.proof.outputs.artifact_dir }}/package.json
+            ${{ steps.proof.outputs.artifact_dir }}/package-lock.json
+      - name: Remove this run's owned artifact directory
+        if: always()
+        env:
+          POD_PHOTO_ARTIFACT_DIR: ${{ steps.proof.outputs.artifact_dir }}
+        run: node tests/support/photo-dependency-proof.mjs --cleanup-output
