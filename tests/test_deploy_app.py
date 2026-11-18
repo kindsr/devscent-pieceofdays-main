@@ -219,7 +219,7 @@ class ParseAppRequestTests(unittest.TestCase):
         require(self, "parse_app_request")
         rejected = [
             f"deploy-app production {SHA} {TREE} {MANIFEST} {CONFIG}",
-            "revert-static production",
+            # "revert-static production"은 PLAN_production-app-deployment §2의 정당한 새 문법이다(tests/test_deploy_prod_app.py).
             f"deploy-app dev {SHA} {TREE} {MANIFEST}",
             f"deploy-app dev {SHA} {TREE} {MANIFEST} {CONFIG} extra",
             f"deploy-app dev {SHA.upper()} {TREE} {MANIFEST} {CONFIG}",
@@ -2271,7 +2271,9 @@ class MainConfigTests(unittest.TestCase):
         mocks["deploy_app"].assert_not_called()
 
     def test_app_keys_in_the_production_entry_are_refused(self):
-        for key, value in APP_SETTINGS_KEYS.items():
+        # PLAN_production-app-deployment §3: 운영 entry는 이제 자신의 앱 settings(prod_db 등)를 가진다.
+        # dev 전용 키만 운영 entry에서 계속 거부한다(운영 키 시험은 tests/test_deploy_prod_app.py).
+        for key, value in ((k, v) for k, v in APP_SETTINGS_KEYS.items() if k == "dev_db"):
             with self.subTest(key=key):
                 self.config["environments"]["production"] = {**self.config["environments"]["production"], key: value}
                 self.mocks()

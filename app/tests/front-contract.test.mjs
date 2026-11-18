@@ -11,7 +11,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { expect } from "@playwright/test";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { ANCESTOR_HIDDEN_HEADERS, APP_DIR, BASE, BASIC, PROVIDERS, RELAY_BUCKET, STORAGE_ACCESS, FrontHarness, callbackInput, command, docker, hash, protect, request, values } from "./support/front-harness.mjs";
+import { ANCESTOR_HIDDEN_HEADERS, APP_DIR, BASE, BASIC, PROD_BUCKET, PROD_SNIPPET, PROD_SNIPPET_INCLUDE, PROVIDERS, RELAY_BUCKET, STORAGE_ACCESS, FrontHarness, callbackInput, command, docker, hash, protect, request, values } from "./support/front-harness.mjs";
 
 const h = new FrontHarness();
 const OPTIONS = { timeout: 300_000 };
@@ -136,6 +136,7 @@ test("01 exact helper configuration and the complete outer fragment pass real ng
     assert.doesNotMatch(body, /\b(add_header|auth_basic|auth_basic_user_file|allow|deny|satisfy|return|rewrite)\s/, "photo proposal inherits server security and does not bypass Basic/IP");
   }
   await relayContract(t);
+  await prodRelayContract(t);
 });
 
 // PLAN_dev-minio-story-runtime §1.1~1.3 inside the existing #01 (fourteen cases are kept).
@@ -233,6 +234,91 @@ async function relayContract(t) {
   }
   assert.equal((await h.frontRequest("/try/")).status, 200, "public80 still serves after relay traffic");
   t.diagnostic("relay: absent-storage 502, SDK Put/Get/Delete/NoSuchKey, other-bucket/method/query/encoding 403, unsigned forwarded, logs clean");
+}
+
+// PLAN_production-app-deployment §4 inside the existing #01 (fourteen cases are kept): signed SDK traffic through
+// the real production edge snippet → production front 8081 relay → storage. Host and the raw URI cross both hops
+// unchanged (SigV4 verifies); only the production bucket's photos/<uuid>.jpg object operations pass; nothing is logged.
+function prodEdgeHeaders(r, label) {
+  for (const [name, expected] of [["X-Robots-Tag", ["noindex, nofollow"]], ["X-Frame-Options", ["SAMEORIGIN"]],
+    ["X-Content-Type-Options", ["nosniff"]], ["Referrer-Policy", ["strict-origin-when-cross-origin"]],
+    ["Strict-Transport-Security", ["max-age=31536000"]], ["X-Powered-By", []]]) {
+    assert.deepEqual(values(r.rawHeaders, name), expected, `${label}: production edge ${name} is exactly the snippet's single server value`);
+  }
+}
+async function prodRelayContract(t) {
+  assert.equal(typeof h.trusted.prod, "string", "scripts/ops/deploy.py must define front_nginx_conf(env='production') (production front conf; not implemented yet)");
+  assert.ok(existsSync(PROD_SNIPPET), "deploy/nginx/snippets/prod-app-locations.conf must exist (production edge snippet; not implemented yet)");
+  assert.notEqual(h.trusted.prod, h.trusted.conf, "the production front conf is separate from the unchanged dev conf");
+  await h.prodTwoHop();
+  for (const name of [h.names.prodFront, h.names.prodOuter]) await docker(["exec", name, "nginx", "-t"]);
+  assert.equal((await docker(["exec", h.names.prodFront, "cat", "/etc/nginx/conf.d/default.conf"])).stdout, h.trusted.prod, "production front runs the exact helper conf");
+  assert.equal((await docker(["exec", h.names.prodOuter, "cat", PROD_SNIPPET_INCLUDE])).stdout, readFileSync(PROD_SNIPPET, "utf8"), "the public production snippet is included verbatim");
+  assert.equal(hash(readFileSync(PROD_SNIPPET)), h.prodSnippetHash);
+
+  const client = h.prodClient();
+  try {
+    let ready = false;
+    for (let n = 0; n < 240 && !ready; n++) {
+      try { await client.send(new GetObjectCommand({ Bucket: PROD_BUCKET, Key: relayKey() }), { abortSignal: AbortSignal.timeout(2000) }); }
+      catch (error) { ready = sdkStatus(error) === 404; }
+      if (!ready) await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.ok(ready, "signed GET of a missing key reaches storage through both hops (NoSuchKey)");
+    const key = relayKey();
+    const bytes = randomBytes(4 * 1024 * 1024);
+    await client.send(new PutObjectCommand({ Bucket: PROD_BUCKET, Key: key, Body: bytes, ContentLength: bytes.length, ContentType: "image/jpeg" }), { abortSignal: AbortSignal.timeout(20_000) });
+    const got = await client.send(new GetObjectCommand({ Bucket: PROD_BUCKET, Key: key }), { abortSignal: AbortSignal.timeout(20_000) });
+    assert.equal(hash(Buffer.from(await got.Body.transformToByteArray())), hash(bytes), "4MiB object roundtrip through edge + front relay");
+    await client.send(new DeleteObjectCommand({ Bucket: PROD_BUCKET, Key: key }), { abortSignal: AbortSignal.timeout(10_000) });
+    let deleted;
+    try { await client.send(new GetObjectCommand({ Bucket: PROD_BUCKET, Key: key }), { abortSignal: AbortSignal.timeout(10_000) }); }
+    catch (error) { deleted = error; }
+    assert.equal(sdkStatus(deleted), 404, "deleted key is NoSuchKey through both hops");
+    const wrong = h.prodClient("ci-only-wrong-secret");
+    try {
+      let refusal;
+      try { await wrong.send(new GetObjectCommand({ Bucket: PROD_BUCKET, Key: relayKey() }), { abortSignal: AbortSignal.timeout(10_000) }); }
+      catch (error) { refusal = error; }
+      assert.ok([401, 403].includes(sdkStatus(refusal)), "a wrong signature is refused by storage (neither hop adds authority)");
+    } finally { wrong.destroy(); }
+  } finally { client.destroy(); }
+
+  const id = protect(randomUUID());
+  const object = `/${PROD_BUCKET}/photos/${id}.jpg`;
+  for (const [method, target] of [["GET", `${object}?x-id=GetObject`], ["PUT", `${object}?x-id=PutObject`], ["DELETE", `${object}?x-id=DeleteObject`]]) {
+    const r = await h.prodEdgeRequest(target, { method, ...(method === "PUT" ? { body: Buffer.from("ci-only-unsigned"), headers: { "Content-Type": "image/jpeg" } } : {}) });
+    storageRefusedAnonymous(r, `prod ${method} ${target.replace(id, "<id>")}`);
+    prodEdgeHeaders(r, `prod ${method}`);
+  }
+  const upper = id.toUpperCase();
+  for (const [method, target] of [
+    ["GET", `${object}?x-id=PutObject`], ["PUT", `${object}?x-id=GetObject`], ["POST", object], ["GET", `${object}?x-id=GetObject&ci-only=1`],
+    ["GET", `/${PROD_BUCKET}/photos/${upper}.jpg`], ["GET", `/${PROD_BUCKET}/other/${id}.jpg`], ["GET", `/${PROD_BUCKET}/photos/${id}.png`],
+    ["GET", `/${PROD_BUCKET}/photos/%2e%2e/photos/${id}.jpg`], ["GET", `/${PROD_BUCKET}//photos/${id}.jpg`], ["GET", `/${PROD_BUCKET}/?list-type=2`],
+  ]) {
+    const r = await h.prodEdgeRequest(target, { method });
+    relayRefused(r, `prod ${method} ${target.replace(id, "<id>").replace(upper, "<ID>")}`);
+    prodEdgeHeaders(r, `prod refusal ${method}`);
+  }
+  // The dev bucket is not an edge photo route in production: it falls to the production front's public 404.
+  // A separate id: this ordinary (non-photo) edge path is legitimately access-logged, unlike the sentinels below.
+  const devBucket = await h.prodEdgeRequest(`/${RELAY_BUCKET}/photos/${randomUUID()}.jpg`);
+  assert.equal(devBucket.status, 404, "dev bucket path is not relayed in production");
+  assert.doesNotMatch(devBucket.body.toString("utf8"), /<\?xml|<Error>/, "never forwarded to storage");
+  const big = await h.prodEdgeRequest(`${object}?x-id=PutObject`, { method: "PUT", body: Buffer.alloc(5 * 1024 * 1024 + 1), headers: { "Content-Type": "image/jpeg" } });
+  assert.equal(big.status, 413, "edge relay limit 5m");
+
+  // Positive control: an ordinary edge path IS logged by the outer, so absence below is meaningful.
+  const marker = `/ci-prod-log-control-${randomUUID()}`;
+  await h.prodEdgeRequest(marker);
+  const outerLog = await h.currentLog("prodOuter");
+  assert.ok(outerLog.stdout.includes(marker), "outer access log collection works for non-photo paths");
+  const sentinels = [id, upper, STORAGE_ACCESS, "x-id=", `/${PROD_BUCKET}/`];
+  for (const record of [outerLog, await h.currentLog("prodFront")]) for (const stream of ["stdout", "stderr"]) for (const sentinel of sentinels) {
+    assert.ok(!record[stream].includes(sentinel), `${record.sink}/${stream}: production relay sentinel absent`);
+  }
+  t.diagnostic(`production 2-hop: snippet sha256 ${h.prodSnippetHash}; SDK Put/Get/Delete through edge+front, refusals 403/404/413, single security headers, logs clean`);
 }
 
 test("02 actual Next with no providers: login preparation and configuration-before-Origin 503", OPTIONS, async () => {
