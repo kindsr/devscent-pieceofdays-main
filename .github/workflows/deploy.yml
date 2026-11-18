@@ -65,7 +65,7 @@ jobs:
             -o IdentityAgent=none -o ForwardAgent=no -o ClearAllForwardings=yes
             -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "probe $DEPLOY_ENV"
-          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "deploy $DEPLOY_ENV $DEPLOY_SHA"
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "deploy-app $DEPLOY_ENV $DEPLOY_SHA"
 
   workflow-contracts:
     runs-on: ubuntu-latest

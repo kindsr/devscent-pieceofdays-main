@@ -6,6 +6,30 @@
 이 문서는 공개 저장소용 요약이다. 서버 경로·설정 파일·설치·접속·백업·인증서·프록시의 상세 운영 절차는
 비공개 운영 문서가 정본이며 메인 담당이 관리한다. 이 저장소에 서버 내부 값을 다시 적지 않는다.
 
+## 운영 앱 승격 (2026-11-18)
+
+사용자 운영 배포 요청에 따라 [운영 앱 계획](../docs/plans/PLAN_production-app-deployment.md)을 추가했다.
+아래의 초기 정적 배포·migration2 설명은 구축 당시 이력이다. 현재 dev는 이야기 수정·재생성까지
+제공하는 로그인 앱이며 스키마는7이다. 운영 전환 성공은 별도 Actions·서버·HTTPS 근거로 판정한다.
+
+- main 배포 명령은 `deploy-app production <main SHA>`다. 서버가 최신 main tree와 성공한
+  dev 앱 기록을 대조하고, 같은 로컬 앱 image ID와 manifest/config digest를 사용한다.
+  front는 같은 tree에서 운영 origin과 relay 설정으로 빌드한다. 운영에서 앱 재빌드·registry pull·
+  자동 DB migration은 하지 않는다.
+- 기록의 `sha`는 운영 main SHA, `app_source_sha`는 실제 이미지의 dev revision이다.
+  둘을 혼동하지 않고 복원할 때도 이미지 출처를 검증한다. dev 기록 형식은 유지한다.
+- 운영은 별도 DB/역할·세션 키·사진 버킷/계정·worker token을 사용하고 dev 기록을 복사하지 않는다.
+  `POD_DATABASE_POOL_MAX`는 미설정 시 기존5, 정규1..5만 허용한다. 운영은 신뢰 설정과 정확히
+  일치하는 값이 필수다. 현재 운영 계획은 pool3+readiness1이며 다른 서비스 한도는 바꾸지 않는다.
+- 운영 사진은 HTTPS endpoint와 비공개 IAM을 사용한다. dev HTTP 예외는 운영에서 거부한다.
+  `prod-app-locations.conf`는 운영 HTTPS server 전용으로 별도 설치하며 callback·사진 경로의
+  로그, 본문 크기, 헤더 상속과 원문 URI/Host를 검증한다. 다른 vhost·TLS는 변경하지 않는다.
+- 첫 전환 직전 정적 기록을 보존한다. 장애 시 동결 이미지로 복귀하고 직접 확인한다.
+  수동 복귀는 운영 enable off 후 `revert-static production`이며 DB·사진은 지우지 않는다.
+  사용자 응답 대기나 시간 경과만으로 자동 복귀하지 않는다.
+- Google만 활성화하며 사용자별 AI 수동/자동 동의는 기본 off다. 실제 Google 로그인 완료와
+  기술 preflight를 구분한다. 탈퇴 gate는 기존처럼 닫아 두며 30일 purge 실행 검증과 함께 별도 활성화한다.
+
 ## 반영 흐름
 
 2026-11-12 사용자 지시로 **dev 로그인 앱을 지속 제공**한다. 이전 첫 전환 계획의 30분 상한과 실제 Google 검증 미완료만을 이유로 하는 정적 복귀를 폐기한다. 배포 실패 시 helper의 복귀와 인증·접근 제한·민감값 비기록 검사는 유지한다. 실제 Google/B5 미확인 항목은 개발 환경에서 계속 검증하며 운영 승격 완료로 표시하지 않는다. AI 수동·회고 시각 생성은 개인별 명시 동의와 검토된 dev 소비자로 처리한다.

@@ -36,7 +36,7 @@ Google만 활성화하고 AI 공급자 키는 이 서비스 전용 기존 키를
 - 기존 dev 상수/함수 기본값을 유지하고 환경별 map과 명시적 env 인자를 추가한다.
   전역 변수를 실행 도중 바꾸지 않는다.
 - 운영 front 서비스/컨테이너는 기존 edge upstream 이름 `pieceofdays-comingsoon`,
-  앱은 `pieceofdays-app`, front/egress는 dev와 다른 전용 네트워크다.
+  앱은 `pieceofdays-app`, `pieceofdays-prod-front`/`pieceofdays-prod-egress`는 dev와 다른 전용 네트워크다.
   app은 front+db+egress, front만 edge에 연결하며 host port는 없다.
 - front는 동일 source tree의 정적 자료와 운영 origin/upstream/relay conf로 빌드한다.
   dev front conf 바이트와 dev 응답 계약은 유지한다.
@@ -98,7 +98,7 @@ Google만 활성화하고 AI 공급자 키는 이 서비스 전용 기존 키를
 
 - [x] 현재 dev/production 기록·설치 helper hash 읽기 확인
 - [x] 공개 소스 조사 3개와 main Google 운영 URI 수락 preflight(실로그인 아님)
-- [ ] RED 작성·동일 SHA CI에서 유효 실패 회수
+- [x] RED 작성·동일 SHA CI에서 유효 실패 회수(866cc5d, root156/구조128/unit384/parity29/front14)
 - [ ] GREEN·독립 source/CI·dev 배포
 - [ ] 운영 DB/IAM/env/helper/nginx·후보 점검
 - [ ] 동일 tree main 승격·실제 운영 점검·소비자·기록 동기화
