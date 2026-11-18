@@ -723,14 +723,15 @@ class PromoteAppTransitionTests(PromoteFlowBase):
 
 
 class PromoteAppRefusalTests(PromoteFlowBase):
-    def refused(self, exc=Exception):
+    def refused(self, exc=Exception, expected_dev=None):
+        """expected_dev: 시험 hook이 실행 중 dev 기록을 바꾸는 사례에서, 거부 뒤 dev 파일이 가져야 할 정확한 바이트를 돌려주는 함수."""
         before = self.read_json(self.prod_current)
         dev_before = self.dev_snapshot()
         with self.assertRaises(exc):
             self.promote()
         self.assert_no_prod_switch(before)
         self.assertEqual(self.prod_release_dirs(), [], "no production release directory")
-        self.assertEqual(self.dev_snapshot(), dev_before)
+        self.assertEqual(self.dev_snapshot(), dev_before if expected_dev is None else expected_dev(dev_before), "the promotion never writes dev records")
         self.assertFalse(self.prod_static_last.exists(), "static-last is frozen only right before a real switch")
         for text in (self.stdout, self.stderr):
             assert_no_prod_secret(self, text, "output")
@@ -755,8 +756,16 @@ class PromoteAppRefusalTests(PromoteFlowBase):
 
     def test_dev_basis_is_rechecked_right_before_the_switch(self):
         other = self.app_record(sha=DEV_SHA, tree=OTHER_TREE, release=DEV_SHA + "-" + "c" * 32, manifest=MANIFEST, config=CONFIG, app_id=APP_ENGINE_ID, front=OLD_FRONT_IMAGE)
-        self.after_build = lambda: self.write_json(self.current, other)
-        self.refused(ValueError)
+        self.hook_bytes = None
+
+        def change_dev_basis():
+            self.write_json(self.current, other)
+            self.hook_bytes = self.current.read_bytes()
+
+        self.after_build = change_dev_basis
+        # dev 기록은 시험 hook만 바꾼다. 거부 뒤 dev-current는 hook이 쓴 바이트와 정확히 같아야 한다(승격이 덮어쓰거나 되돌리지 않는다).
+        self.refused(ValueError, expected_dev=lambda before: {**before, self.current.name: self.hook_bytes})
+        self.assertIsNotNone(self.hook_bytes, "the change happened after the front build, i.e. between the first check and the switch")
 
     def test_image_revision_tree_and_migration_fences(self):
         cases = {
