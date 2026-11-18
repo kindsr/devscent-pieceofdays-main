@@ -45,6 +45,8 @@ PROD_APP = "pieceofdays-app"
 PROD_FRONT_NETWORK = "pieceofdays-prod-front"
 PROD_EGRESS_NETWORK = "pieceofdays-prod-egress"
 PROD_BUCKET = "pieceofdays-photos"
+# 운영 정적(준비중) 이미지가 실제로 내는 루트 본문. 정적 기록의 serving_html_sha256과 짝이다.
+COMINGSOON_HTML = b"<!doctype html><title>coming soon</title>\n"
 PROD_SESSION_KEY = "ci-only-prod-session-key-1-".ljust(40, "p")
 PROD_DB_PASSWORD = "ci-only-prod-db-pass"
 PROD_PHOTO_SECRET = "ci-only-prod-photo-secret+/==value"
@@ -546,7 +548,7 @@ class PromoteFlowBase(base.AppFlowBase):
         base.write_private(compose_path, json.dumps(deploy.runtime_compose("production", image)), 0o600)
         return {
             "status": "success", "sha": sha, "tree": tree, "image_id": image,
-            "serving_html_sha256": sha256_hex(b"<!doctype html><title>coming soon</title>\n"),
+            "serving_html_sha256": sha256_hex(COMINGSOON_HTML),
             "compose_path": str(compose_path), "compose_sha256": sha256_hex(compose_path.read_bytes()),
             "timestamp": "2026-11-04T00:00:00+00:00",
         }
@@ -560,6 +562,17 @@ class PromoteFlowBase(base.AppFlowBase):
                 self.after_build()
             return ""
         joined = " ".join(args)
+        # 운영 정적 rollback snapshot: 정적 운영 이미지(OLD_FRONT_IMAGE) 컨테이너의 루트 요청만 준비중 본문을 낸다.
+        # 기존 fake는 이미지와 관계없이 루트에 DEV_INDEX를 내므로, 정상 snapshot 후보 검증(본문 hash 대조)이 항상 불일치였다.
+        # 다른 이미지·/try/·healthz 응답은 그대로라서, 다른 이미지로 후보를 띄우면 계속 불일치로 실패한다.
+        if os.path.basename(args[0]) == "docker" and len(args) > 1 and args[1] in ("exec", "run") and "http://127.0.0.1:80/" in joined and "/try/" not in joined:
+            if args[1] == "exec":
+                name = next((a for a in args[2:] if a in self.containers), None)
+                image = self.containers.get(name)
+            else:
+                image = self.known_image(args) if "--rm" in args else None
+            if image == OLD_FRONT_IMAGE:
+                return COMINGSOON_HTML
         if os.path.basename(args[0]) == "docker" and "{{json .}}" in joined and (APP_ENGINE_ID in joined or base.APP_REPO in joined):
             info = base.app_inspect(sha=self.image_sha, tree=self.image_tree, manifest=MANIFEST, engine_id=APP_ENGINE_ID)
             info["Config"]["Labels"]["pod.migrations.latest"] = self.image_migrations
