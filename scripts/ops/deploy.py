@@ -34,7 +34,7 @@ HEALTH = {"test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || ex
 SAFE_ENV = {"PATH": "/usr/bin:/bin", "HOME": str(HOME), "LANG": "C.UTF-8", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_TERMINAL_PROMPT": "0", "DOCKER_CONFIG": str(STATE / "docker-config")}
 PHASE = "request"
 
-# --- dev app mode (F6b). Only the dev environment can use these; production stays static. ---
+# --- dev app mode (F6b). Production app mode uses the PROD_* constants and APP_ENVIRONMENTS below. ---
 APP_IMAGE_REPOSITORY = "ghcr.io/kindsr/devscent-pieceofdays-main-app"
 APP_SOURCE_URL = "https://github.com/kindsr/devscent-pieceofdays-main"
 DOCKER = "/usr/bin/docker"
@@ -68,7 +68,9 @@ APP_ENV_PHOTOS = ("POD_PHOTOS_S3_ENDPOINT", "POD_PHOTOS_S3_REGION", "POD_PHOTOS_
 APP_ENV_RELAY_FLAG = "POD_PHOTOS_INTERNAL_DEV_HTTP"
 APP_ENV_RELAY_BUCKET = "pieceofdays-photos-dev"
 APP_ENV_STORY = ("ANTHROPIC_API_KEY", "POD_STORY_WORKER_TOKEN")
-APP_ENV_KEYS = frozenset(APP_ENV_REQUIRED + APP_ENV_PHOTOS + ("POD_WITHDRAWAL_ENABLED", APP_ENV_RELAY_FLAG) + APP_ENV_STORY + tuple("POD_AUTH_%s_CLIENT_%s" % (p.upper(), part) for p in APP_ENV_PROVIDERS for part in ("ID", "SECRET")))
+# PLAN_production-app-deployment §3: optional app Pool size (unset = the image default 5), required in production.
+APP_ENV_POOL = "POD_DATABASE_POOL_MAX"
+APP_ENV_KEYS = frozenset(APP_ENV_REQUIRED + APP_ENV_PHOTOS + ("POD_WITHDRAWAL_ENABLED", APP_ENV_RELAY_FLAG, APP_ENV_POOL) + APP_ENV_STORY + tuple("POD_AUTH_%s_CLIENT_%s" % (p.upper(), part) for p in APP_ENV_PROVIDERS for part in ("ID", "SECRET")))
 APP_ENV_MAX_BYTES = 64 * 1024
 IMAGE_ENV_FIXED = {"NODE_ENV": "production", "NEXT_TELEMETRY_DISABLED": "1", "PORT": "3000", "HOSTNAME": "0.0.0.0"}
 IMAGE_ENV_FREE = frozenset({"PATH", "NODE_VERSION", "YARN_VERSION"})
@@ -142,6 +144,39 @@ DEV_FRONT_RELAY_NGINX_CONF = (
     "}\n"
 )
 
+# --- production app mode (PLAN_production-app-deployment). The dev constants above keep their bytes. ---
+PROD_PROJECT = "devscent-pieceofdays-main"
+PROD_FRONT_SERVICE = "pieceofdays-comingsoon"  # the existing edge upstream name
+PROD_APP_SERVICE = "pieceofdays-app"
+PROD_FRONT_NETWORK = "pieceofdays-prod-front"
+PROD_EGRESS_NETWORK = "pieceofdays-prod-egress"
+PROD_ORIGIN = "https://pieceofdays.com"
+PROD_PHOTO_ENDPOINT = PROD_ORIGIN + "/"
+PROD_PHOTO_BUCKET = "pieceofdays-photos"
+# Same policy as dev with only the fixed host, app upstream and relay bucket substituted.
+PROD_FRONT_NGINX_CONF = DEV_FRONT_NGINX_CONF.replace("dev.pieceofdays.com", "pieceofdays.com").replace("http://pieceofdays-app-dev:3000", "http://" + PROD_APP_SERVICE + ":3000")
+PROD_FRONT_RELAY_NGINX_CONF = DEV_FRONT_RELAY_NGINX_CONF.replace("/" + APP_ENV_RELAY_BUCKET + "/", "/" + PROD_PHOTO_BUCKET + "/")
+PROD_APP_SETTINGS = (APP_SETTINGS - {"dev_db"}) | {"prod_db", "app_pool_max", "approved_migrations"}
+PROD_APP_RECORD_KEYS = APP_RECORD_KEYS | {"app_source_sha"}
+APP_ENVIRONMENTS = {
+    "dev": {"project": DEV_PROJECT, "front": FRONT_SERVICE, "app": APP_SERVICE, "front_network": FRONT_NETWORK, "egress_network": EGRESS_NETWORK,
+            "origin": DEV_ORIGIN, "health_url": APP_HEALTH_URL, "login_url": APP_LOGIN_URL, "db_key": "dev_db", "settings": APP_SETTINGS,
+            "record_keys": APP_RECORD_KEYS, "front_conf": DEV_FRONT_NGINX_CONF + DEV_FRONT_RELAY_NGINX_CONF},
+    "production": {"project": PROD_PROJECT, "front": PROD_FRONT_SERVICE, "app": PROD_APP_SERVICE, "front_network": PROD_FRONT_NETWORK, "egress_network": PROD_EGRESS_NETWORK,
+                   "origin": PROD_ORIGIN, "health_url": PROD_ORIGIN + "/try/", "login_url": PROD_ORIGIN + "/login", "db_key": "prod_db", "settings": PROD_APP_SETTINGS,
+                   "record_keys": PROD_APP_RECORD_KEYS, "front_conf": PROD_FRONT_NGINX_CONF + PROD_FRONT_RELAY_NGINX_CONF},
+}
+
+
+def app_environment(env):
+    if not isinstance(env, str) or env not in APP_ENVIRONMENTS:
+        raise ValueError("unknown app environment")
+    return APP_ENVIRONMENTS[env]
+
+
+def front_nginx_conf(env="dev"):
+    return app_environment(env)["front_conf"]
+
 
 def is_hex(value, length=40):
     return isinstance(value, str) and re.fullmatch("[0-9a-f]{%d}" % length, value) is not None
@@ -156,12 +191,15 @@ def parse_request(command):
 
 def parse_app_request(command):
     if isinstance(command, str):
-        if command == "revert-static dev":
-            return ("revert-static", "dev")
+        if command in ("revert-static dev", "revert-static production"):
+            return ("revert-static", command.split(" ")[1])
         match = re.fullmatch(r"deploy-app dev ([0-9a-f]{40}) ([0-9a-f]{40}) (sha256:[0-9a-f]{64}) (sha256:[0-9a-f]{64})", command)
         if match is not None:
             return ("deploy-app", "dev") + match.groups()
-    raise ValueError("expected deploy-app dev <sha> <tree> <manifest digest> <config digest> or revert-static dev")
+        match = re.fullmatch(r"deploy-app production ([0-9a-f]{40})", command)
+        if match is not None:
+            return ("deploy-app", "production", match.group(1))
+    raise ValueError("expected deploy-app dev <sha> <tree> <manifest digest> <config digest>, deploy-app production <sha> or revert-static <dev|production>")
 
 
 def validate_compose(data, env):
@@ -395,6 +433,8 @@ def deploy(env, sha, settings):
     previous = read_json(current_path if current_path.exists() else settings["bootstrap_record"])
     if env == "dev" and dev_record_mode(previous) != "static":
         raise ValueError("dev is in app mode; static deploy is refused (use revert-static dev first)")
+    if env == "production" and dev_record_mode(previous) != "static":
+        raise ValueError("production is in app mode; static deploy is refused (use revert-static production first)")
     previous = validate_record(previous, env)
     if previous["sha"] == sha:
         if env == "production":
@@ -524,22 +564,31 @@ def dedicated_subnets(settings):
 
 
 def validate_db_network(value):
-    if not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", value) is None or value in {"edge", "none", "host", "bridge", FRONT_NETWORK, EGRESS_NETWORK}:
+    if not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", value) is None or value in {"edge", "none", "host", "bridge", FRONT_NETWORK, EGRESS_NETWORK, PROD_FRONT_NETWORK, PROD_EGRESS_NETWORK}:
         raise ValueError("db_network must be the name of a separate external network")
     return value
 
 
-def validate_app_settings(settings, require_enabled):
-    if not isinstance(settings, dict) or APP_SETTINGS - set(settings):
-        raise ValueError("dev app settings are incomplete")
+def is_pool_max(value):
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 5
+
+
+def validate_app_settings(settings, require_enabled, env="dev"):
+    spec = app_environment(env)
+    if not isinstance(settings, dict) or spec["settings"] - set(settings):
+        raise ValueError(env + " app settings are incomplete")
+    if ((APP_SETTINGS | PROD_APP_SETTINGS) - spec["settings"]) & set(settings):
+        raise ValueError(env + " app settings contain another environment's keys")
     if not isinstance(settings["app_mode_enabled"], bool) or (require_enabled and settings["app_mode_enabled"] is not True):
-        raise ValueError("dev app mode is not enabled")
+        raise ValueError(env + " app mode is not enabled")
     env_file = settings["app_env_file"]
     if not isinstance(env_file, str) or "\x00" in env_file or not os.path.isabs(env_file) or os.path.normpath(env_file) != env_file:
         raise ValueError("app_env_file must be a normalized absolute path")
-    if settings["app_health_url"] != APP_HEALTH_URL or settings["server_arch"] != "amd64":
+    if settings["app_health_url"] != spec["health_url"] or settings["server_arch"] != "amd64":
         raise ValueError("unexpected app health URL or server architecture")
-    for key in ("app_role", "dev_db"):
+    if env == "production" and (not is_pool_max(settings["app_pool_max"]) or not is_positive_int(settings["approved_migrations"])):
+        raise ValueError("app_pool_max must be an integer 1..5 and approved_migrations a positive integer")
+    for key in ("app_role", spec["db_key"]):
         if not isinstance(settings[key], str) or re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", settings[key]) is None:
             raise ValueError(key + " must be a plain PostgreSQL identifier")
     if not isinstance(settings["db_host"], str) or re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", settings["db_host"]) is None:
@@ -556,10 +605,11 @@ def deployment_ids():
     return uid, gid
 
 
-def release_path(release_id):
+def release_path(release_id, env="dev"):
+    app_environment(env)
     if not isinstance(release_id, str) or re.fullmatch(RELEASE_RE, release_id) is None:
         raise ValueError("invalid release id")
-    return STATE / "releases" / "dev" / release_id
+    return STATE / "releases" / env / release_id
 
 
 def read_private_file(path, limit):
@@ -616,8 +666,9 @@ def unique_json_object(pairs):
     return data
 
 
-def validate_app_env(text, settings):
+def validate_app_env(text, settings, env="dev"):
     """Strict KEY=VALUE subset that Node --env-file reads verbatim. Errors name keys or lines, never values."""
+    spec = app_environment(env)
     if not isinstance(text, str):
         raise ValueError("app env must be text")
     if text.startswith("﻿"):
@@ -644,8 +695,20 @@ def validate_app_env(text, settings):
     for key in APP_ENV_REQUIRED:
         if key not in values:
             raise ValueError("app env: missing key: " + key)
-    if values["POD_AUTH_BASE_URL"] != DEV_ORIGIN:
-        raise ValueError("app env: POD_AUTH_BASE_URL must be the exact dev origin")
+    if values["POD_AUTH_BASE_URL"] != spec["origin"]:
+        raise ValueError("app env: POD_AUTH_BASE_URL must be the exact " + env + " origin")
+    if APP_ENV_POOL in values and re.fullmatch(r"[1-5]", values[APP_ENV_POOL]) is None:
+        raise ValueError("app env: " + APP_ENV_POOL + " must be a canonical integer 1..5")
+    if env == "production":
+        pool = settings.get("app_pool_max") if isinstance(settings, dict) else None
+        if not is_pool_max(pool) or values.get(APP_ENV_POOL) != str(pool):
+            raise ValueError("app env: " + APP_ENV_POOL + " must equal the production app_pool_max setting")
+        if APP_ENV_RELAY_FLAG in values:
+            raise ValueError("app env: " + APP_ENV_RELAY_FLAG + " is dev only")
+        if not all(key in values for key in APP_ENV_PHOTOS):
+            raise ValueError("app env: production requires all five photo settings")
+        if values["POD_PHOTOS_S3_ENDPOINT"] != PROD_PHOTO_ENDPOINT or values["POD_PHOTOS_S3_BUCKET"] != PROD_PHOTO_BUCKET:
+            raise ValueError("app env: production photos must use the exact production endpoint and bucket")
     providers = values["POD_AUTH_PROVIDERS"].split(",")
     if re.fullmatch(r"(google|kakao)(,(google|kakao))*", values["POD_AUTH_PROVIDERS"]) is None or len(set(providers)) != len(providers):
         raise ValueError("app env: POD_AUTH_PROVIDERS must list google and/or kakao once each")
@@ -706,13 +769,13 @@ def validate_app_env(text, settings):
     for key, secret in secrets.items():
         if re.fullmatch(r"[1-9][0-9]*", key) is None or int(key) > 2 ** 53 - 1 or not isinstance(secret, str) or len(secret) < 32 or secret.strip() == "":
             raise ValueError("app env: POD_AUTH_SESSION_SECRETS needs positive safe integer keys and strings of 32+ characters")
-    expected = [settings.get(k) if isinstance(settings, dict) else None for k in ("app_role", "db_host", "dev_db")]
+    expected = [settings.get(k) if isinstance(settings, dict) else None for k in ("app_role", "db_host", spec["db_key"])]
     if not all(isinstance(v, str) and v for v in expected):
         raise ValueError("app env: database expectations are not configured")
     role, host, database = expected
     match = re.fullmatch(r"(postgres|postgresql)://([^:@/?]+):([A-Za-z0-9._~!$&'()*+,;=%-]+)@([^@/?:]+)(:[1-9][0-9]{0,4})?/([^/?]+)", values["POD_DATABASE_URL"])
     if match is None or match.group(2) != role or match.group(4) != host or match.group(6) != database or re.search(r"%(?![0-9A-Fa-f]{2})", match.group(3)):
-        raise ValueError("app env: POD_DATABASE_URL must use the dev app role, host and database without query")
+        raise ValueError("app env: POD_DATABASE_URL must use the " + env + " app role, host and database without query")
     if match.group(5) and int(match.group(5)[1:]) > 65535:
         raise ValueError("app env: POD_DATABASE_URL port is invalid")
     return values
@@ -778,34 +841,38 @@ def app_tmpfs(uid, gid):
     return ["/tmp:rw,noexec,nosuid,nodev,size=64m", "/app/.next/cache:rw,noexec,nosuid,nodev,size=64m,uid=%d,gid=%d,mode=0700" % (uid, gid)]
 
 
-def runtime_compose_app(front_id, app_image_id, release_id, uid, gid, settings):
-    """The only dev app-mode Compose document. Images are local engine image IDs; no registry reference."""
+def runtime_compose_app(front_id, app_image_id, release_id, uid, gid, settings, env="dev"):
+    """The only app-mode Compose document per environment. Images are local engine image IDs; no registry reference."""
+    spec = app_environment(env)
+    if env != "dev":
+        validate_app_settings(settings, False, env)
     if not is_digest(front_id) or not is_digest(app_image_id):
         raise ValueError("compose images must be local engine image IDs")
     if not is_positive_int(uid) or not is_positive_int(gid):
         raise ValueError("app uid and gid must be positive")
-    secret_file = release_path(release_id) / "app.env"
+    secret_file = release_path(release_id, env) / "app.env"
     front_subnet, egress_subnet = dedicated_subnets(settings)
     db_network = validate_db_network(settings.get("db_network"))
     # Fixed addresses keep the nginx upstream (resolved at nginx start) valid across app restarts.
     app_address, front_address = str(front_subnet.network_address + 10), str(front_subnet.network_address + 11)
+    front, app = spec["front"], spec["app"]
     return {
-        "name": DEV_PROJECT,
+        "name": spec["project"],
         "services": {
-            FRONT_SERVICE: {
+            front: {
                 "image": front_id,
-                "container_name": FRONT_SERVICE,
+                "container_name": front,
                 "restart": "unless-stopped",
                 "expose": ["80"],
                 "healthcheck": FRONT_HEALTH,
-                "depends_on": {APP_SERVICE: {"condition": "service_started"}},
+                "depends_on": {app: {"condition": "service_started"}},
                 "networks": {"edge": None, "front": {"ipv4_address": front_address}},
                 "read_only": True,
                 "tmpfs": list(FRONT_TMPFS),
             },
-            APP_SERVICE: {
+            app: {
                 "image": app_image_id,
-                "container_name": APP_SERVICE,
+                "container_name": app,
                 "restart": "unless-stopped",
                 "entrypoint": ["node"],
                 "command": list(APP_COMMAND),
@@ -821,9 +888,9 @@ def runtime_compose_app(front_id, app_image_id, release_id, uid, gid, settings):
         },
         "networks": {
             "edge": {"name": "edge", "external": True},
-            "front": {"name": FRONT_NETWORK, "driver": "bridge", "internal": True, "ipam": {"config": [{"subnet": str(front_subnet)}]}},
+            "front": {"name": spec["front_network"], "driver": "bridge", "internal": True, "ipam": {"config": [{"subnet": str(front_subnet)}]}},
             "db": {"name": db_network, "external": True},
-            "egress": {"name": EGRESS_NETWORK, "driver": "bridge", "ipam": {"config": [{"subnet": str(egress_subnet)}]}},
+            "egress": {"name": spec["egress_network"], "driver": "bridge", "ipam": {"config": [{"subnet": str(egress_subnet)}]}},
         },
         "secrets": {APP_SECRET_NAME: {"file": str(secret_file)}},
     }
@@ -839,18 +906,21 @@ def dev_record_mode(record):
     raise ValueError("unknown dev release record mode")
 
 
-def validate_app_record(record, settings):
+def validate_app_record(record, settings, env="dev"):
     """Local checks of an app record and its frozen release files; returns the same record."""
-    if not isinstance(record, dict) or set(record) != APP_RECORD_KEYS or record.get("mode") != "app" or record.get("status") != "success":
+    spec = app_environment(env)
+    if not isinstance(record, dict) or set(record) != spec["record_keys"] or record.get("mode") != "app" or record.get("status") != "success":
         raise ValueError("invalid app release record shape")
     if not is_hex(record["sha"]) or not is_hex(record["tree"]) or not isinstance(record["release_id"], str) or not record["release_id"].startswith(record["sha"] + "-"):
         raise ValueError("invalid app release identity")
+    if env == "production" and not is_hex(record["app_source_sha"]):
+        raise ValueError("invalid app release source identity")
     if not all(is_digest(record[k]) for k in ("front_image_id", "app_image_id", "app_manifest_digest", "app_config_digest")) or record["app_manifest_digest"] == record["app_config_digest"]:
         raise ValueError("invalid app release image identities")
     if not all(is_hex(record[k], 64) for k in ("try_html_sha256", "compose_sha256", "env_sha256")) or not isinstance(record["timestamp"], str):
         raise ValueError("invalid app release hashes")
     uid, gid = deployment_ids()
-    release_dir = trusted_file(release_path(record["release_id"]))
+    release_dir = trusted_file(release_path(record["release_id"], env))
     try:
         info = os.lstat(release_dir)
     except OSError:
@@ -862,15 +932,27 @@ def validate_app_record(record, settings):
     if digest(env_bytes) != record["env_sha256"] or digest(compose_bytes) != record["compose_sha256"]:
         raise ValueError("frozen release file hash mismatch")
     try:
-        validate_app_env(env_bytes.decode("utf-8"), settings)
+        validate_app_env(env_bytes.decode("utf-8"), settings, env)
     except UnicodeDecodeError:
         raise ValueError("frozen app env is not UTF-8") from None
-    if json.loads(compose_bytes) != runtime_compose_app(record["front_image_id"], record["app_image_id"], record["release_id"], uid, gid, settings):
+    if json.loads(compose_bytes) != runtime_compose_app(record["front_image_id"], record["app_image_id"], record["release_id"], uid, gid, settings, env):
         raise ValueError("frozen Compose must match the trusted app template")
     for image in (record["front_image_id"], record["app_image_id"]):
         if run([DOCKER, "image", "inspect", "--format", "{{.Id}}", image]) != image:
             raise ValueError("release image is not available locally")
+    if env == "production":
+        # The production SHA is a main SHA; the image revision is the validated dev SHA (app_source_sha).
+        validate_local_app_image(record["app_image_id"], record["app_source_sha"], record["tree"], record["app_manifest_digest"], settings)
     return record
+
+
+def validate_local_app_image(image_id, source_sha, tree, manifest_digest, settings):
+    """Re-inspect an already local app image by its engine ID; returns its inspect document."""
+    info = json.loads(run([DOCKER, "image", "inspect", "--format", "{{json .}}", image_id]))
+    if not isinstance(info, dict) or info.get("Id") != image_id:
+        raise ValueError("local app image identity mismatch")
+    validate_app_image(info, source_sha, tree, manifest_digest, settings)
+    return info
 
 
 def validated_dev_record(record, settings):
@@ -879,9 +961,9 @@ def validated_dev_record(record, settings):
     return validate_record(record, "dev")
 
 
-def compose_up_dev(path, settings):
+def compose_up_dev(path, settings, env="dev"):
     # --remove-orphans: switching between the static and app documents leaves no stale container.
-    run([DOCKER, "compose", "--env-file", "/dev/null", "--project-directory", settings["runtime_working_dir"], "-p", DEV_PROJECT, "-f", str(path), "up", "-d", "--no-build", "--pull", "never", "--remove-orphans"], cwd=settings["runtime_working_dir"], timeout=600)
+    run([DOCKER, "compose", "--env-file", "/dev/null", "--project-directory", settings["runtime_working_dir"], "-p", app_environment(env)["project"], "-f", str(path), "up", "-d", "--no-build", "--pull", "never", "--remove-orphans"], cwd=settings["runtime_working_dir"], timeout=600)
 
 
 def restore_dev_record(record, settings):
@@ -921,11 +1003,12 @@ def wait_container_healthy(name, image):
     raise RuntimeError("container health timed out")
 
 
-def front_candidate(image, try_hash):
+def front_candidate(image, try_hash, env="dev"):
     name = "pieceofdays-candidate-front-" + uuid.uuid4().hex
+    app = app_environment(env)["app"]
     try:
         # The fixed upstream name only has to resolve for nginx to start; nothing is reachable (network none).
-        run([DOCKER, "run", "--detach", "--name", name, "--network", "none", "--read-only", "--tmpfs", FRONT_TMPFS[0], "--tmpfs", FRONT_TMPFS[1], "--add-host", APP_SERVICE + ":127.0.0.1", "--health-cmd", FRONT_TRY_CHECK, "--health-interval", "2s", "--health-timeout", "5s", "--health-retries", "3", image])
+        run([DOCKER, "run", "--detach", "--name", name, "--network", "none", "--read-only", "--tmpfs", FRONT_TMPFS[0], "--tmpfs", FRONT_TMPFS[1], "--add-host", app + ":127.0.0.1", "--health-cmd", FRONT_TRY_CHECK, "--health-interval", "2s", "--health-timeout", "5s", "--health-retries", "3", image])
         wait_container_healthy(name, image)
         if digest(run([DOCKER, "exec", name, "wget", "-qO-", "http://127.0.0.1:80/try/"], binary=True)) != try_hash:
             raise RuntimeError("candidate /try/ mismatch")
@@ -957,12 +1040,13 @@ def cache_directives(value):
     return {part.strip().split("=", 1)[0].strip().lower() for part in value.split(",")} if isinstance(value, str) else set()
 
 
-def verify_app_release(record, settings):
+def verify_app_release(record, settings, env="dev"):
     """Post-switch checks: exact running healthy images, internal readiness and /try/, public /try/ and /login."""
-    wait_container_healthy(APP_SERVICE, record["app_image_id"])
-    wait_container_healthy(FRONT_SERVICE, record["front_image_id"])
-    run([DOCKER, "exec", APP_SERVICE, "node", "-e", APP_READY_JS])
-    if digest(run([DOCKER, "exec", FRONT_SERVICE, "wget", "-qO-", "http://127.0.0.1:80/try/"], binary=True)) != record["try_html_sha256"]:
+    spec = app_environment(env)
+    wait_container_healthy(spec["app"], record["app_image_id"])
+    wait_container_healthy(spec["front"], record["front_image_id"])
+    run([DOCKER, "exec", spec["app"], "node", "-e", APP_READY_JS])
+    if digest(run([DOCKER, "exec", spec["front"], "wget", "-qO-", "http://127.0.0.1:80/try/"], binary=True)) != record["try_html_sha256"]:
         raise RuntimeError("front /try/ mismatch")
     headers = read_json(settings["health_headers_file"]) if settings.get("health_headers_file") else {}
     if not isinstance(headers, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in headers.items()):
@@ -979,7 +1063,7 @@ def verify_app_release(record, settings):
             status, _, body = fetch(settings["app_health_url"])
             if status != 200 or digest(body) != record["try_html_sha256"]:
                 raise RuntimeError("public /try/ mismatch")
-            status, cache_control, _ = fetch(APP_LOGIN_URL)
+            status, cache_control, _ = fetch(spec["login_url"])
             if status != 200 or "no-store" not in cache_directives(cache_control):
                 raise RuntimeError("public /login must be 200 and no-store")
             return
@@ -989,11 +1073,12 @@ def verify_app_release(record, settings):
             time.sleep(2)
 
 
-def check_dedicated_networks(settings):
+def check_dedicated_networks(settings, env="dev"):
     """Refuse an existing dedicated network whose IPAM differs; never create, change or remove networks."""
+    spec = app_environment(env)
     front_subnet, egress_subnet = dedicated_subnets(settings)
     existing = set(run([DOCKER, "network", "ls", "--format", "{{.Name}}"]).splitlines())
-    for name, subnet, internal in ((FRONT_NETWORK, str(front_subnet), True), (EGRESS_NETWORK, str(egress_subnet), False)):
+    for name, subnet, internal in ((spec["front_network"], str(front_subnet), True), (spec["egress_network"], str(egress_subnet), False)):
         if name not in existing:
             continue
         items = json.loads(run([DOCKER, "network", "inspect", name]))
@@ -1004,13 +1089,13 @@ def check_dedicated_networks(settings):
             raise ValueError("existing dedicated network " + name + " does not match the fixed IPAM")
 
 
-def read_live_app_env(settings):
+def read_live_app_env(settings, env="dev"):
     data = read_private_file(settings["app_env_file"], APP_ENV_MAX_BYTES)
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         raise ValueError("app env is not UTF-8") from None
-    validate_app_env(text, settings)
+    validate_app_env(text, settings, env)
     return data
 
 
@@ -1145,8 +1230,255 @@ def deploy_app(sha, tree, manifest_digest, config_digest, settings):
     print("deployed: dev app " + sha)
 
 
-def revert_static(settings):
+# ----------------------------------------------------------------------------- production app promotion
+
+
+def production_paths():
+    return tuple(STATE / ("production-" + name + ".json") for name in ("current", "pending", "static-last"))
+
+
+def validated_production_record(record, settings):
+    if dev_record_mode(record) == "app":
+        return validate_app_record(record, settings, env="production")
+    return validate_record(record, "production")
+
+
+def restore_production_record(record, settings):
+    """Bring up an already validated production record from local files and images only, then verify it."""
+    if dev_record_mode(record) == "app":
+        compose_up_dev(release_path(record["release_id"], "production") / "compose.json", settings, env="production")
+        verify_app_release(record, settings, env="production")
+    else:
+        # --remove-orphans in the same project removes only the app containers of a newer release.
+        compose_up_dev(record["compose_path"], settings, env="production")
+        verify_release(record, "production", settings)
+
+
+def candidate_production_record(record, uid, gid):
+    if dev_record_mode(record) == "app":
+        front_candidate(record["front_image_id"], record["try_html_sha256"], env="production")
+        app_candidate(record["app_image_id"], uid, gid)
+    else:
+        candidate("production", record["image_id"], record["serving_html_sha256"])
+
+
+def recover_production_pending(settings):
     global PHASE
+    current_path, pending_path, _ = production_paths()
+    if not pending_path.exists():
+        return
+    PHASE = "interrupted-release-recovery"
+    record = validated_production_record(read_json(pending_path), settings)
+    restore_production_record(record, settings)
+    atomic_json(current_path, record)
+    clear_pending(pending_path)
+
+
+def validated_dev_app_basis(dev_settings, settings, tree=None):
+    """The current successful dev app record (no dev pending, same tree) and its exact local image are the only basis."""
+    if (STATE / "dev-pending.json").exists():
+        raise ValueError("dev has an interrupted deployment; recover dev first")
+    record = read_json(STATE / "dev-current.json")
+    if dev_record_mode(record) != "app":
+        raise ValueError("production promotion requires a dev app record")
+    record = validate_app_record(record, dev_settings)
+    if tree is not None and record["tree"] != tree:
+        raise ValueError("production requires the current successful dev tree")
+    info = validate_local_app_image(record["app_image_id"], record["sha"], record["tree"], record["app_manifest_digest"], settings)
+    if int(info["Config"]["Labels"]["pod.migrations.latest"]) > settings["approved_migrations"]:
+        raise ValueError("app image migrations exceed the approved production migrations")
+    return record
+
+
+def basis_identity(record):
+    return (record["sha"], record["tree"], record["app_image_id"], record["app_manifest_digest"], record["app_config_digest"])
+
+
+def promote_app(sha, settings, dev_settings):
+    """deploy-app production <main SHA>: the same local app image as the current successful dev tree, a production front."""
+    global PHASE
+    PHASE = "app-request-check"
+    if not is_hex(sha):
+        raise ValueError("invalid production promotion request")
+    validate_app_settings(settings, True, env="production")
+    validate_app_settings(dev_settings, False)
+    if any(a.overlaps(b) for a in dedicated_subnets(settings) for b in dedicated_subnets(dev_settings)):
+        raise ValueError("production and dev subnets must not overlap")
+    uid, gid = deployment_ids()
+    current_path, pending_path, static_last_path = production_paths()
+    recover_production_pending(settings)
+    PHASE = "branch-and-rollback-record-check"
+    assert_latest("production", sha)
+    if not current_path.exists() and not settings.get("bootstrap_record"):
+        raise ValueError("no current production record to roll back to")
+    previous = validated_production_record(read_json(current_path if current_path.exists() else settings["bootstrap_record"]), settings)
+    PHASE = "live-app-env-check"
+    env_bytes = read_live_app_env(settings, env="production")
+    env_hash = digest(env_bytes)
+    PHASE = "dev-promotion-basis"
+    basis = validated_dev_app_basis(dev_settings, settings)
+    identity = basis_identity(basis)
+    if dev_record_mode(previous) == "app" and previous["sha"] == sha and previous["env_sha256"] == env_hash and (previous["app_source_sha"],) + basis_identity(previous)[1:] == identity:
+        PHASE = "idempotent-app-release-health"
+        verify_app_release(previous, settings, env="production")
+        atomic_json(current_path, previous)
+        print("already healthy: production app " + sha)
+        return
+    PHASE = "rollback-snapshot-health"
+    candidate_production_record(previous, uid, gid)
+
+    def recheck_basis(tree):
+        if basis_identity(validated_dev_app_basis(dev_settings, settings, tree)) != identity:
+            raise ValueError("the dev promotion basis changed")
+
+    with tempfile.TemporaryDirectory(prefix="build-", dir=STATE) as temporary:
+        source = Path(temporary) / "source"
+        PHASE = "fixed-source-fetch"
+        run(["/usr/bin/git", "clone", "--quiet", "--no-checkout", "--single-branch", "--branch", "main", REPOSITORY, str(source)])
+        run(["/usr/bin/git", "-C", str(source), "checkout", "--quiet", "--detach", sha])
+        tree = run(["/usr/bin/git", "-C", str(source), "rev-parse", "HEAD^{tree}"])
+        if not is_hex(tree) or run(["/usr/bin/git", "-C", str(source), "rev-parse", "HEAD"]) != sha:
+            raise ValueError("fixed source identity mismatch")
+        PHASE = "dev-promotion-basis"
+        recheck_basis(tree)
+        public = source / "frontend" / "public"
+        PHASE = "front-source-policy"
+        if any(p.is_symlink() for p in source.rglob("*")) or public.is_symlink() or not public.is_dir():
+            raise ValueError("source symlinks are forbidden")
+        if any(not (p.is_file() or p.is_dir()) for p in public.rglob("*")) or not (public / "try" / "index.html").is_file():
+            raise ValueError("frontend/public must hold only regular files and /try/")
+        try_hash = digest((public / "try" / "index.html").read_bytes())
+
+        PHASE = "front-image-build"
+        context = Path(temporary) / "front"
+        context.mkdir(mode=0o700)
+        shutil.copytree(public, context / "public", symlinks=True)
+        (context / "default.conf").write_text(front_nginx_conf(env="production"))
+        os.chmod(context / "default.conf", 0o644)
+        dockerfile = Path(temporary) / "Dockerfile.front"
+        dockerfile.write_text("FROM " + FRONT_NGINX_BASE + "\nCOPY public/ /usr/share/nginx/html/\nCOPY default.conf /etc/nginx/conf.d/default.conf\n")
+        tag = "pieceofdays-production-front:" + sha
+        run([DOCKER, "build", "--network=none", "--pull", "-f", str(dockerfile), "-t", tag, str(context)], timeout=600)
+        front_id = run([DOCKER, "image", "inspect", "--format", "{{.Id}}", tag])
+        if not is_digest(front_id):
+            raise ValueError("unexpected front image identity")
+        app_id = basis["app_image_id"]
+
+        PHASE = "candidate-health"
+        front_candidate(front_id, try_hash, env="production")
+        app_candidate(app_id, uid, gid)
+        PHASE = "dedicated-network-check"
+        check_dedicated_networks(settings, env="production")
+        PHASE = "dev-promotion-recheck"
+        recheck_basis(tree)
+
+        PHASE = "release-directory-policy"
+        releases = STATE / "releases"
+        for path in (releases, releases / "production"):
+            path.mkdir(mode=0o700, exist_ok=True)
+            trusted_file(path)
+        release_id = sha + "-" + uuid.uuid4().hex
+        release_dir = release_path(release_id, "production")
+        release_dir.mkdir(mode=0o700)
+        trusted_file(release_dir)
+        compose_bytes = (json.dumps(runtime_compose_app(front_id, app_id, release_id, uid, gid, settings, env="production"), indent=2) + "\n").encode()
+        write_new_private_file(release_dir / "app.env", env_bytes)
+        write_new_private_file(release_dir / "compose.json", compose_bytes)
+        fsync_directory(release_dir)
+        record = {
+            "mode": "app",
+            "status": "success",
+            "sha": sha,
+            "tree": tree,
+            "release_id": release_id,
+            "front_image_id": front_id,
+            "app_image_id": app_id,
+            "app_manifest_digest": basis["app_manifest_digest"],
+            "app_config_digest": basis["app_config_digest"],
+            "app_source_sha": basis["sha"],
+            "try_html_sha256": try_hash,
+            "compose_sha256": digest(compose_bytes),
+            "env_sha256": env_hash,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        record = validate_app_record(record, settings, env="production")
+        PHASE = "final-branch-and-basis-check"
+        assert_latest("production", sha)
+        recheck_basis(tree)
+        if dev_record_mode(previous) == "static" and not static_last_path.exists():
+            # The frozen static (coming soon) record is the manual revert target; written once, before the first switch.
+            PHASE = "static-last-record"
+            atomic_json(static_last_path, previous)
+        atomic_json(pending_path, previous)
+        try:
+            PHASE = "service-switch"
+            compose_up_dev(release_dir / "compose.json", settings, env="production")
+            PHASE = "live-app-health"
+            verify_app_release(record, settings, env="production")
+            PHASE = "success-record"
+            record["timestamp"] = datetime.now(timezone.utc).isoformat()
+            atomic_json(current_path, record)
+            clear_pending(pending_path)
+        except BaseException:
+            failed_phase = PHASE
+            PHASE = "rollback"
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)
+            # Previous frozen env, compose and local image IDs only; no registry and no live env.
+            restore_production_record(previous, settings)
+            atomic_json(current_path, previous)
+            clear_pending(pending_path)
+            PHASE = "rollback-complete-after-" + failed_phase
+            raise
+    print("deployed: production app " + sha)
+
+
+def revert_static_production(settings):
+    global PHASE
+    validate_app_settings(settings, False, env="production")
+    uid, gid = deployment_ids()
+    current_path, pending_path, static_last_path = production_paths()
+    recover_production_pending(settings)
+    PHASE = "static-record-check"
+    if not static_last_path.exists():
+        raise ValueError("no static production record to revert to")
+    static = read_json(static_last_path)
+    if dev_record_mode(static) != "static":
+        raise ValueError("production-static-last is not a static record")
+    static = validate_record(static, "production")
+    previous = validated_production_record(read_json(current_path), settings)
+    PHASE = "static-candidate-health"
+    candidate("production", static["image_id"], static["serving_html_sha256"])
+    candidate_production_record(previous, uid, gid)
+    atomic_json(pending_path, previous)
+    try:
+        PHASE = "service-switch"
+        compose_up_dev(static["compose_path"], settings, env="production")
+        PHASE = "live-https-health"
+        verify_release(static, "production", settings)
+        PHASE = "success-record"
+        atomic_json(current_path, static)
+        clear_pending(pending_path)
+    except BaseException:
+        failed_phase = PHASE
+        PHASE = "rollback"
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        restore_production_record(previous, settings)
+        atomic_json(current_path, previous)
+        clear_pending(pending_path)
+        PHASE = "rollback-complete-after-" + failed_phase
+        raise
+    print("reverted to static: production " + static["sha"])
+
+
+def revert_static(settings, env="dev"):
+    global PHASE
+    app_environment(env)
+    if env == "production":
+        return revert_static_production(settings)
     validate_app_settings(settings, require_enabled=False)
     uid, gid = deployment_ids()
     current_path = STATE / "dev-current.json"
@@ -1202,7 +1534,7 @@ def main():
     app_request = None
     if not probe:
         if isinstance(command, str) and command.split(" ", 1)[0] in {"deploy-app", "revert-static"}:
-            # App commands exist only for dev; refuse other keys before any config, registry or Docker access.
+            # App commands name their environment; refuse other keys before any config, registry or Docker access.
             app_request = parse_app_request(command)
             env = app_request[1]
         else:
@@ -1214,11 +1546,13 @@ def main():
     if set(config) != {"state_dir", "environments"} or config["state_dir"] != str(STATE) or set(config["environments"]) != set(ENVIRONMENTS):
         raise ValueError("unexpected deployment config")
     settings = config["environments"][args.allowed_environment]
-    allowed_settings = STATIC_SETTINGS | (APP_SETTINGS if args.allowed_environment == "dev" else frozenset())
+    allowed_settings = STATIC_SETTINGS | (APP_SETTINGS if args.allowed_environment == "dev" else PROD_APP_SETTINGS)
     if not isinstance(settings, dict) or set(settings) - allowed_settings or settings.get("runtime_working_dir") != str(ENVIRONMENTS[args.allowed_environment][6]) or settings.get("health_url") != ENVIRONMENTS[args.allowed_environment][7]:
         raise ValueError("unexpected environment config")
-    if app_request is not None:
+    if app_request is not None and args.allowed_environment == "dev":
         validate_app_settings(settings, require_enabled=app_request[0] == "deploy-app")
+    elif app_request is not None:
+        validate_app_settings(settings, app_request[0] == "deploy-app", env="production")
     # The existing dev clone is group writable. It is only a working directory;
     # no source, dotenv, executable, or Compose file is loaded from that clone.
     runtime = Path(settings["runtime_working_dir"])
@@ -1238,8 +1572,12 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX)
         if app_request is None:
             deploy(env, sha, settings)
+        elif app_request[0] == "deploy-app" and env == "production":
+            promote_app(app_request[2], settings, config["environments"]["dev"])
         elif app_request[0] == "deploy-app":
             deploy_app(*app_request[2:], settings)
+        elif env == "production":
+            revert_static(settings, env="production")
         else:
             revert_static(settings)
 

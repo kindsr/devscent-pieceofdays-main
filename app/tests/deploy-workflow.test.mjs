@@ -93,8 +93,15 @@ test("C2 preserves dev/main push+PR triggers and workflow read-only permissions,
   assert.ok(!/github\.token|secrets\.|GITHUB_TOKEN/.test(JSON.stringify(DEPLOY.env ?? {})));
 });
 
-test("C2 makes static deploy main-only and production-only, preserving its complete SSH body and needs validate", () => {
+test("C2 keeps the production job main-only and production-only; PLAN_production-app-deployment §2 swaps only its remote command to deploy-app production SHA", () => {
   const current = job("deploy");
+  const body = runOf(steps(current)[0]);
+  const calls = body.match(/^\s*ssh[ \t]+[^\n]+$/gm) ?? [];
+  assert.equal(calls.length, 2, "exactly probe then the one promotion request");
+  assert.match(calls[0], /\s+"probe \$DEPLOY_ENV"\s*$/);
+  assert.match(calls[1], /\s+"deploy-app \$DEPLOY_ENV \$DEPLOY_SHA"\s*$/, "production promotion uses the new deploy-app production <main SHA> grammar");
+  assert.ok(!/"deploy \$DEPLOY_ENV \$DEPLOY_SHA"/.test(body), "the static deploy request is no longer sent from main");
+  assert.ok(!/"revert-static/.test(body), "manual revert-static production is never sent automatically");
   assert.equal(expression(current.if), "github.event_name == 'push' && github.ref == 'refs/heads/main'");
   assert.deepEqual(list(current.needs), ["validate"]);
   assert.equal(current.environment, "production");
@@ -104,7 +111,10 @@ test("C2 makes static deploy main-only and production-only, preserving its compl
   const original = frozenJobText("deploy")
     .replace(/^    if:.*$/m, "    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')")
     .replace(/^    environment:.*$/m, "    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}")
-    .replace(/^          DEPLOY_ENV:.*$/m, "          DEPLOY_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}");
+    .replace(/^          DEPLOY_ENV:.*$/m, "          DEPLOY_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}")
+    // Production app promotion: only the remote command word changes (deploy → deploy-app); environment,
+    // SSH forced-command options, concurrency and permissions stay byte-identical.
+    .replace('"deploy-app $DEPLOY_ENV $DEPLOY_SHA"', '"deploy $DEPLOY_ENV $DEPLOY_SHA"');
   assert.equal(digest(original), "sha256:3d9fe51f5f55007d9e3705c1e762b91485cf893b7035b0624716bbbf36aab3a0", "all other production job bytes remain frozen");
 });
 

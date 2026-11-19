@@ -21,6 +21,10 @@ export const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 // PLAN_dev-minio-story-runtime §1·§2: CI-only stand-in for the shared MinIO behind the 8081 relay.
 // Same pinned SeaweedFS as the auth e2e fixture, joined to the internal network as `minio:9000`.
 export const RELAY_BUCKET = "pieceofdays-photos-dev";
+// PLAN_production-app-deployment §4: production bucket behind edge → production front 8081 → storage (2-hop).
+export const PROD_BUCKET = "pieceofdays-photos";
+export const PROD_SNIPPET = path.join(REPO_DIR, "deploy/nginx/snippets/prod-app-locations.conf");
+export const PROD_SNIPPET_INCLUDE = "/etc/nginx/conf.d/snippets/prod-app-locations.conf";
 const STORAGE_IMAGE = "chrislusf/seaweedfs:4.53@sha256:972ba30c529dfc72a6a12ed427e94d99c7b6a6e59d97bfa52be0a849f43e2cc9";
 export const STORAGE_ACCESS = "ci-only-relay-access";
 const STORAGE_SECRET = "ci-only-relay-secret-not-production";
@@ -117,7 +121,7 @@ export class FrontHarness {
     this.gid = process.getgid();
     assert.ok(this.uid > 0 && this.gid > 0, "non-root numeric uid:gid required");
     this.prefix = `pod-f6a2-${process.pid}-${randomBytes(4).toString("hex")}`;
-    this.names = Object.fromEntries(["upstream", "front", "outer", "storage"].map((k) => [k, `${this.prefix}-${k}`]));
+    this.names = Object.fromEntries(["upstream", "front", "outer", "storage", "prodFront", "prodOuter"].map((k) => [k, `${this.prefix}-${k}`]));
     this.containers = new Set();
     this.images = new Set();
     this.archived = [];
@@ -143,7 +147,7 @@ export class FrontHarness {
 
     // Read constants from this checkout without calling the helper main/config/deployment functions.
     // The relay constant is read without failing setup when absent: #01 asserts it explicitly (feature RED, not a load error).
-    const readConstants = await command("python3", ["-B", "-c", "import importlib.util,json,sys; s=importlib.util.spec_from_file_location('pod_front_source',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(json.dumps({'conf':m.DEV_FRONT_NGINX_CONF,'relay':getattr(m,'DEV_FRONT_RELAY_NGINX_CONF',None),'base':m.FRONT_NGINX_BASE}))", path.join(REPO_DIR, "scripts/ops/deploy.py")]);
+    const readConstants = await command("python3", ["-B", "-c", "import importlib.util,json,sys; s=importlib.util.spec_from_file_location('pod_front_source',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); f=getattr(m,'front_nginx_conf',None)\ntry: prod=f(env='production') if f else None\nexcept Exception: prod=None\nprint(json.dumps({'conf':m.DEV_FRONT_NGINX_CONF,'relay':getattr(m,'DEV_FRONT_RELAY_NGINX_CONF',None),'base':m.FRONT_NGINX_BASE,'prod':prod if isinstance(prod,str) else None}))", path.join(REPO_DIR, "scripts/ops/deploy.py")]);
     assert.equal(readConstants.code, 0, "read helper source constants");
     this.trusted = JSON.parse(readConstants.stdout);
     this.trusted.public80 = this.trusted.conf;
@@ -365,6 +369,61 @@ export class FrontHarness {
       credentials: { accessKeyId: STORAGE_ACCESS, secretAccessKey } });
   }
   relayRequest(target, options) { return request(this.relayPort, target, options); }
+  /**
+   * Production 2-hop (CI only): an outer nginx with the five ancestor hides and the verbatim public production
+   * snippet at its standard include path → a production front built from frontend/public + front_nginx_conf('production')
+   * → the owned storage. The outer variables point at the production front's internal address (no DNS, no host port
+   * on the production front). Callers assert the feature first; this only builds the fixture.
+   */
+  async prodTwoHop() {
+    if (this.prodOuterPort) return;
+    assert.equal(typeof this.trusted.prod, "string", "front_nginx_conf('production') is required before building the production fixture");
+    await this.storage();
+    // The CI stand-in only pre-creates the dev bucket; create the production bucket inside storage itself.
+    const created = await command("docker", ["exec", this.names.storage, "sh", "-c", `echo "s3.bucket.create -name ${PROD_BUCKET}" | weed shell`], { timeout: 120_000 });
+    assert.equal(created.code, 0, "production bucket created inside the owned storage");
+    const context = path.join(this.tmp, "prod-front");
+    cpSync(path.join(REPO_DIR, "frontend/public"), path.join(context, "public"), { recursive: true });
+    writeFileSync(path.join(context, "default.conf"), this.trusted.prod);
+    writeFileSync(path.join(context, "Dockerfile"), `FROM ${this.trusted.base}\nCOPY public/ /usr/share/nginx/html/\nCOPY default.conf /etc/nginx/conf.d/default.conf\n`);
+    const tag = `${this.prefix}-prod-front:ci`;
+    this.images.add(tag);
+    await docker(["build", "--network=none", "-t", tag, context], 600_000);
+    this.prodFrontImage = (await docker(["image", "inspect", "--format", "{{.Id}}", tag])).stdout.trim();
+    this.containers.add(this.names.prodFront);
+    // The fixed app upstream only has to resolve for nginx to start (like the helper's front candidate).
+    await docker(["run", "-d", "--name", this.names.prodFront, "--network", this.network, "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "--add-host", "pieceofdays-app:127.0.0.1", this.prodFrontImage]);
+    await this.observe(this.names.prodFront, "front");
+    this.prodFrontIP = await this.address(this.names.prodFront);
+    for (let n = 0; n < 60; n++) {
+      if ((await command("docker", ["exec", this.names.prodFront, "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:80/try/"])).code === 0) break;
+      assert.ok(n < 59, "production front did not serve /try/");
+      await pause(250);
+    }
+    const snippet = readFileSync(PROD_SNIPPET);
+    this.prodSnippetHash = hash(snippet);
+    writeFileSync(path.join(this.tmp, "prod-snippet.conf"), snippet);
+    writeFileSync(path.join(this.tmp, "prod-outer.conf"), `${ANCESTOR_HIDDEN_HEADERS.map((name) => `proxy_hide_header ${name};`).join(" ")}\n`
+      + `server { listen 80 default_server; server_name pieceofdays.com;\n`
+      + `set $pieceofdays_comingsoon http://${this.prodFrontIP}:80;\nset $pieceofdays_photos_relay http://${this.prodFrontIP}:8081;\n`
+      + `include ${PROD_SNIPPET_INCLUDE};\n`
+      + `location / { proxy_pass $pieceofdays_comingsoon; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto $scheme; }\n}\n`);
+    this.containers.add(this.names.prodOuter);
+    await docker(["create", "--name", this.names.prodOuter, "--network", this.ingress, "--read-only", "--tmpfs", "/var/cache/nginx", "--tmpfs", "/var/run", "-p", "127.0.0.1::80",
+      "--mount", `type=bind,src=${path.join(this.tmp, "prod-outer.conf")},dst=/etc/nginx/conf.d/default.conf,readonly`,
+      "--mount", `type=bind,src=${path.join(this.tmp, "prod-snippet.conf")},dst=${PROD_SNIPPET_INCLUDE},readonly`, this.trusted.base]);
+    await docker(["network", "connect", this.network, this.names.prodOuter]);
+    await docker(["start", this.names.prodOuter]);
+    await this.observe(this.names.prodOuter, "outer");
+    this.prodOuterPort = await this.port(this.names.prodOuter);
+    await this.waitPort(this.prodOuterPort, 200, "/try/");
+  }
+  /** SDK client through the production edge (2-hop). Host is whatever the client sends; both hops must preserve it. */
+  prodClient(secretAccessKey = STORAGE_SECRET) {
+    return new S3Client({ endpoint: `http://127.0.0.1:${this.prodOuterPort}`, region: "us-east-1", forcePathStyle: true, maxAttempts: 1,
+      credentials: { accessKeyId: STORAGE_ACCESS, secretAccessKey } });
+  }
+  prodEdgeRequest(target, options = {}) { return request(this.prodOuterPort, target, { ...options, headers: { Host: "pieceofdays.com", ...options.headers } }); }
   async waitPort(port, status, target = "/") {
     for (let n = 0; n < 60; n++) {
       const r = await request(port, target).catch(() => null);
