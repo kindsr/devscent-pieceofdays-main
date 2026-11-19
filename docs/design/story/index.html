@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>AI 하루 이야기 읽기·생성 아트보드 — pieceofdays (시안 D)</title>
+  <!-- D 정본 토큰·상단 셸·버튼·조각·하루 한 줄을 그대로 쓴다. 외부 글꼴·외부 요청 없음. -->
+  <link rel="stylesheet" href="../concepts/d-warm-pieces/style.css">
+  <style>
+    /* 이야기 영역에만 더하는 최소 규칙. D 토큰만 쓴다. 새 색·그라데이션·그림자·애니메이션 없음. */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+    /* 아트보드 도구(제품 화면이 아님): auth.css의 도구 줄과 같은 값 */
+    .art-tool {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2);
+      max-width: 1200px; margin: 0 auto; padding: var(--s-1) var(--s-3);
+      font-size: 13px; color: var(--muted); border-bottom: 1px dashed var(--muted);
+    }
+    .art-tool-note { font-weight: 700; flex-basis: 100%; }
+    .art-tool label { display: inline-flex; align-items: center; gap: 6px; }
+    .art-tool select { font: inherit; min-height: 44px; max-width: 100%; color: var(--ink); background: var(--surface); border: 1px solid var(--muted); border-radius: 6px; }
+
+    /* 이야기: 메인 열 전체 폭, 본문은 64ch 읽기 폭. 조각 목록 위에 둔다. */
+    .story {
+      background: var(--surface); border: var(--border); border-radius: 4px;
+      padding: var(--s-3); margin: 0 0 var(--s-4); display: grid; gap: var(--s-2);
+    }
+    .story h2 { font-size: 20px; font-weight: 800; line-height: 1.4; }
+    .story-src { font-size: 14px; color: var(--muted); max-width: 64ch; }
+    .story-body { max-width: 64ch; font-family: var(--font-record); font-size: 17px; line-height: 1.8; white-space: pre-wrap; }
+    .story-state { max-width: 64ch; font-weight: 700; }
+    .story-state.is-muted { color: var(--muted); font-weight: 400; }
+    .story-err { max-width: 64ch; color: #8E2A12; font-weight: 800; border-left: 3px solid #8E2A12; padding-left: var(--s-2); }
+    .story .row { gap: var(--s-2); }
+    .story .btn-main[aria-disabled="true"], .story .btn-ghost[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+    .story .btn-main[aria-disabled="true"]:active { transform: none; }
+    .story-set { font-size: 15px; }
+    /* S3 생성 계약 보기: 회고 시간 줄과 동의 패널(D .settings·.font-opt 재사용) */
+    .story-reflect { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2); }
+    .art-s3[hidden], .art-s2[hidden] { display: none; }
+    .ai-consent .font-opt input[type="checkbox"] { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); grid-row: span 2; }
+    .ai-consent p { max-width: 64ch; }
+    /* S4 이야기 수정: D textarea를 그대로 쓰고 읽기 폭·줄 간격만 본문과 맞춘다 */
+    .art-s4[hidden] { display: none; }
+    .story-edit { display: grid; gap: var(--s-1); max-width: 64ch; }
+    .story-edit textarea { line-height: 1.8; }
+    /* 저장 결과 고르기는 아트보드 도구다(제품 화면이 아님): 도구 줄과 같은 점선 */
+    .art-result { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2); max-width: 64ch; padding: var(--s-1) var(--s-2); font-size: 13px; color: var(--muted); border: 1px dashed var(--muted); }
+
+    /* 원본 영역 머리: 원본임을 문장으로만 밝힌다 */
+    .src-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--s-2); margin: 0 0 var(--s-2); }
+    .src-head h2 { font-size: 18px; font-weight: 800; }
+    .src-head p { font-size: 14px; color: var(--muted); }
+    .no-pieces { color: var(--muted); padding: var(--s-2) 0 var(--s-3); }
+
+    @media (min-width: 1100px) {
+      /* 기존 D 규칙(.with-side .oneline)은 그대로. 이야기는 with-side 바깥이라 300px 열에 들어가지 않는다. */
+      .story { padding: var(--s-3) var(--s-4); }
+    }
+  </style>
+</head>
+<body>
+  <aside class="art-tool" aria-label="아트보드 도구">
+    <p class="art-tool-note">정적 아트보드 · 합성 예시 · 미배포 — 실제 생성·외부 전송·저장·로그인·네트워크 요청 없음. 버튼은 이 화면의 상태 이름만 바꾼다(가짜 성공 없음). 이 줄은 제품 화면이 아니다.</p>
+    <label>보기
+      <select id="tool-mode">
+        <option value="s2">S2 읽기 7상태 (보존)</option>
+        <option value="s3">S3 생성 계약 (동의·작업 상태)</option>
+        <option value="s4">S4 이야기 수정·다시 만들기</option>
+      </select>
+    </label>
+    <label class="art-s4" hidden>수정 상태
+      <select id="tool-edit">
+        <option value="read">read · 읽기</option>
+        <option value="edit">edit · 고치는 중</option>
+        <option value="conflict">conflict · 다른 곳에서 바뀜</option>
+        <option value="confirm">confirm · 다시 만들기 확인</option>
+      </select>
+    </label>
+    <label class="art-s2">이야기 상태
+      <select id="tool-state">
+        <option value="unavailable">준비 전 (현재 S1·S2 실제 상태)</option>
+        <option value="none">없음 · 생성 가능 (후속 계약)</option>
+        <option value="pending">만드는 중 (후속 계약)</option>
+        <option value="current">최신 이야기</option>
+        <option value="outdated">조각이 바뀐 뒤</option>
+        <option value="deleted">조각을 모두 지운 뒤</option>
+        <option value="error">실패 (후속 계약)</option>
+      </select>
+    </label>
+    <label class="art-s3" hidden>화면
+      <select id="tool-screen">
+        <option value="day">날짜 화면</option>
+        <option value="settings">설정 · AI 하루 이야기</option>
+      </select>
+    </label>
+    <label class="art-s3" hidden>이야기(StoryDay)
+      <select id="tool-story">
+        <option value="none">없음 · 조각 있음</option>
+        <option value="current">최신 이야기</option>
+        <option value="outdated">조각이 바뀐 뒤</option>
+        <option value="deleted">조각을 모두 지운 뒤 (조각 0)</option>
+      </select>
+    </label>
+    <label class="art-s3 art-s4" hidden>생성 상태(StoryGenerationView)
+      <select id="tool-gen">
+        <option value="unavailable">unavailable · 키 없음</option>
+        <option value="off">off · 직접 만들기 미동의</option>
+        <option value="withdrawn">off · 동의 철회 뒤</option>
+        <option value="ready">ready · 버튼 가능</option>
+        <option value="queued">queued · 차례 기다림</option>
+        <option value="running">running · 만드는 중</option>
+        <option value="failed_photo">failed · 사진 준비 실패</option>
+        <option value="failed">failed · 그 밖의 실패</option>
+        <option value="failed_last">failed · 오늘 한도 소진(canRetry 아님)</option>
+        <option value="limited">limited · 오늘 3회 소진</option>
+      </select>
+    </label>
+    <label class="art-s3" hidden>회고 시각
+      <select id="tool-reflect">
+        <option value="20:00">20:00 (기본)</option>
+        <option value="21:15">21:15 (계정 설정 예)</option>
+      </select>
+    </label>
+    <label>본문 길이
+      <select id="tool-len">
+        <option value="normal">보통 (합성 4문장)</option>
+        <option value="max">최대 2000자 (합성 반복)</option>
+      </select>
+    </label>
+    <label>기록 글꼴
+      <select id="tool-font">
+        <option value="gothic">고딕 (기본)</option>
+        <option value="serif">명조</option>
+        <option value="hand">손글씨</option>
+      </select>
+    </label>
+  </aside>
+
+  <header class="top">
+    <div class="top-in">
+      <a class="brand" href="#view">pieceofdays
+        <svg class="squiggle" viewBox="0 0 120 10" aria-hidden="true" focusable="false"><path d="M2 6 C 14 1, 22 9, 34 5 S 56 1, 68 6 S 92 9, 118 3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+      </a>
+      <nav class="seg" aria-label="주 메뉴">
+        <a href="../concepts/d-warm-pieces/index.html#today">오늘</a>
+        <a href="../concepts/d-warm-pieces/index.html#days" aria-current="page">모아보기</a>
+      </nav>
+      <a class="btn-add" href="../concepts/d-warm-pieces/index.html#write"><span aria-hidden="true">+</span> 조각 추가</a>
+    </div>
+  </header>
+
+  <main id="view" tabindex="-1">
+    <div id="day-view">
+    <a class="back" href="../concepts/d-warm-pieces/index.html#days">← 모아보기</a>
+    <div class="board-head">
+      <h1>11월 2일 월요일 <span class="count" id="piece-count" aria-label="조각 4개">4</span></h1>
+      <a class="set-link text-btn" href="../concepts/d-warm-pieces/index.html#settings">설정(회고 시간·글꼴)</a>
+    </div>
+
+    <section class="story" id="story" aria-labelledby="story-h">
+      <h2 id="story-h">AI 하루 이야기</h2>
+      <div id="story-content"></div>
+    </section>
+    <p id="story-live" class="sr-only" aria-live="polite"></p>
+
+    <div class="with-side">
+      <section class="oneline" aria-labelledby="oneline-h">
+        <h2 id="oneline-h">하루 한 줄 · 내가 쓴 글</h2>
+        <p>비 온 뒤라 괜히 오래 걸었다.</p>
+      </section>
+      <section aria-labelledby="src-h">
+        <div class="src-head">
+          <h2 id="src-h">이날의 조각</h2>
+          <p>내가 남긴 원본 메모예요. 이야기는 이 메모로 만들어요.</p>
+        </div>
+        <ul class="pieces" id="pieces"></ul>
+        <p class="no-pieces" id="no-pieces" hidden>이 날의 조각이 없어요.</p>
+      </section>
+    </div>
+    </div>
+
+    <!-- S3: 설정 화면의 AI 하루 이야기 동의 영역(id story-ai). 두 항목 모두 기본 꺼짐. 저장은 아트보드 상태만 바꾼다. -->
+    <div id="settings-view" hidden>
+      <a class="back" href="#view" id="settings-back">← 날짜 화면</a>
+      <section class="settings ai-consent" id="story-ai" aria-labelledby="story-ai-h">
+        <h2 id="story-ai-h">AI 하루 이야기</h2>
+        <p>켜면 그날 남긴 메모 원문과 사진의 512px 사본을 Anthropic의 Claude API로 보내 이야기를 만들어요.</p>
+        <p>보낸 자료는 회수할 수 없어요. 끄면 그 뒤로는 새로 보내지 않아요. 저장할 때마다 새 동의로 기록하고, 그 전에 맡긴 요청은 보내지 않아요.</p>
+        <fieldset class="font-pick">
+          <legend class="lbl">만드는 방법</legend>
+          <label class="font-opt">
+            <input type="checkbox" id="ai-manual" aria-labelledby="ai-manual-name" aria-describedby="ai-manual-desc">
+            <span class="font-name" id="ai-manual-name">직접 만들기 허용</span>
+            <span class="font-desc" id="ai-manual-desc">날짜 화면에서 ‘AI 이야기 만들기’를 누를 때만 보내요. 하루 3번까지예요.</span>
+          </label>
+          <label class="font-opt">
+            <input type="checkbox" id="ai-auto" aria-labelledby="ai-auto-name" aria-describedby="ai-auto-desc">
+            <span class="font-name" id="ai-auto-name">회고 시간(현재 20:00)에 자동으로 만들기</span>
+            <span class="font-desc" id="ai-auto-desc">매일 회고 시간이 지나면 한 번 만들어요. 그날 조각이 없으면 만들지 않아요.</span>
+          </label>
+        </fieldset>
+        <p class="hint">두 항목 모두 기본으로 꺼져 있어요. 회고 시간은 위의 회고 시간 설정을 따라요(한국 시간).</p>
+        <div class="row"><button class="btn-main" type="button" id="ai-save">저장</button></div>
+        <p id="ai-saved" class="hint" aria-live="polite"></p>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    // 아트보드 전용 상태 전환. 합성 예시만 쓰고 외부 요청·저장·타이머가 없다. 모든 글은 textContent로 넣는다.
+    (function () {
+      var PIECES = [
+        { t: "08:40", c: "y", text: "출근길 버스에서 귤 하나." },
+        { t: "12:30", c: "m", text: "점심은 동료들과 칼국수." },
+        { t: "16:10", c: "p", text: "비 그친 뒤 하늘이 맑았다." },
+        { t: "19:20", c: "y", text: "산책하며 노래 한 곡 들었다." }
+      ];
+      var ADDED = { t: "21:40", c: "m", text: "집에 와서 따뜻한 차를 마셨다." };
+      var BODY = "아침 출근길 버스에서 귤 하나를 먹으며 하루를 시작했다.\n\n" +
+        "점심에는 동료들과 칼국수를 먹었다. 오후 네 시쯤 비가 그친 뒤 하늘이 맑아졌다.\n\n" +
+        "저녁에는 산책하며 노래 한 곡을 들었다.";
+      var REFLECT = "20:00"; // 계정 설정값 자리(기본 20:00, 서울)
+      var MADE = "11월 2일 20:03";
+
+      function maxBody() {
+        var unit = BODY + "\n\n";
+        var out = "";
+        while (Array.from(out + unit).length <= 2000) out += unit;
+        var rest = 2000 - Array.from(out).length;
+        return out + Array.from(unit).slice(0, rest).join("").replace(/\s+$/, "") ;
+      }
+
+      var view = {
+        mode: document.getElementById("tool-mode"),
+        screen: document.getElementById("tool-screen"),
+        story: document.getElementById("tool-story"),
+        gen: document.getElementById("tool-gen"),
+        reflect: document.getElementById("tool-reflect"),
+        dayView: document.getElementById("day-view"),
+        settingsView: document.getElementById("settings-view"),
+        state: document.getElementById("tool-state"),
+        len: document.getElementById("tool-len"),
+        font: document.getElementById("tool-font"),
+        content: document.getElementById("story-content"),
+        live: document.getElementById("story-live"),
+        pieces: document.getElementById("pieces"),
+        none: document.getElementById("no-pieces"),
+        count: document.getElementById("piece-count")
+      };
+
+      function el(tag, cls, text) {
+        var n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text != null) n.textContent = text;
+        return n;
+      }
+      function body() {
+        var p = el("p", "story-body", view.len.value === "max" ? maxBody() : BODY);
+        return p;
+      }
+      function src(when) {
+        return el("p", "story-src", "AI가 이날 조각의 메모로 쓴 글이에요. 원본 조각과 하루 한 줄은 아래에 그대로 있어요." + (when ? " · " + when + "에 만든 이야기" : ""));
+      }
+      function setLink() {
+        var a = el("a", "text-btn story-set", "회고 시간 바꾸기");
+        a.href = "../concepts/d-warm-pieces/index.html#settings";
+        return a;
+      }
+      function button(label, cls, disabled, onClick) {
+        var b = el("button", cls, label);
+        b.type = "button";
+        if (disabled) b.setAttribute("aria-disabled", "true");
+        b.addEventListener("click", function () { if (!disabled) onClick(); });
+        return b;
+      }
+      function goPending() {
+        // 후속 계약: 요청은 예약만 하고 바로 "만드는 중"을 돌려준다. 아트보드는 성공으로 넘어가지 않는다.
+        view.state.value = "pending";
+        render(true);
+      }
+
+      function renderPieces(list) {
+        view.pieces.textContent = "";
+        list.forEach(function (p) {
+          var li = el("li", "piece");
+          var note = el("div", "note " + p.c);
+          var meta = el("div", "piece-meta");
+          meta.appendChild(el("time", "hand", p.t));
+          note.appendChild(meta);
+          note.appendChild(el("p", null, p.text));
+          li.appendChild(note);
+          view.pieces.appendChild(li);
+        });
+        view.none.hidden = list.length !== 0;
+        view.count.textContent = String(list.length);
+        view.count.setAttribute("aria-label", "조각 " + list.length + "개");
+      }
+
+      var STATES = {
+        unavailable: function (c) {
+          c.appendChild(el("p", "story-state is-muted", "AI 하루 이야기는 아직 준비 중이에요. 남긴 조각과 하루 한 줄은 그대로 저장돼요."));
+          return { pieces: PIECES, live: "AI 하루 이야기는 아직 준비 중이에요." };
+        },
+        none: function (c) {
+          c.appendChild(el("p", "story-state", "회고 시간(" + REFLECT + ")이 되면 이날 조각으로 이야기를 만들어요. 지금 만들 수도 있어요."));
+          var row = el("div", "row");
+          row.appendChild(button("지금 이야기 만들기", "btn-main", false, goPending));
+          row.appendChild(setLink());
+          c.appendChild(row);
+          return { pieces: PIECES, live: "아직 이야기가 없어요." };
+        },
+        pending: function (c) {
+          c.appendChild(el("p", "story-state", "이야기를 만드는 중이에요. 이 화면을 떠나도 괜찮아요. 다 만들면 여기에 보여요."));
+          var row = el("div", "row");
+          row.appendChild(button("이야기 만드는 중", "btn-main", true));
+          c.appendChild(row);
+          return { pieces: PIECES, live: "이야기를 만드는 중이에요." };
+        },
+        current: function (c) {
+          c.appendChild(src(MADE));
+          c.appendChild(body());
+          return { pieces: PIECES, live: "이야기를 불러왔어요." };
+        },
+        outdated: function (c) {
+          c.appendChild(el("p", "story-state", "이 이야기를 만든 뒤 조각이 바뀌었어요. 지금 조각과 다를 수 있어요."));
+          c.appendChild(src(MADE));
+          c.appendChild(body());
+          var row = el("div", "row");
+          row.appendChild(button("지금 조각으로 새로 만들기", "btn-ghost", false, goPending));
+          c.appendChild(row);
+          return { pieces: PIECES.concat([ADDED]), live: "조각이 바뀐 뒤의 이야기예요." };
+        },
+        deleted: function (c) {
+          c.appendChild(el("p", "story-state", "이 날의 조각을 모두 지웠지만, 이전에 만든 이야기는 남아 있어요."));
+          c.appendChild(src(MADE));
+          c.appendChild(body());
+          return { pieces: [], live: "조각은 없고 이전 이야기만 남아 있어요." };
+        },
+        error: function (c) {
+          var err = el("p", "story-err", "이야기를 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요.");
+          err.setAttribute("role", "alert");
+          c.appendChild(err);
+          var row = el("div", "row");
+          row.appendChild(button("다시 시도", "btn-ghost", false, goPending));
+          c.appendChild(row);
+          return { pieces: PIECES, live: null };
+        }
+      };
+
+      // ---------------- S3 생성 계약 보기(PLAN_ai-story-live-generation §3·§5). 합성 상태만 바꾸며 요청·타이머·자동 성공이 없다.
+      function link(label, href, onClick) {
+        var a = el("a", "text-btn story-set", label);
+        a.href = href;
+        if (onClick) a.addEventListener("click", function (e) { e.preventDefault(); onClick(); });
+        return a;
+      }
+      function showSettings() { view.screen.value = "settings"; render(false); document.getElementById("story-ai").scrollIntoView(); }
+      function enqueue() {
+        // 실제 앱: Server Action이 queued job 1건만 만든다. 결과는 다음 worker 호출 뒤 새로고침으로 본다.
+        view.gen.value = "queued";
+        render(true);
+      }
+      function s3Day(c) {
+        var story = view.story.value, gen = view.gen.value;
+        var hasMoments = story !== "deleted";
+        var hasStory = story !== "none";
+        var canMake = hasMoments && (story === "none" || story === "outdated");
+        var live = null;
+        if (story === "outdated") c.appendChild(el("p", "story-state", "이 이야기를 만든 뒤 조각이 바뀌었어요. 지금 조각과 다를 수 있어요."));
+        if (story === "deleted") c.appendChild(el("p", "story-state", "이 날의 조각을 모두 지웠지만, 이전에 만든 이야기는 남아 있어요."));
+        if (hasStory) {
+          c.appendChild(el("p", "story-src", "AI가 이날 조각의 메모로 쓴 글이에요. 원본 조각은 아래에 그대로 있어요. · " + MADE + "에 만든 이야기"));
+          c.appendChild(body());
+        }
+        var row = el("div", "row");
+        if (gen === "unavailable" || gen === "off" || gen === "withdrawn") {
+          if (!hasStory) c.appendChild(el("p", "hint", "AI 하루 이야기는 아직 준비 중이에요. 남긴 조각은 그대로 저장돼요."));
+          if (gen !== "unavailable" && canMake) row.appendChild(link("AI 이야기 설정", "#story-ai", showSettings));
+          live = hasStory ? null : "AI 하루 이야기는 아직 준비 중이에요.";
+        } else if (gen === "ready") {
+          if (canMake) row.appendChild(button("AI 이야기 만들기", hasStory ? "btn-ghost" : "btn-main", false, enqueue));
+          live = canMake ? "AI 이야기를 만들 수 있어요." : null;
+        } else if (gen === "queued" || gen === "running") {
+          c.appendChild(el("p", "story-state", gen === "queued" ? "AI 이야기를 만드는 중이에요. 만들 차례를 기다리고 있어요." : "AI 이야기를 만드는 중이에요."));
+          c.appendChild(el("p", "hint", "화면은 저절로 바뀌지 않아요. 잠시 뒤 새로고침해서 확인해 주세요."));
+          row.appendChild(link("새로고침", "#view"));
+          live = "AI 이야기를 만드는 중이에요.";
+        } else if (gen === "failed_photo" || gen === "failed" || gen === "failed_last") {
+          var err = el("p", "story-err", gen === "failed_photo" ? "사진을 읽지 못해 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요." : "이야기를 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요.");
+          err.setAttribute("role", "alert");
+          c.appendChild(err);
+          if (gen === "failed_last") c.appendChild(el("p", "hint", "오늘은 더 만들 수 없어요."));
+          else if (canMake) row.appendChild(button("AI 이야기 만들기", "btn-ghost", false, enqueue));
+        } else if (gen === "limited") {
+          c.appendChild(el("p", "story-state", "오늘은 더 만들 수 없어요. 직접 만들기는 하루 3번까지예요."));
+          live = "오늘은 더 만들 수 없어요.";
+        }
+        if (row.childNodes.length) c.appendChild(row);
+        var reflect = el("div", "story-reflect");
+        reflect.appendChild(el("p", "hint", "회고 시간 " + view.reflect.value + " (한국 시간)"));
+        var change = el("a", "text-btn", "회고 시간 바꾸기");
+        change.href = "../concepts/d-warm-pieces/index.html#settings";
+        reflect.appendChild(change);
+        c.appendChild(reflect);
+        var list = story === "deleted" ? [] : story === "outdated" ? PIECES.concat([ADDED]) : PIECES;
+        return { pieces: list, live: live };
+      }
+      function s3Settings() {
+        document.getElementById("ai-auto-name").textContent = "회고 시간(현재 " + view.reflect.value + ")에 자동으로 만들기";
+      }
+      document.getElementById("ai-save").addEventListener("click", function () {
+        var manual = document.getElementById("ai-manual").checked;
+        var before = view.gen.value;
+        view.gen.value = manual ? "ready" : (before === "off" || before === "unavailable" ? before : "withdrawn");
+        document.getElementById("ai-saved").textContent = "AI 이야기 설정을 저장했어요. (아트보드: 상태 이름만 바뀌고 저장·전송은 없어요)";
+      });
+      document.getElementById("settings-back").addEventListener("click", function (e) { e.preventDefault(); view.screen.value = "day"; render(false); });
+
+      // ---------------- S4 이야기 수정·다시 만들기 보기. 수정은 AI 전송 없이 글만 바꾼다(off·unavailable에서도 가능).
+      // 다시 만들기는 확인 뒤 queued로만 바뀐다(자동 성공 0). 이 보기의 날은 늘 조각 4개가 있다.
+      var LIMIT = 2000; // 코드포인트 기준. textarea maxlength(UTF-16 단위)는 쓰지 않는다.
+      var EDITED_AT = "11월 2일 21:10";
+      var editState = document.getElementById("tool-edit");
+      var s4 = { text: null, edited: false, draft: null, pending: false, notice: null };
+      function cp(s) { return Array.from(s).length; }
+      function s4Text() { return s4.text != null ? s4.text : (view.len.value === "max" ? maxBody() : BODY); }
+      function s4Busy() { return view.gen.value === "queued" || view.gen.value === "running"; }
+      // 다시 만들기: 직접 만들기 동의(ready) 또는 다시 시도 가능한 실패 + 조각 있음 + 오늘 3회 잔여
+      function s4CanRegen() { var g = view.gen.value; return g === "ready" || g === "failed" || g === "failed_photo"; }
+      function s4Go(state, focusId, notice) { editState.value = state; s4.notice = notice || null; render(true, focusId); }
+
+      function s4Day(c) {
+        var st = editState.value, gen = view.gen.value;
+        if ((st === "edit" && s4Busy()) || (st === "confirm" && (s4Busy() || !s4CanRegen()))) { st = "read"; editState.value = "read"; s4.pending = false; s4.draft = null; }
+        c.appendChild(el("p", "story-src", s4.edited
+          ? "직접 다듬은 글이에요. 원본 조각은 아래에 그대로 있어요. · " + EDITED_AT + "에 고친 이야기"
+          : "AI가 이날 조각의 메모로 쓴 글이에요. 원본 조각은 아래에 그대로 있어요. · " + MADE + "에 만든 이야기"));
+        if (st === "edit" || st === "conflict") return s4Form(c, st === "conflict");
+        c.appendChild(el("p", "story-body", s4Text()));
+        var row = el("div", "row");
+        var live = s4.notice; s4.notice = null;
+        if (st === "confirm") {
+          var ask = el("p", "story-state", "지금 조각을 AI에 다시 보내 새 글을 만들어요. 직접 고친 글을 포함한 이전 글은 이력으로 남아요.");
+          ask.id = "s4-ask";
+          c.appendChild(ask);
+          var ok = button("AI로 다시 만들기", "btn-main", false, function () { view.gen.value = "queued"; s4Go("read", "s4-edit"); });
+          ok.id = "s4-ok"; ok.setAttribute("aria-describedby", "s4-ask");
+          row.appendChild(ok);
+          row.appendChild(button("취소", "btn-ghost", false, function () { s4Go("read", "s4-regen"); }));
+          c.appendChild(row);
+          return { pieces: PIECES, live: live };
+        }
+        if (s4Busy()) {
+          c.appendChild(el("p", "story-state", gen === "queued" ? "AI 이야기를 다시 만드는 중이에요. 만들 차례를 기다리고 있어요." : "AI 이야기를 다시 만드는 중이에요."));
+          var busy = el("p", "hint", "다 만들 때까지 이야기를 고칠 수 없어요. 화면은 저절로 바뀌지 않아요. 잠시 뒤 새로고침해서 확인해 주세요.");
+          busy.id = "s4-busy";
+          c.appendChild(busy);
+          live = live || "AI 이야기를 다시 만드는 중이에요.";
+        } else if (gen === "failed_photo" || gen === "failed" || gen === "failed_last") {
+          var err = el("p", "story-err", gen === "failed_photo" ? "사진을 읽지 못해 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요." : "이야기를 만들지 못했어요. 남긴 조각과 이전 이야기는 그대로예요.");
+          err.setAttribute("role", "alert");
+          c.appendChild(err);
+          if (gen === "failed_last") c.appendChild(el("p", "hint", "오늘은 더 만들 수 없어요."));
+        } else if (gen === "limited") {
+          c.appendChild(el("p", "hint", "오늘은 더 만들 수 없어요. 직접 만들기는 하루 3번까지예요."));
+        }
+        var edit = button("이야기 수정", "btn-ghost", s4Busy(), function () { s4.draft = null; s4Go("edit", "story-edit-text"); });
+        edit.id = "s4-edit";
+        if (s4Busy()) edit.setAttribute("aria-describedby", "s4-busy");
+        row.appendChild(edit);
+        if (!s4Busy() && s4CanRegen()) {
+          var regen = button("다시 만들기", "btn-ghost", false, function () { s4Go("confirm", "s4-ok"); });
+          regen.id = "s4-regen";
+          row.appendChild(regen);
+        }
+        if (s4Busy()) row.appendChild(link("새로고침", "#view"));
+        c.appendChild(row);
+        return { pieces: PIECES, live: live };
+      }
+
+      function s4Form(c, conflict) {
+        // 충돌을 도구로 바로 고르면 합성 초안 하나를 쓴다. 저장 중 → 충돌이면 그 초안을 그대로 둔다.
+        if (conflict && s4.draft == null) s4.draft = s4Text().replace("하루를 시작했다.", "하루를 천천히 시작했다.");
+        if (conflict) {
+          var err = el("p", "story-err", "다른 곳에서 이야기가 바뀌었어요. 고친 글을 복사한 뒤 다시 불러와 주세요.");
+          err.id = "s4-err"; err.setAttribute("role", "alert");
+          c.appendChild(err);
+        }
+        if (s4.pending) c.appendChild(el("p", "story-state", "고친 이야기를 저장하는 중이에요."));
+        var box = el("div", "story-edit");
+        var lab = el("label", "lbl", "이야기 내용");
+        lab.htmlFor = "story-edit-text";
+        var ta = document.createElement("textarea");
+        ta.id = "story-edit-text"; ta.rows = 12;
+        ta.value = s4.draft != null ? s4.draft : s4Text();
+        ta.readOnly = s4.pending;
+        var count = el("p", "hint"); count.id = "s4-count";
+        var msg = el("p", "err"); msg.id = "s4-msg"; msg.hidden = true; msg.setAttribute("role", "alert");
+        ta.setAttribute("aria-describedby", "s4-count s4-msg" + (conflict ? " s4-err" : ""));
+        function update() {
+          var n = cp(ta.value.trim()); // 제품과 같이 앞뒤 공백을 뺀 codepoint 수
+          count.textContent = n + " / " + LIMIT + "자";
+          if (n > LIMIT) ta.setAttribute("aria-invalid", "true"); else ta.removeAttribute("aria-invalid");
+        }
+        ta.addEventListener("input", function () { s4.draft = ta.value; msg.hidden = true; update(); });
+        update();
+        box.appendChild(lab); box.appendChild(ta); box.appendChild(count); box.appendChild(msg);
+        c.appendChild(box);
+        var row = el("div", "row");
+        if (conflict) {
+          // 실제 앱은 같은 날짜 경로를 다시 불러온다. 초안은 사용자가 이 링크를 누를 때만 버려진다.
+          row.appendChild(link("새로고침", "#view", function () { s4.draft = null; s4Go("read", "s4-edit", "이야기를 다시 불러왔어요."); }));
+        } else {
+          var save = button("저장", "btn-main", s4.pending, function () {
+            var v = ta.value, n = cp(v.trim());
+            function stop(t) { msg.textContent = t; msg.hidden = false; ta.setAttribute("aria-invalid", "true"); }
+            if (!v.trim()) return stop("이야기 내용이 비어 있어요. 글을 쓰거나 취소해 주세요.");
+            if (n > LIMIT) return stop("이야기는 " + LIMIT + "자까지 쓸 수 있어요. 지금 " + n + "자예요.");
+            if (v.trim() === s4Text()) { s4.draft = null; return s4Go("read", "s4-edit", "바뀐 내용이 없어 닫았어요."); }
+            s4.draft = v; s4.pending = true;
+            s4Go("edit", "s4-save");
+          });
+          save.id = "s4-save";
+          row.appendChild(save);
+          row.appendChild(button("취소", "btn-ghost", s4.pending, function () { s4.draft = null; s4Go("read", "s4-edit"); }));
+        }
+        c.appendChild(row);
+        if (s4.pending) {
+          var pick = el("div", "art-result");
+          pick.appendChild(el("p", null, "아트보드 도구 · 저장 결과 고르기 (제품 화면이 아님)"));
+          pick.appendChild(button("저장됨", "btn-ghost", false, function () {
+            s4.text = s4.draft; s4.edited = true; s4.draft = null; s4.pending = false;
+            s4Go("read", "s4-edit", "고친 이야기를 저장했어요.");
+          }));
+          pick.appendChild(button("충돌", "btn-ghost", false, function () { s4.pending = false; s4Go("conflict", "story-edit-text"); }));
+          c.appendChild(pick);
+        }
+        return { pieces: PIECES, live: s4.pending ? "고친 이야기를 저장하는 중이에요." : null };
+      }
+
+      function render(announce, focusId) {
+        document.documentElement.setAttribute("data-record-font", view.font.value);
+        var mode = view.mode.value, s3 = mode === "s3";
+        Array.prototype.forEach.call(document.querySelectorAll(".art-s2, .art-s3, .art-s4"), function (n) { n.hidden = !n.classList.contains("art-" + mode); });
+        var settings = s3 && view.screen.value === "settings";
+        view.dayView.hidden = settings;
+        view.settingsView.hidden = !settings;
+        view.content.textContent = "";
+        if (settings) { s3Settings(); view.live.textContent = ""; return; }
+        var r = mode === "s4" ? s4Day(view.content) : s3 ? s3Day(view.content) : STATES[view.state.value](view.content);
+        renderPieces(r.pieces);
+        // S2·S3는 포커스를 옮기지 않는다. S4만 누른 버튼이 사라지는 전환에서 다음 대상으로 옮긴다. 오류는 role=alert.
+        view.live.textContent = announce && r.live ? r.live : "";
+        if (focusId && document.getElementById(focusId)) document.getElementById(focusId).focus();
+      }
+
+      view.state.addEventListener("change", function () { render(true); });
+      editState.addEventListener("change", function () { s4.pending = false; if (editState.value !== "conflict") s4.draft = null; render(true); });
+      [view.mode, view.screen, view.story, view.gen, view.reflect].forEach(function (n) { n.addEventListener("change", function () { render(true); }); });
+      view.len.addEventListener("change", function () { s4.text = null; s4.edited = false; s4.draft = null; s4.pending = false; render(false); });
+      view.font.addEventListener("change", function () { render(false); });
+      render(false);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+name: Capture synthetic account visuals
+
+# PNG-only visual evidence. Separate from auth E2E and F6c deployment action contracts.
+on:
+  pull_request:
+    branches: [dev]
+    paths: ["app/src/ui/**", "app/src/shared/**", "app/src/app/globals.css", "app/tests/support/account-visual-capture.mjs", ".github/workflows/account-visual-validation.yml"]
+  push:
+    branches: [dev]
+    paths: ["app/src/ui/**", "app/src/shared/**", "app/src/app/globals.css", "app/tests/support/account-visual-capture.mjs", ".github/workflows/account-visual-validation.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: account-visual-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  account-visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      POD_FULL_CHECK_ISOLATED: "1"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install the existing app lock
+        run: npm ci
+      - name: Check the capture script syntax
+        run: node --check tests/support/account-visual-capture.mjs
+      - name: Install the existing Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Capture and validate exactly fifteen synthetic PNGs
+        run: node tests/support/account-visual-capture.mjs
+      # Official actions/upload-artifact v7 commit, resolved and action.yml checked 2026-11-08.
+      - name: Upload only the fifteen validated PNG files
+        id: png
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: account-synthetic-png-${{ github.sha }}
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 7
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/pod-account-visual-png/account-read-375.png
+            ${{ runner.temp }}/pod-account-visual-png/account-read-768.png
+            ${{ runner.temp }}/pod-account-visual-png/account-read-1440.png
+            ${{ runner.temp }}/pod-account-visual-png/account-empty-375.png
+            ${{ runner.temp }}/pod-account-visual-png/account-empty-768.png
+            ${{ runner.temp }}/pod-account-visual-png/account-empty-1440.png
+            ${{ runner.temp }}/pod-account-visual-png/account-compose-375.png
+            ${{ runner.temp }}/pod-account-visual-png/account-compose-768.png
+            ${{ runner.temp }}/pod-account-visual-png/account-compose-1440.png
+            ${{ runner.temp }}/pod-account-visual-png/account-delete-375.png
+            ${{ runner.temp }}/pod-account-visual-png/account-delete-768.png
+            ${{ runner.temp }}/pod-account-visual-png/account-delete-1440.png
+            ${{ runner.temp }}/pod-account-visual-png/account-settings-375.png
+            ${{ runner.temp }}/pod-account-visual-png/account-settings-768.png
+            ${{ runner.temp }}/pod-account-visual-png/account-settings-1440.png
+      - name: Record the artifact identity and evidence limits
+        env:
+          ARTIFACT_ID: ${{ steps.png.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.png.outputs.artifact-digest }}
+        run: |
+          test -n "$ARTIFACT_ID"
+          test -n "$ARTIFACT_DIGEST"
+          echo "Synthetic account PNG15; checkout $GITHUB_SHA; artifact $ARTIFACT_ID; sha256 $ARTIFACT_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          echo "Real components/CSS; temporary layout skips account reads. No auth/DB/writes. Visual acceptance awaits human image review." >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the owned PNG output
+        if: always()
+        run: node tests/support/account-visual-capture.mjs --cleanup-output

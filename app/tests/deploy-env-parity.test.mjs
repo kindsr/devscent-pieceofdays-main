@@ -1,0 +1,394 @@
+// F6b RED — 앱 env 파일 부분집합의 Python 검사기 ↔ 실제 Node --env-file 동일성(PLAN_dev-app-deployment R2 §6.3).
+//
+// node:test 스크립트다. Node 26.13.0과 Python 표준 라이브러리만 쓴다(npm·서버·DB·Docker·Secrets 없음).
+// - Python: scripts/ops/deploy.py의 validate_app_env(text, settings)를 `python3 -I`로 불러 stdin의 가짜 env를 검사한다.
+//   함수가 없으면 각 test 안에서 명시 실패한다(정상 RED). Python이 없으면 실패한다(skip/통과로 세지 않음).
+// - Node: 같은 파일을 실제 `process.execPath --env-file=<임시 파일>`로 읽어 키·값을 비교한다.
+// - 자식 프로세스는 고정 argument 배열과 빈 env만 쓴다(쉘 문자열 평가 없음, 실제 HOME 등 시스템 env를 넘기거나 바꾸지 않는다).
+// 실행: Node 26.13.0에서 `node --test app/tests/deploy-env-parity.test.mjs`(GREEN의 deploy-app-validation workflow가 고정).
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
+
+const REPO = fileURLToPath(new URL("../..", import.meta.url));
+const DEPLOY_PY = path.join(REPO, "scripts", "ops", "deploy.py");
+const PYTHON = ["/usr/bin/python3", "/usr/local/bin/python3"].find((p) => existsSync(p));
+const WORK = mkdtempSync(path.join(tmpdir(), "pod-env-parity-"));
+after(() => rmSync(WORK, { recursive: true, force: true }));
+
+// 시험용 가짜 값만(ci-only-*). settings는 PLAN §6.2의 URL 기대값 키.
+const SETTINGS = {
+  app_mode_enabled: true,
+  app_env_file: "/nonexistent/app.env",
+  db_network: "ci-only-db-network",
+  app_health_url: "https://dev.pieceofdays.com/try/",
+  app_role: "pod_app_dev",
+  db_host: "ci-only-pg18",
+  dev_db: "pod_dev",
+  server_arch: "amd64",
+  front_subnet: "10.231.17.0/24",
+  egress_subnet: "10.231.18.0/24",
+};
+const SESSION = JSON.stringify({ 1: "ci-only-parity-session-key-1-".padEnd(40, "x") });
+const BASE_ENTRIES = [
+  ["POD_AUTH_SESSION_SECRETS", SESSION],
+  ["POD_AUTH_BASE_URL", "https://dev.pieceofdays.com"],
+  ["POD_AUTH_PROVIDERS", "google"],
+  ["POD_AUTH_GOOGLE_CLIENT_ID", "ci-only-parity-google-client"],
+  ["POD_AUTH_GOOGLE_CLIENT_SECRET", "ci-only-parity-google-secret"],
+  ["POD_DATABASE_URL", "postgres://pod_app_dev:ci-only-parity-pass@ci-only-pg18/pod_dev"],
+];
+const PHOTO_ENTRIES = [
+  ["POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/"],
+  ["POD_PHOTOS_S3_REGION", "ci-only-region-1"],
+  ["POD_PHOTOS_S3_BUCKET", "ci-only-private-photos"],
+  ["POD_PHOTOS_S3_ACCESS_KEY_ID", "ci-only-photo-access+/=key"],
+  ["POD_PHOTOS_S3_SECRET_ACCESS_KEY", "ci-only-photo-secret+/==value"],
+];
+const lines = (entries) => entries.map(([k, v]) => `${k}=${v}\n`).join("");
+const replace = (entries, key, value) => entries.map(([k, v]) => [k, k === key ? value : v]);
+
+// Python 쪽: 고정 스크립트(인자 배열로 전달), 텍스트는 stdin, settings는 argv JSON.
+const PY_SCRIPT = [
+  "import importlib.util, json, sys",
+  "spec = importlib.util.spec_from_file_location('pod_deploy_env_parity', sys.argv[1])",
+  "mod = importlib.util.module_from_spec(spec)",
+  "spec.loader.exec_module(mod)",
+  "if not hasattr(mod, 'validate_app_env'):",
+  "    print(json.dumps({'missing': 'validate_app_env'})); sys.exit(3)",
+  "text = sys.stdin.buffer.read().decode('utf-8')",
+  "args = (text, json.loads(sys.argv[2]))",
+  "if len(sys.argv) > 3:",
+  "    import inspect",
+  "    if 'env' not in inspect.signature(mod.validate_app_env).parameters:",
+  "        print(json.dumps({'missing': 'validate_app_env(text, settings, env)'})); sys.exit(4)",
+  "    args = args + (sys.argv[3],)",
+  "try:",
+  "    result = mod.validate_app_env(*args)",
+  "except ValueError as error:",
+  "    print(json.dumps({'error': type(error).__name__, 'message': str(error)})); sys.exit(2)",
+  "print(json.dumps({'ok': result}))",
+].join("\n");
+
+function python(text, settings = SETTINGS, env = undefined) {
+  assert.ok(PYTHON, "python3 (stdlib) is required; a missing interpreter is a failure, not a skip");
+  const argv = ["-I", "-B", "-c", PY_SCRIPT, DEPLOY_PY, JSON.stringify(settings), ...(env === undefined ? [] : [env])];
+  const r = spawnSync(PYTHON, argv, {
+    input: Buffer.from(text, "utf8"),
+    env: {},
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  const out = (() => {
+    try {
+      return JSON.parse(r.stdout.trim().split("\n").pop() || "null");
+    } catch {
+      return null;
+    }
+  })();
+  assert.notEqual(r.status, 3, "scripts/ops/deploy.py must define validate_app_env (PLAN_dev-app-deployment §6.3)");
+  assert.notEqual(r.status, 4, "validate_app_env must take an explicit env argument (default dev) for production (PLAN_production-app-deployment §3)");
+  assert.ok(out && (r.status === 0 || r.status === 2), `python validator crashed (status ${r.status}): ${r.stderr.slice(-400)}`);
+  return out;
+}
+
+let seq = 0;
+function nodeEnvFile(text, keys) {
+  const file = path.join(WORK, `case-${++seq}.env`);
+  writeFileSync(file, text, { mode: 0o600 });
+  const script = `process.stdout.write(JSON.stringify(Object.fromEntries(${JSON.stringify(keys)}.filter((k) => Object.hasOwn(process.env, k)).map((k) => [k, process.env[k]]))))`;
+  const r = spawnSync(process.execPath, [`--env-file=${file}`, "-e", script], { env: {}, encoding: "utf8", timeout: 30_000 });
+  assert.equal(r.status, 0, `node --env-file failed: ${r.stderr.slice(-400)}`);
+  return JSON.parse(r.stdout);
+}
+
+/** 모든 줄의 키(주석·빈 줄 제외)를 원문 그대로 모은다. */
+const keysOf = (text) =>
+  text
+    .split("\n")
+    .filter((l) => l && !l.startsWith("#") && l.includes("="))
+    .map((l) => l.slice(0, l.indexOf("=")));
+
+test("runs on the pinned Node 26.13.0 with a real --env-file parser", () => {
+  assert.equal(process.versions.node, "26.13.0", "parity is claimed only for the pinned Node 26.13.0");
+  assert.ok(path.isAbsolute(process.execPath));
+});
+
+const VALID = {
+  "base google": lines(BASE_ENTRIES),
+  "google+kakao, withdrawal, two session keys, postgresql scheme": lines([
+    ["POD_AUTH_SESSION_SECRETS", JSON.stringify({ 1: "a".repeat(32), 2: "ci-only-parity-session-key-2-".padEnd(48, "z") })],
+    ["POD_AUTH_BASE_URL", "https://dev.pieceofdays.com"],
+    ["POD_AUTH_PROVIDERS", "google,kakao"],
+    ["POD_AUTH_GOOGLE_CLIENT_ID", "ci-only-parity-google-client"],
+    ["POD_AUTH_GOOGLE_CLIENT_SECRET", "ci-only-parity-google-secret"],
+    ["POD_AUTH_KAKAO_CLIENT_ID", "ci-only-parity-kakao-client"],
+    ["POD_AUTH_KAKAO_CLIENT_SECRET", "ci-only-parity-kakao-secret"],
+    ["POD_WITHDRAWAL_ENABLED", "1"],
+    ["POD_DATABASE_URL", "postgresql://pod_app_dev:ci-only-parity-pass@ci-only-pg18/pod_dev"],
+    ...PHOTO_ENTRIES,
+  ]),
+  "comments and blank lines": `# ci-only comment\n\n${lines([...BASE_ENTRIES, ...replace(PHOTO_ENTRIES, "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid:9000/")])}\n# trailing comment\n`,
+  "= and inner spaces kept in values": lines(
+    [...replace(replace(BASE_ENTRIES, "POD_AUTH_GOOGLE_CLIENT_SECRET", "ci-only=parity==secret"), "POD_AUTH_GOOGLE_CLIENT_ID", "ci-only parity client"), ...PHOTO_ENTRIES],
+  ),
+  "percent-encoded password": lines(replace(BASE_ENTRIES, "POD_DATABASE_URL", "postgres://pod_app_dev:ci%2Donly%40pass@ci-only-pg18/pod_dev")),
+  "no trailing newline": lines(BASE_ENTRIES).slice(0, -1),
+};
+
+// PLAN_dev-minio-story-runtime §1.4·§1.5: dev relay flag와 AI 실행 자격. 29개 최상위 사례를 유지하려고
+// 기존 "base google" 사례 안의 추가 vector로 둔다(자식 test·개수 변경 없음).
+const RELAY_ENTRIES = [
+  ["POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.11:8081/"],
+  ["POD_PHOTOS_S3_REGION", "ci-only-region-1"],
+  ["POD_PHOTOS_S3_BUCKET", "pieceofdays-photos-dev"],
+  ["POD_PHOTOS_S3_ACCESS_KEY_ID", "ci-only-relay-access+/=key"],
+  ["POD_PHOTOS_S3_SECRET_ACCESS_KEY", "ci-only-relay-secret+/==value"],
+  ["POD_PHOTOS_INTERNAL_DEV_HTTP", "1"],
+];
+const AI_KEY = "ci-only-parity-anthropic-key+/=~!";
+const WORKER_TOKEN = "0123456789abcdef".repeat(4);
+const STORY_ENTRIES = [["ANTHROPIC_API_KEY", AI_KEY], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]];
+const RELAY_STORY_VALID = [
+  ["relay photos", lines([...BASE_ENTRIES, ...RELAY_ENTRIES])],
+  ["story credentials", lines([...BASE_ENTRIES, ...STORY_ENTRIES])],
+  ["relay photos + story credentials", lines([...BASE_ENTRIES, ...RELAY_ENTRIES, ...STORY_ENTRIES])],
+  ["4096-byte API key", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", "k".repeat(4096)], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+];
+
+// PLAN_production-app-deployment §3·§4: 운영 env. 29개 최상위 사례를 유지하려고 기존 "base google"(수락)과
+// "forbidden fixture"(거부) 사례 안의 추가 vector로 둔다. 운영 settings는 dev_db 대신 prod_db, +app_pool_max·approved_migrations.
+const PROD_SETTINGS = {
+  app_mode_enabled: true,
+  app_env_file: "/nonexistent/prod-app.env",
+  db_network: "ci-only-db-network",
+  app_health_url: "https://pieceofdays.com/try/",
+  app_role: "pod_app_prod",
+  db_host: "ci-only-pg18",
+  prod_db: "pod_prod",
+  server_arch: "amd64",
+  front_subnet: "10.231.27.0/24",
+  egress_subnet: "10.231.28.0/24",
+  app_pool_max: 3,
+  approved_migrations: 7,
+};
+const PROD_BASE_ENTRIES = [
+  ["POD_AUTH_SESSION_SECRETS", JSON.stringify({ 1: "ci-only-parity-prod-session-1-".padEnd(40, "p") })],
+  ["POD_AUTH_BASE_URL", "https://pieceofdays.com"],
+  ["POD_AUTH_PROVIDERS", "google"],
+  ["POD_AUTH_GOOGLE_CLIENT_ID", "ci-only-parity-google-client"],
+  ["POD_AUTH_GOOGLE_CLIENT_SECRET", "ci-only-parity-google-secret"],
+  ["POD_DATABASE_URL", "postgres://pod_app_prod:ci-only-parity-pass@ci-only-pg18/pod_prod"],
+  ["POD_DATABASE_POOL_MAX", "3"],
+];
+const PROD_PHOTO_ENTRIES = [
+  ["POD_PHOTOS_S3_ENDPOINT", "https://pieceofdays.com/"],
+  ["POD_PHOTOS_S3_REGION", "ci-only-region-1"],
+  ["POD_PHOTOS_S3_BUCKET", "pieceofdays-photos"],
+  ["POD_PHOTOS_S3_ACCESS_KEY_ID", "ci-only-photo-access+/=key"],
+  ["POD_PHOTOS_S3_SECRET_ACCESS_KEY", "ci-only-photo-secret+/==value"],
+];
+const PROD_ENTRIES = [...PROD_BASE_ENTRIES, ...PROD_PHOTO_ENTRIES];
+const prodWith = (key, value) => lines(value === undefined ? PROD_ENTRIES.filter(([k]) => k !== key) : replace(PROD_ENTRIES, key, value));
+const PROD_VALID = [
+  ["production photos", lines(PROD_ENTRIES)],
+  ["production photos + story credentials", lines([...PROD_ENTRIES, ...STORY_ENTRIES])],
+  ["production google+kakao grammar kept", lines([...PROD_BASE_ENTRIES.map(([k, v]) => [k, k === "POD_AUTH_PROVIDERS" ? "google,kakao" : v]), ["POD_AUTH_KAKAO_CLIENT_ID", "ci-only-parity-kakao-client"], ["POD_AUTH_KAKAO_CLIENT_SECRET", "ci-only-parity-kakao-secret"], ...PROD_PHOTO_ENTRIES])],
+  ["production postgresql scheme", prodWith("POD_DATABASE_URL", "postgresql://pod_app_prod:ci-only-parity-pass@ci-only-pg18/pod_prod")],
+];
+const PROD_REJECTED = [
+  ["prod: dev origin", prodWith("POD_AUTH_BASE_URL", "https://dev.pieceofdays.com")],
+  ["prod: origin trailing slash", prodWith("POD_AUTH_BASE_URL", "https://pieceofdays.com/")],
+  ["prod: www origin", prodWith("POD_AUTH_BASE_URL", "https://www.pieceofdays.com")],
+  ["prod: http origin", prodWith("POD_AUTH_BASE_URL", "http://pieceofdays.com")],
+  ["prod: origin port", prodWith("POD_AUTH_BASE_URL", "https://pieceofdays.com:443")],
+  ["prod: missing pool max", prodWith("POD_DATABASE_POOL_MAX", undefined)],
+  ["prod: pool max differs from app_pool_max", prodWith("POD_DATABASE_POOL_MAX", "4")],
+  ["prod: pool max 2", prodWith("POD_DATABASE_POOL_MAX", "2")],
+  ["prod: pool max leading zero", prodWith("POD_DATABASE_POOL_MAX", "03")],
+  ["prod: pool max 6", prodWith("POD_DATABASE_POOL_MAX", "6")],
+  ["prod: dev database url", prodWith("POD_DATABASE_URL", "postgres://pod_app_dev:ci-only-parity-pass@ci-only-pg18/pod_dev")],
+  ["prod: dev role on prod db", prodWith("POD_DATABASE_URL", "postgres://pod_app_dev:ci-only-parity-pass@ci-only-pg18/pod_prod")],
+  ["prod: prod role on dev db", prodWith("POD_DATABASE_URL", "postgres://pod_app_prod:ci-only-parity-pass@ci-only-pg18/pod_dev")],
+  ["prod: other db host", prodWith("POD_DATABASE_URL", "postgres://pod_app_prod:ci-only-parity-pass@ci-only-other/pod_prod")],
+  ["prod: photos missing", lines(PROD_BASE_ENTRIES)],
+  ["prod: photos partial", prodWith("POD_PHOTOS_S3_SECRET_ACCESS_KEY", undefined)],
+  ["prod: dev bucket", prodWith("POD_PHOTOS_S3_BUCKET", "pieceofdays-photos-dev")],
+  ["prod: other bucket", prodWith("POD_PHOTOS_S3_BUCKET", "ci-only-private-photos")],
+  ["prod: endpoint other host", prodWith("POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/")],
+  ["prod: endpoint dev host", prodWith("POD_PHOTOS_S3_ENDPOINT", "https://dev.pieceofdays.com/")],
+  ["prod: endpoint without slash", prodWith("POD_PHOTOS_S3_ENDPOINT", "https://pieceofdays.com")],
+  ["prod: endpoint port", prodWith("POD_PHOTOS_S3_ENDPOINT", "https://pieceofdays.com:443/")],
+  ["prod: endpoint path", prodWith("POD_PHOTOS_S3_ENDPOINT", "https://pieceofdays.com/pieceofdays-photos/")],
+  ["prod: endpoint http", prodWith("POD_PHOTOS_S3_ENDPOINT", "http://pieceofdays.com/")],
+  ["prod: dev relay flag", lines([...PROD_ENTRIES, ["POD_PHOTOS_INTERNAL_DEV_HTTP", "1"]])],
+  ["prod: dev relay endpoint + flag", lines([...PROD_BASE_ENTRIES, ...RELAY_ENTRIES])],
+  ["prod: story key without token", lines([...PROD_ENTRIES, ["ANTHROPIC_API_KEY", AI_KEY]])],
+  ["prod: fixture", lines([...PROD_ENTRIES, ["POD_LOCAL_FIXTURE", "1"]])],
+];
+const PROD_PARITY_SECRETS = ["ci-only-parity-prod-session-1-"];
+
+for (const [label, text] of Object.entries(VALID)) {
+  test(`accepted file is read identically by Python and Node --env-file: ${label}`, () => {
+    // dev 사례는 env 인자 없이(기본 dev) 기존대로 부르고, 운영 vector만 settings·env를 명시한다.
+    const vectors = [[label, text, SETTINGS, undefined], ...(label === "base google" ? [
+      ...RELAY_STORY_VALID.map(([v, t]) => [v, t, SETTINGS, undefined]),
+      ["dev explicit env", text, SETTINGS, "dev"],
+      ...PROD_VALID.map(([v, t]) => [v, t, PROD_SETTINGS, "production"]),
+    ] : [])];
+    for (const [vector, input, settings, env] of vectors) {
+      const py = python(input, settings, env);
+      assert.ok(py.ok, `${vector}: python rejected a valid file: ${py.message ?? ""}`);
+      const keys = keysOf(input);
+      const node = nodeEnvFile(input, keys);
+      assert.deepEqual(Object.keys(py.ok).sort(), [...keys].sort(), `${vector}: python returns exactly the file keys`);
+      assert.deepEqual(node, py.ok, `${vector}: Node --env-file values equal the Python values`);
+    }
+  });
+}
+
+const base = lines(BASE_ENTRIES);
+const SECRET = "ci-only-parity-google-secret";
+const REJECTED = {
+  "UTF-8 BOM": `﻿${base}`,
+  CRLF: base.replaceAll("\n", "\r\n"),
+  "bare CR": base.replace("\n", "\r"),
+  NUL: `${base}POD_X\u0000=1\n`,
+  "other control char": base.replace(SECRET, `ci-only\u0007secret`),
+  "tab in value": base.replace(SECRET, `ci-only\tsecret`),
+  "export prefix": base.replace("POD_AUTH_PROVIDERS=", "export POD_AUTH_PROVIDERS="),
+  "duplicate key": `${base}POD_AUTH_PROVIDERS=google\n`,
+  "space before key": base.replace("POD_AUTH_PROVIDERS=", " POD_AUTH_PROVIDERS="),
+  "space before =": base.replace("POD_AUTH_PROVIDERS=", "POD_AUTH_PROVIDERS ="),
+  "leading space in value": base.replace(`=${SECRET}`, `= ${SECRET}`),
+  "trailing space in value": base.replace(`${SECRET}\n`, `${SECRET} \n`),
+  "# inside value": base.replace(SECRET, `${SECRET}#x`),
+  "inline comment": base.replace(SECRET, `${SECRET} # note`),
+  "double quote": base.replace(`=${SECRET}`, `="${SECRET}"`),
+  "single quote": base.replace(`=${SECRET}`, `='${SECRET}'`),
+  backtick: base.replace(`=${SECRET}`, `=\`${SECRET}\``),
+  "empty value": base.replace("=ci-only-parity-google-client", "="),
+  "multi-line quoted value": base.replace(`=${SECRET}`, `="ci-only\nparity"`),
+  "forbidden NODE_OPTIONS": `${base}NODE_OPTIONS=--require=/tmp/x.js\n`,
+  "forbidden fixture": `${base}POD_LOCAL_FIXTURE=1\n`,
+};
+
+// Keep all 29 original top-level cases. These are additional vectors inside the
+// existing forbidden-fixture case, not child tests/count-changing placeholders.
+const PHOTO_REJECTED = [];
+for (let mask = 1; mask < (1 << PHOTO_ENTRIES.length) - 1; mask++) {
+  PHOTO_REJECTED.push([`partial photos ${mask}`, lines([...BASE_ENTRIES, ...PHOTO_ENTRIES.filter((_entry, bit) => mask & (1 << bit))])]);
+}
+for (const [label, key, value] of [
+  ["HTTP", "POD_PHOTOS_S3_ENDPOINT", "http://ci-only-photos.invalid/"],
+  ["isolated HTTP is not deploy config", "POD_PHOTOS_S3_ENDPOINT", "http://127.0.0.1:8333/"],
+  ["userinfo", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-user:ci-only-pass@ci-only-photos.invalid/"],
+  ["empty userinfo", "POD_PHOTOS_S3_ENDPOINT", "https://@ci-only-photos.invalid/"],
+  ["empty password userinfo", "POD_PHOTOS_S3_ENDPOINT", "https://:@ci-only-photos.invalid/"],
+  ["empty query", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/?"],
+  ["query", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/?ci-only=1"],
+  ["empty fragment", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/#"],
+  ["fragment", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/#ci-only"],
+  ["path", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/bucket"],
+  ["normalized path", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid/a/../"],
+  ["double slash", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid//"],
+  ["invalid port", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid:word/"],
+  ["port overflow", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only-photos.invalid:65536/"],
+  ["endpoint whitespace", "POD_PHOTOS_S3_ENDPOINT", "https://ci-only photos.invalid/"],
+  ["region case", "POD_PHOTOS_S3_REGION", "CI-region"],
+  ["region punctuation", "POD_PHOTOS_S3_REGION", "ci_region"],
+  ["region length", "POD_PHOTOS_S3_REGION", "r".repeat(64)],
+  ["region start", "POD_PHOTOS_S3_REGION", "-ci-region"],
+  ["short bucket", "POD_PHOTOS_S3_BUCKET", "ab"],
+  ["long bucket", "POD_PHOTOS_S3_BUCKET", "b".repeat(64)],
+  ["bucket case", "POD_PHOTOS_S3_BUCKET", "CI-bucket"],
+  ["bucket punctuation", "POD_PHOTOS_S3_BUCKET", "ci_bucket"],
+  ["bucket start", "POD_PHOTOS_S3_BUCKET", "-ci-bucket"],
+  ["bucket end", "POD_PHOTOS_S3_BUCKET", "ci-bucket."],
+  ["bucket dots", "POD_PHOTOS_S3_BUCKET", "ci..bucket"],
+  ["bucket dot dash", "POD_PHOTOS_S3_BUCKET", "ci.-bucket"],
+  ["bucket dash dot", "POD_PHOTOS_S3_BUCKET", "ci-.bucket"],
+  ["bucket IP", "POD_PHOTOS_S3_BUCKET", "127.0.0.1"],
+  ...PHOTO_ENTRIES.flatMap(([key, value]) => [
+    [`${key} empty`, key, ""], [`${key} leading space`, key, ` ${value}`],
+    [`${key} trailing space`, key, `${value} `], [`${key} inner space`, key, "ci-only photo-value"],
+  ]),
+]) PHOTO_REJECTED.push([label, lines([...BASE_ENTRIES, ...replace(PHOTO_ENTRIES, key, value)])]);
+for (const [key, value] of [
+  ["POD_PHOTO_CLEANUP_DATABASE_URL", "postgres://ci-only-purge.invalid/pod_dev"],
+  ["POD_FULL_CHECK_ISOLATED", "1"], ["POD_TEST_DB_DISPOSABLE", "1"], ["POD_TEST_ADMIN_URL", "postgres://ci-only-owner.invalid/pod_dev"],
+  ["AWS_ACCESS_KEY_ID", "ci-only-ambient-access"], ["AWS_SECRET_ACCESS_KEY", "ci-only-ambient-secret"],
+  ["AWS_SESSION_TOKEN", "ci-only-ambient-token"], ["AWS_ENDPOINT_URL", "https://ci-only-photos.invalid/"],
+  ["AWS_REGION", "ci-only-region-1"], ["AWS_DEFAULT_REGION", "ci-only-region-1"],
+  ["AWS_PROFILE", "ci-only-profile"], ["AWS_SHARED_CREDENTIALS_FILE", "/nonexistent/ci-only-credentials"],
+  ["POD_PHOTOS_S3_EXTRA", "ci-only-not-allowlisted"],
+]) PHOTO_REJECTED.push([key, lines([...BASE_ENTRIES, ...PHOTO_ENTRIES, [key, value]])]);
+// dev relay/AI 거부 vector도 같은 기존 사례 안에 둔다.
+const relayWith = (key, value) => lines([...BASE_ENTRIES, ...(value === undefined ? RELAY_ENTRIES.filter(([k]) => k !== key) : replace(RELAY_ENTRIES, key, value))]);
+for (const [label, text] of [
+  ["relay without flag", relayWith("POD_PHOTOS_INTERNAL_DEV_HTTP", undefined)],
+  ["relay flag 0", relayWith("POD_PHOTOS_INTERNAL_DEV_HTTP", "0")],
+  ["relay flag true", relayWith("POD_PHOTOS_INTERNAL_DEV_HTTP", "true")],
+  ["flag without photos", lines([...BASE_ENTRIES, ["POD_PHOTOS_INTERNAL_DEV_HTTP", "1"]])],
+  ["flag with HTTPS photos", lines([...BASE_ENTRIES, ...PHOTO_ENTRIES, ["POD_PHOTOS_INTERNAL_DEV_HTTP", "1"]])],
+  ["relay other bucket", relayWith("POD_PHOTOS_S3_BUCKET", "ci-only-private-photos")],
+  ["relay prod bucket", relayWith("POD_PHOTOS_S3_BUCKET", "pieceofdays-photos")],
+  ["relay app address", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.10:8081/")],
+  ["relay egress address", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.18.11:8081/")],
+  ["relay port", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.11:8080/")],
+  ["relay no slash", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.11:8081")],
+  ["relay name", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://pieceofdays-frontend-dev:8081/")],
+  ["relay leading zero", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://010.231.17.11:8081/")],
+  ["relay path", relayWith("POD_PHOTOS_S3_ENDPOINT", "http://10.231.17.11:8081/pieceofdays-photos-dev")],
+  ["relay HTTPS with flag", relayWith("POD_PHOTOS_S3_ENDPOINT", "https://10.231.17.11:8081/")],
+  ["flag typo", lines([...BASE_ENTRIES, ...RELAY_ENTRIES.filter(([k]) => k !== "POD_PHOTOS_INTERNAL_DEV_HTTP"), ["POD_PHOTOS_INTERNAL_DEV_HTTPS", "1"]])],
+  ["API key without token", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", AI_KEY]])],
+  ["token without API key", lines([...BASE_ENTRIES, ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+  ["API key 4097", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", "k".repeat(4097)], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+  ["API key inner space", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", "ci-only key"], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+  ["API key non-ASCII", lines([...BASE_ENTRIES, ["ANTHROPIC_API_KEY", "ci-only-k\u00e9y"], ["POD_STORY_WORKER_TOKEN", WORKER_TOKEN]])],
+  ["token uppercase", lines([...BASE_ENTRIES, ...replace(STORY_ENTRIES, "POD_STORY_WORKER_TOKEN", WORKER_TOKEN.toUpperCase())])],
+  ["token 63", lines([...BASE_ENTRIES, ...replace(STORY_ENTRIES, "POD_STORY_WORKER_TOKEN", WORKER_TOKEN.slice(1))])],
+  ["token non-hex", lines([...BASE_ENTRIES, ...replace(STORY_ENTRIES, "POD_STORY_WORKER_TOKEN", "g".repeat(64))])],
+  ["other Anthropic key", lines([...BASE_ENTRIES, ...STORY_ENTRIES, ["ANTHROPIC_BASE_URL", "https://ci-only.invalid/"]])],
+]) PHOTO_REJECTED.push([label, text]);
+
+for (const [label, text] of Object.entries(REJECTED)) {
+  test(`Python rejects text outside the Node-identical subset without echoing values: ${label}`, () => {
+    const vectors = [[label, text, SETTINGS, undefined], ...(label === "forbidden fixture" ? [
+      ...PHOTO_REJECTED.map(([v, t]) => [v, t, SETTINGS, undefined]),
+      // 환경 교차 거부: 운영 env를 dev 검사기에, dev env를 운영 검사기에 넣으면 둘 다 거부한다.
+      ["dev validator refuses the production env", lines(PROD_ENTRIES), SETTINGS, "dev"],
+      ["dev validator (default env) refuses the production env", lines(PROD_ENTRIES), SETTINGS, undefined],
+      ["production validator refuses the dev env", lines(BASE_ENTRIES), PROD_SETTINGS, "production"],
+      ["production validator refuses the dev relay env", lines([...BASE_ENTRIES, ...RELAY_ENTRIES]), PROD_SETTINGS, "production"],
+      ["production validator refuses dev settings", lines(PROD_ENTRIES), SETTINGS, "production"],
+      ["dev validator refuses production settings", lines(BASE_ENTRIES), PROD_SETTINGS, "dev"],
+      ["unknown env name", lines(PROD_ENTRIES), PROD_SETTINGS, "prod"],
+      ...PROD_REJECTED.map(([v, t]) => [v, t, PROD_SETTINGS, "production"]),
+    ] : [])];
+    for (const [vector, input, settings, env] of vectors) {
+      const py = python(input, settings, env);
+      assert.equal(py.error, "ValueError", `${vector}: expected ValueError, got ${JSON.stringify(py).slice(0, 120)}`);
+      for (const secret of [SECRET, "ci-only-parity-pass", "ci-only-parity-session-key-1-", ...PROD_PARITY_SECRETS, ...PHOTO_ENTRIES.map((entry) => entry[1]), ...RELAY_ENTRIES.slice(3, 5).map((entry) => entry[1]), AI_KEY, WORKER_TOKEN]) {
+        assert.ok(!py.message.includes(secret), `${vector}: error message must not contain values`);
+      }
+    }
+  });
+}
+
+test("why the subset matters: Node itself changes these raw values (so Python must reject them)", () => {
+  const cases = [
+    ["inline comment", `K=abc # note\n`, "abc # note"],
+    ["double quotes", `K="abc"\n`, '"abc"'],
+    ["surrounding spaces", `K=  abc  \n`, "  abc  "],
+  ];
+  for (const [label, text, raw] of cases) {
+    const node = nodeEnvFile(text, ["K"]);
+    assert.notEqual(node.K, raw, `${label}: Node does not keep the raw text`);
+  }
+});

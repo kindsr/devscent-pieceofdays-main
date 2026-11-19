@@ -1,0 +1,39 @@
+name: Validate deploy helper app env parity (F6b)
+
+# Node 26.13.0 --env-file parity of the helper's app env validator (PLAN_dev-app-deployment §6.3).
+# Python standard library + pinned Node only: no npm, dependencies, build, server, DB, Docker or Secrets.
+on:
+  pull_request:
+    paths:
+      - "scripts/ops/deploy.py"
+      - "app/tests/deploy-env-parity.test.mjs"
+      - ".github/workflows/deploy-app-validation.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "scripts/ops/deploy.py"
+      - "app/tests/deploy-env-parity.test.mjs"
+      - ".github/workflows/deploy-app-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-app-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  env-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # actions/checkout v6.1.0 (official tag commit, same pin as app-validation.yml)
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      # actions/setup-node v6.5.0 (official tag commit, same pin as app-validation.yml)
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "26.13.0"
+      - name: Node --env-file parity (29 tests)
+        run: node --test app/tests/deploy-env-parity.test.mjs

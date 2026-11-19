@@ -38,6 +38,24 @@ PLAN_mvp-foundation F1의 호환 확인(§1.1)을 거친 뒤 아래 기준으로
 | Konva / react-konva | **konva 10.x**(npm `latest` 10.9.1), **react-konva 19.x**(npm `latest` 19.3.2, peer `react ^19.3.0`) | react-konva의 메이저 버전은 React 메이저 버전과 같아야 하고 브라우저 전용이라는 공식 문서 내용 | https://konvajs.org/docs/react/index.html , https://registry.npmjs.org/react-konva |
 | PostgreSQL | **18**(현재 18.6) | 지원 종료 2030-11-14. 각 메이저 버전은 5년 지원하며, 최신 마이너 버전을 쓰라는 공식 권고 | https://www.postgresql.org/support/versioning/ |
 
+### 2.1 F1에서 정확히 고정한 버전 (2026-11-02, `app/package.json`·`package-lock.json`)
+
+| 구성 | 고정 | 비고 |
+|---|---|---|
+| Node.js | 26.13.0(`app/.nvmrc`, CI 기준) · 24.22.2(CI 함께 실행) | 26.13.0은 v26 첫 LTS 릴리스(2026-10-28). `engines` `^24.22.2 \|\| >=26.13.0` |
+| npm | Node 동봉(26.13.0 → 11.20.0, 24.22.2 → 11.19.1) | `engine-strict`, `save-exact`(app `.npmrc`) |
+| next / eslint-config-next | 16.4.3 | 16.4.4가 확인 당일(2026-11-02) 출시돼 직전 패치 사용 |
+| react / react-dom | 19.3.1 / 19.3.1 | |
+| react-konva / konva | 19.3.2 / 10.9.1 | peer `react ^19.3.0`, `konva ^10` 충족 |
+| typescript | 6.0.3 | typescript-eslint peer `<6.1.0` 충족 |
+| @types/react / @types/react-dom / @types/node | 19.3.0 / 19.3.0 / 24.12.0 | @types/node는 지원 하한(24)에 맞춤 |
+| eslint | 9.39.5 | npm deprecated(지원 종료) 표시. ESLint 10은 eslint-plugin-react·jsx-a11y·import peer 범위 밖이라 9 유지. 플러그인이 10을 지원하면 올린다 |
+| vitest | 5.0.5 | 5.1.0이 확인 당일 출시돼 직전 패치 사용 |
+| @playwright/test | 1.63.0 | 저장소의 홍보영상 도구와 같은 버전 |
+
+확인: Node 26.13.0·24.22.2 각각 깨끗한 복사본에서 `npm ci`, `npm ls --all`(peer 문제 없음), lint·typecheck·unit·build·E2E 통과.
+`npm audit --omit=dev` 0건. 개발 전용 lint 체인(minimatch)에 moderate 16건. lockfile 라이선스는 대부분 MIT·Apache-2.0·ISC이며, Next 이미지 최적화용 선택 의존성(sharp libvips)이 LGPL-3.0-or-later, lightningcss가 MPL-2.0이다.
+
 라이선스: npm 레지스트리 메타데이터상 next·konva·react-konva는 MIT다. 설치 시 lockfile 기준으로 의존성 전체 라이선스를 다시 확인한다.
 npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 공식 문서 기준이다.
 
@@ -63,8 +81,37 @@ npm `latest` 값은 레지스트리 조회 결과이고, 지원 상태는 각 �
 
 ## 4. 이 결정이 확정하지 않는 것
 
-- 인증 공급자와 로그인 방식 [미정]. 첫 로그인 지급의 기준 사건이 이 결정에 달려 있다.
+- 로그인 공급자는 2026-11-03 사용자가 **Google·Kakao 둘 다**로 확정했다(PRD §0). 공급자 간 계정 연결 방식은 [미정]이다.
 - 외부 서비스로 개인정보나 일기 내용을 보내는 일(외부 인증 공급자에게 넘어가는 식별 정보, AI 제공자 등)은 확정하지 않았다. 각각 사용자 결정과 동의 설계가 먼저다.
-- 사진의 MVP 포함 여부(PRD Q1), AI 초안(PRD Q2), 공유(PRD Q3).
+- 사진·AI 하루 이야기는 2026-11-10 사용자 확인으로 제품 핵심에 포함한다. 사용자 메뉴에서 회고 시간을 바꾸며 초기값은20:00이다([핵심 계획](../plans/PLAN_ai-daily-story-core.md)). 이 스택 선택만으로 AI 제공자·실제 외부 전송 범위·비용 한도를 확정하지 않는다. 공유 범위는 계속 미정이다.
 - 앱 이미지의 배포 전환. 현행 배포 프로그램은 승인된 정적 nginx 이미지만 허용하므로, 전환에는 별도 계획과 메인 검토가 필요하다(PLAN_mvp-foundation F6).
 - 감정덩어리 현금화·환전·정산 방식, 창작자 +1 시점(권고만 있음).
+
+## 5. F4 인증 기술 기본값 (메인 결정, 2026-11-03)
+
+- **선택자:** 메인. 날짜: 2026-11-03.
+  - 사용자가 고른 전체 스택(§1~§2) 안에서 정한 구현 기술 기본값이다. 사용자 선택이 아니며, 새 외부 인증 서비스를 쓰거나 공급자를 승인한 것도 아니다.
+- **채택:**
+  - OIDC 프로토콜 검증: `openid-client` **6.8.9** (MIT, ESM, 의존 `jose ^6.2.15`·`oauth4webapi ^3.8.8`, `engines` 필드 없음, README상 Node 20 기준).
+  - 세션 봉인·검증(S1 무상태): `iron-session` **9.0.1** (MIT, ESM, `engines node >=22.13.0`, 의존 `cookie ^2.0.1`·`iron-webcrypto ^2.0.0`).
+  - 서버 전용 경계: Next 내장 `import 'server-only'` 처리.
+  - JWT와 암호 알고리즘은 직접 구현하지 않는다.
+  - 출처: npm 레지스트리, https://github.com/panva/openid-client , https://github.com/vvo/iron-session , https://nextjs.org/docs/app/guides/data-security (확인일 2026-11-03).
+- **세션:** 절대 만료 7일. 사용하더라도 연장하지 않는다. 재인증하면 새로 7일이다. 상세는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md).
+- **검증 상태(2026-11-03):**
+  - `iron-session` 9.0.1은 Cloud scratch 사본(Node 26.13.0·npm 11.20.0, Next 16.4.3·React 19.3.1)에서 확인했다(PR27 호환 spike, 원본 저장소 불변).
+    - 설치(peer 없음), `npm ls`, lint·typecheck·단위 103, `next build` 통과
+    - `server-only` 패키지 없이 Next 내장 처리와 client import 거부 확인
+  - 제품 저장소 패키지 준비(PR28 `7004e8a`)는 [CI 41656725705](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41656725705)에서 Node 24.22.2·26.13.0 설치·lint·타입·빌드, 단위 103·DB 99·운영 경계 6·E2E 12개를 통과했다. 새 세션 API를 호출한 결과는 아니다.
+  - F4a GREEN `96bcf8c`는 [CI 41663957968](https://github.com/kindsr/devscent-pieceofdays-main/actions/runs/41663957968)에서 Node 24·26 각각 단위 122·실제 auth 빌드 경계 4·운영 경계 6·E2E 12개와 DB 99개를 통과했다. 세션 API·원시 TTL child도 실제로 실행했다. 독립 runner가 같은 커밋의 단위 122·경계 4개를 다시 통과했다.
+  - **미검증:**
+    - 실제 OAuth·서비스에서의 동작, 요청마다 하는 DB 상태·generation 대조와 탈퇴·복구·삭제
+    - `openid-client` 6.8.9 전체(F4b에서 설치·검증)
+  - 세션 codec의 RED·GREEN은 완료했다. 실제 인증 연결은 F4b/c다.
+  - 세션 정책 세부(R2)는 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5.
+- **설치 시점:** F4a에서는 `iron-session`만 설치하고, `openid-client`는 필요해지는 F4b에서 설치한다.
+- **공급자:** 2026-11-03 사용자 확정은 **Google·Kakao 둘 다**다(PRD §0). 이 절의 기술 기본값은 메인 결정으로 그대로 둔다. 계정 연결은 사용자 답변 대기다.
+- **세션 generation [메인 채택, 2026-11-03]:**
+  - payload `{ v, userId, gen, iat, exp }`(키 5개)와 `users.auth_generation`을 쓰고, DAL이 매 요청 `status`·`gen`을 검사한다(M안).
+  - 사용자 선택이 아니다. codec의 `gen` 형식 검증은 구현했다. `users.auth_generation` 열은 L1(0002, PR33 CI·독립 검토 수락·dev 통합)에서 추가했고, DB 대조·탈퇴 시 세대 변경 도메인(L2)은 PR35 `ba2b167`에서 CI·독립 검토를 통과해 dev에 통합했다. 요청별 DAL 연결은 F4b/c다. 계약은 [PLAN_mvp-authentication](../plans/PLAN_mvp-authentication.md) §5, 근거는 [PLAN_account-lifecycle](../plans/PLAN_account-lifecycle.md) §4.
+  - package-only `iron-session` bootstrap은 독립적으로 진행할 수 있다.

@@ -1,5 +1,7 @@
 # PLAN — MVP 기반 구축 (Next.js 앱·DB·인증 소유권·개인용 꾸미기 Lite)
 
+> **2026-11-10 범위 정정:** 아래는 당시 기반 구축 계획이다. 사용자가 재확인한 핵심은 사진·짧은 메모·시간 기반 AI 하루 이야기다. 최신 [PRD](../PRD.md)·[MVP](../product/03_MVP.md)·[핵심 구현 계획](PLAN_ai-daily-story-core.md)을 따른다. F1~F6의 구현/검증 이력은 보존하되 사진·AI가 없는 상태를 제품/MVP 완료로 세지 않는다.
+
 - 상태: **계획.** 기준 `dev` `efe6b0f`. 사용자가 스택을 선택했으므로 프레임워크·패키지 설치는 허용된다(F1에서 §1.1 호환 확인 후 설치). 이 PR 시점에는 아직 설치·구현하지 않았다. 서버 DB·버킷 생성과 공용 서버 설정은 별도 의존성이다(§8).
 - 골격의 가정: [01_PRD_ANALYSIS](../product/01_PRD_ANALYSIS.md) §2 — **비공개 기본, 하루 정리는 직접 작성(A), 짧은 글 중심.** PRD Q1~Q3 답을 기다리지 않고 이 가정을 드러낸 채 UI·도메인·저장 port 골격까지 만든다. 범위 정의는 [03_MVP](../product/03_MVP.md)에 있다.
 - 근거: [00_TECH_STACK_DECISION](../product/00_TECH_STACK_DECISION.md)(사용자 선택, 2026-11-02), [PLAN_product-evolution](PLAN_product-evolution.md) 단계 1, [DECORATION_MARKET_ARCHITECTURE](../product/DECORATION_MARKET_ARCHITECTURE.md), [PRD 초안](../PRD.md).
@@ -118,7 +120,7 @@
 | F1 | §1.1 호환 확인 → 설치·버전 고정. `app/` 골격, D 화면 골격(메모리 저장·고정 사용자), lint·typecheck·unit, CI 앱 검사 job | §1.1 통과. PR 검사 통과. 기존 `tests/` 배포 계약 테스트 통과. `frontend/`는 변경 없음 | 없음(PRD Q1~Q3는 가정으로 진행) |
 | F2 | migration·DB 계정·권한(원장 테이블 포함), 실제 PG18 컨테이너 테스트 | §5-3(운영과 같은 권한의 계정으로 UPDATE/DELETE 차단)·8 통과. 로컬·CI 컨테이너만 쓰고 공용 서버 DB는 만들지 않는다 | — |
 | F3 | 도메인 모듈(account·diary·decoration·credit) TDD, PostgreSQL 저장 구현. credit은 append-only grant 원장 최소형 | §5-2(병렬 연결 동시 지급 N회 → 1행·10)·§5-3 회귀·4·5·6 통과 | 시간대(권고값으로 진행 가능) |
-| F4 | 실제 로그인 연동과 `onSuccessfulLogin`. **grant 원장과 첫 성공 로그인 10개 지급을 같은 PR에서 켠다**(로그인했는데 지급되지 않은 사용자가 생기지 않게) | §5-1 전체, §5-2, 실제 로그인 E2E | **인증 공급자·로그인 방식(외부 전송 포함)** |
+| F4 | 실제 로그인 연동과 `onSuccessfulLogin`. **grant 원장과 첫 성공 로그인 10개 지급을 같은 PR에서 켠다**(로그인했는데 지급되지 않은 사용자가 생기지 않게) | §5-1 전체, §5-2, 실제 로그인 E2E | Google·카카오 확정(2026-11-03). 계정 연결 결정·탈퇴/복구 계약과 공급자 설정은 [인증 계획](PLAN_mvp-authentication.md)에서 진행 |
 | F5 | D 화면 이식, 폰트 설정, 꾸미기 Lite(Konva), 사진(Q1 시) | E2E: 375/768/1440px, 키보드, 터치 펜, 실행 취소, 리셋, fallback, 대비 AA, D 기본과 시각 비교 | 폰트·스티커 라이선스(G5), Q1 |
 | F6 | 앱 배포 전환(별도 계획 `PLAN_app-deployment`, 메인 주도) | §7의 조건 | dev/prod DB·버킷 준비, 배포 프로그램 검토 |
 
@@ -129,6 +131,7 @@
 - F6 전환 조건(별도 계획에서 확정한다):
   - 메인이 설치본 배포 프로그램을 검토·갱신한다. 앱 이미지, 비밀값 주입, DB 네트워크를 허용하는 범위로 하며 다른 서비스·공용 nginx·TLS는 바꾸지 않는다.
   - dev와 prod에 전용 DB와 계정을 준비하고 백업 절차를 마련한다.
+  - 계정 탈퇴 후 30일 복구·삭제 정책의 purge 실행 주기와 백업 만료·복원 시 삭제 재적용을 정한다([계정 수명주기 계획](PLAN_account-lifecycle.md)).
   - migration은 확장/수축(expand/contract) 방식으로 한다.
   - `/design/` 시안 게시 사본을 계속 제공할지 정한다.
 - 롤백:
@@ -141,7 +144,7 @@
 
 | 항목 | 영향 | 담당 |
 |---|---|---|
-| G4 인증 공급자·로그인 방식(외부 공급자로 가는 식별 정보 포함) | F4, 첫 로그인 지급 | 사용자 |
+| G4 공급자는 Google·카카오 둘 다, 탈퇴는 30일 복구 뒤 삭제로 확정(2026-11-03). 공급자 간 계정 연결은 미정 | F4, 첫 로그인 지급·복구·삭제. 세부는 [인증 계획](PLAN_mvp-authentication.md) | 사용자·메인 |
 | PRD Q1 사진 / Q2 AI / Q3 공유 | 골격은 가정으로 진행한다. 답에 따라 사진(버킷)·AI(외부 전송·동의)·공유(권한)를 추가한다 | 사용자 |
 | DB 실행 형태: 기본 추천은 새 공유 PostgreSQL 18 안의 서비스·환경별 전용 DB(결정 기록 §3). 버킷 인스턴스. 실제 프로비저닝은 별도 운영 절차 | F6 | 메인(비공개 런북) |
 | 허용 폰트 목록·기본 스티커 세트 라이선스(G5) | F5 | 메인·사용자 |
@@ -151,3 +154,43 @@
 ## 9. 비목표
 
 마켓·구매·정산 구현, 전문 드로잉 도구, 별도 백엔드 플랫폼(Python 서버·Redis·큐), 외부 AI 연동, 공용 서버 설정 변경, 서버 dev/prod DB·버킷 생성(메인 담당).
+
+## 10. F1 실행 결과 (Claude Cloud 하위 구현, 작업 브랜치 `claude/nextjs-foundation-mvp-0p73cn`)
+
+- 기준: `origin/dev` `e5ebd58`(통합 `c82c2d2` 포함). Draft PR로 반환하며 dev/main 반영·배포는 메인이 판단한다.
+- **F1은 앱 골격이다.** 실제 로그인·영구 저장·DB·버킷·원장은 없고 MVP 완료가 아니다. 앱은 현재 dev 정적 배포에 포함되지 않는다.
+- 버전: [00_TECH_STACK_DECISION §2.1](../product/00_TECH_STACK_DECISION.md). §1.1 통과 조건 확인 결과:
+  - `npm ls --all` peer 문제 없음, `next build` 성공(Node 26.13.0·24.22.2).
+  - Konva는 `src/ui/decorate/`의 클라이언트 모듈에서 `ssr: false`로만 불러온다. ESLint `no-restricted-imports`로 그 밖의 import를 막고, 서버 HTML에 캔버스가 없음을 E2E로 확인했다.
+  - 스티커 1개 끌기·펜 획 1개 스모크 E2E가 Node 26·24 모두 통과(시험 fixture `/dev/konva-smoke`, 로컬 고정 사용자 모드 밖에서는 404).
+- 만든 것: `app/` App Router 골격(오늘·모아보기·특정 날·작성/수정 팝업·기록 글꼴 설정, D 스타일 이식), diary 저장 port + 메모리 구현(읽기 전용), 로컬 고정 사용자 모드와 운영 거부, `.github/workflows/app-validation.yml`.
+- 고른 도구: 단위 Vitest, E2E Playwright(§1의 migration 도구 선택은 DB를 다루는 F2로 미룬다).
+- TDD: 경계 시험(고정 사용자 운영 거부, 글꼴 허용 목록, URL 날짜, 메모리 저장 소유자 제한)을 먼저 커밋해 RED(모듈 없음, exit 1)를 확인한 뒤 최소 구현으로 GREEN(20건).
+- 검증 명령과 종료 코드(깨끗한 복사본, Node 26.13.0과 24.22.2 각각 같은 결과):
+  `npm ci` 0 · `npm ls --all` 0 · `npm run lint` 0 · `npm run typecheck` 0 · `npm test` 0(20 passed) · `npm run build` 0 ·
+  `POD_LOCAL_FIXTURE=1 npx next build` 1(의도한 거부) · `POD_LOCAL_FIXTURE=1 next start` 1(의도한 거부) · `npx playwright test` 0(9 passed).
+  저장소 배포 계약 시험 `python3 -B -m unittest discover -s tests -p 'test_*.py'` 42 OK, `git diff --check` 0.
+- 화면: 375/768/1440 수평 넘침 없음(E2E), 스크린샷 `app/docs/screenshots/`.
+- 남은 것: F2(migration·PG18 컨테이너 시험), F3(도메인·PG 구현·시간대), F4(실제 로그인·첫 로그인 지급), F5(꾸미기 Lite 편집기·글꼴 동봉·조각 삭제), F6(배포 전환).
+
+### 10.1 F1 통합 전 보완 (메인 배정, 같은 PR)
+
+- 추가 팝업과 주소 `#write` 동기화: 뒤로 가기로 `#write`를 벗어나면 닫고, 앞으로 가기로 초안과 함께 다시 연다. E2E RED(뒤로 가기 후에도 팝업 보임) 확인 뒤 `DayBoard`만 최소 수정.
+- 특정 날(제목 h2)에서 한 줄 반영 뒤 포커스를 `#picked-h`로 돌린다(RED: 포커스 없음 → GREEN).
+- 완료 안내·README에 "새로고침하거나 다른 화면으로 이동하면 사라진다"를 명시하고 E2E로 확인. 영구 저장·클라이언트 전역 store는 추가하지 않는다.
+- 운영 모드 경계 smoke(`app/playwright.prod.config.ts`, `app/tests/prod/`): 이미 만든 빌드를 `next start`로 127.0.0.1:3200에서 플래그 없이 띄워 `/`·`/days`·`/days/2026-11-02` 준비 중 안내·예시 기록 없음, `/dev/konva-smoke` 404, 위조 `x-user-id` 헤더·`userId` 질의값으로도 노출 없음을 확인한다. 127.0.0.1:3201에서 `POD_LOCAL_FIXTURE=1 next start`가 거부 메시지와 exit 1로 끝나는지 확인한다(플래그는 자식 프로세스 env에만). CI `app-validation`에 같은 단계를 추가했다. dev E2E(3100)와 순차 실행.
+- 검증 결과는 PR 본문에 기록한다.
+
+### 10.2 메인 통합 수락 (2026-11-02)
+
+- 대상 `0ee8bfe`, 앱 CI run `41490019203`: Node 26·24 각각 단위 20개·운영 경계 6개·브라우저 12개 통과를 실제 로그로 대조했다. 배포 계약 검사 run `41490018256`도 통과했다.
+- 독립 검토에서 재현한 뒤로가기 회귀는 위 수정과 회귀 시험으로 해소했다. 메인은 변경 범위·운영 차단·권한 없는 CI·D 스크린샷·문서 링크를 검토했다. 서버에서 Next 개발 서버를 실행하지 않았다.
+- F2 데이터 계약·시험 계획은 [DATA_CONTRACT](../product/DATA_CONTRACT.md)·[PLAN_mvp-database](PLAN_mvp-database.md)를 따른다. 실제 DB 연결 모듈을 도입할 때 클라이언트 번들 유입 차단도 검증한다.
+
+## 11. F4a 기반 진행 상태 (2026-11-03)
+
+- F2 스키마·F3 저장 코어에 이어 F4a 세션 codec과 서버 전용 경계를 구현·독립 검증했다. [인증 계획 §13](PLAN_mvp-authentication.md)에 RED·GREEN과 실제 검증 범위를 기록한다.
+- GREEN `96bcf8c`: Node 24·26 단위 122·빌드 경계 4·운영 경계 6·E2E 12, DB 99·배포 계약 42 통과. 실제 OAuth·요청별 DB 상태 대조·탈퇴·복구·삭제는 후속 F4 범위다.
+- F4 L1(0002 계정 수명주기 schema·role): PR33 `0876c4b` CI에서 DB 119·독립 검토를 통과해 dev에 통합했다([계정 수명주기 계획](PLAN_account-lifecycle.md) §14). 서비스 DB 적용·운영 purge는 F6다.
+- F4 L2(탈퇴·복구·상태별 로그인 도메인): PR35 GREEN `ba2b167` CI에서 DB 138과 독립 검토를 통과해 dev에 통합했다([계정 수명주기 계획](PLAN_account-lifecycle.md) §15). 실제 로그인 연결은 F4b/c다.
+- 현재 dev는 정적 D 시안이며 Next 앱은 아직 배포되지 않았다. F6의 전용 DB·purge·백업·앱 배포 전환 조건을 유지한다.

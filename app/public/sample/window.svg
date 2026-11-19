@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="예시 이미지: 아침 햇빛이 드는 창가">
+  <title>예시 이미지: 아침 창가 (직접 그린 그림)</title>
+  <rect width="400" height="300" fill="#EFE6D8"/>
+  <rect x="70" y="36" width="260" height="196" fill="#C9DCE6"/>
+  <rect x="70" y="150" width="260" height="82" fill="#B8CBD6"/>
+  <path d="M70 196 L120 160 L160 178 L210 140 L260 170 L330 150 L330 232 L70 232 Z" fill="#9FB4C0"/>
+  <rect x="96" y="176" width="34" height="56" fill="#8A6F5B"/>
+  <path d="M90 178 L113 158 L136 178 Z" fill="#7A5E4B"/>
+  <rect x="236" y="168" width="46" height="64" fill="#A38671"/>
+  <path d="M228 170 L259 146 L290 170 Z" fill="#8F6F5A"/>
+  <circle cx="276" cy="82" r="22" fill="#F6E3B4"/>
+  <rect x="62" y="28" width="276" height="12" fill="#FFFFFF"/>
+  <rect x="62" y="228" width="276" height="14" fill="#FFFFFF"/>
+  <rect x="194" y="36" width="12" height="196" fill="#FFFFFF"/>
+  <rect x="70" y="128" width="260" height="10" fill="#FFFFFF"/>
+  <path d="M24 0 H92 C86 80 96 170 70 300 H24 Z" fill="#E6CBB0"/>
+  <path d="M376 0 H308 C316 90 300 190 330 300 H376 Z" fill="#E6CBB0"/>
+  <path d="M0 252 H400 V300 H0 Z" fill="#D9C7AE"/>
+  <rect x="150" y="238" width="70" height="12" rx="2" fill="#B78E6C"/>
+  <path d="M168 238 C166 222 182 218 186 230 C190 218 206 222 202 238 Z" fill="#7E9B74"/>
+  <rect x="10" y="266" width="86" height="24" rx="3" fill="#2B2420" fill-opacity="0.82"/>
+  <text x="53" y="283" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#FFFFFF">예시 이미지</text>
+</svg>
